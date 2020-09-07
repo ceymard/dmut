@@ -5,7 +5,7 @@ import (
 	"os"
 	"path"
 
-	dmutparser "github.com/ceymard/gomut/parser"
+	dmutparser "github.com/ceymard/dmut/parser"
 	"github.com/pkg/errors"
 )
 

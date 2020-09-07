@@ -1,4 +1,4 @@
-module github.com/ceymard/gomut
+module github.com/ceymard/dmut
 
 go 1.15
 

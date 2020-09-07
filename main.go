@@ -10,8 +10,8 @@ import (
 	"os"
 
 	"github.com/alecthomas/kong"
-	"github.com/ceymard/gomut/mutations"
-	dmutparser "github.com/ceymard/gomut/parser"
+	"github.com/ceymard/dmut/mutations"
+	dmutparser "github.com/ceymard/dmut/parser"
 	"github.com/k0kubun/pp"
 )
 

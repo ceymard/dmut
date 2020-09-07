@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/participle/lexer"
-	dmutparser "github.com/ceymard/gomut/parser"
+	dmutparser "github.com/ceymard/dmut/parser"
 )
 
 //NewDigestBuffer returns a new DigestBuffer
