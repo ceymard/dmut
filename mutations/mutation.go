@@ -34,10 +34,10 @@ func (dg *DigestBuffer) AddStatement(stmt string) {
 	var lx, _ = dmutparser.SqlLexer.Lex("", reader)
 	for tk, err := lx.Next(); !tk.EOF(); tk, err = lx.Next() {
 		if err != nil {
-			panic(fmt.Errorf("shouldn't happen: %s", err))
+			panic(fmt.Errorf("shouldn't happen on %s : %w", stmt, err))
 		}
-		dg.WriteString(tk.String())
-		dg.WriteByte(' ')
+		_, _ = dg.WriteString(tk.String())
+		_ = dg.WriteByte(' ')
 	}
 }
 
@@ -148,6 +148,14 @@ func (mut *Mutation) GetParentNames() []string {
 	return res
 }
 
+func (mut *Mutation) GetChildrenNames() []string {
+	var res []string = make([]string, 0)
+	for _, m := range mut.Children {
+		res = append(res, m.Name)
+	}
+	return res
+}
+
 func (mut *Mutation) Lock(lock string) *Mutation {
 	var lk = []byte(lock)
 	mut.HashLock = &lk
@@ -161,8 +169,8 @@ func (mut *Mutation) Hash() []byte {
 
 	var buffer = NewDigestBuffer(make([]byte, 0, 1024))
 
-	for _, parent := range mut.Parents {
-		buffer.Write(parent.Hash())
+	for _, parent := range mut.GetParents() {
+		_, _ = buffer.Write(parent.Hash())
 	}
 
 	for _, up := range mut.Up {
@@ -202,7 +210,7 @@ func (mut *Mutation) AddUp(up string) *Mutation {
 func (mut *Mutation) AddDown(down string) *Mutation {
 	if down != "" {
 		mut.hashIsStale = true
-		mut.Down = append(mut.Down, strings.TrimSpace(down))
+		mut.Down = append([]string{strings.TrimSpace(down)}, mut.Down...)
 	}
 	return mut
 }
@@ -237,7 +245,7 @@ var (
 			"identifier" TEXT NOT NULL,
 			"up" TEXT[] NOT NULL,
 			"down" TEXT[] NOT NULL,
-			"parents" TEXT[] NOT NULL,
+			"children" TEXT[] NOT NULL,
 			"date_applied" TIMESTAMP DEFAULT NOW()
 		);
 		`, dmutSchema),

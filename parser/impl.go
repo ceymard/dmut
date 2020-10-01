@@ -38,7 +38,11 @@ func (rls *RlsStatement) Down() string {
 }
 
 func (grant *GrantStatement) Down() string {
-	return fmt.Sprintf(`REVOKE %s FROM %s;`, strings.Join(*grant.Perms, " "), *grant.To)
+	var kind = ""
+	if grant.Kind != nil {
+		kind = strings.Join(*grant.Kind, " ")
+	}
+	return fmt.Sprintf(`REVOKE %s ON %s %s FROM %s;`, strings.Join(*grant.Perms, " "), kind, *grant.Id, *grant.To)
 }
 
 func (create *CreateStatement) Down() string {
