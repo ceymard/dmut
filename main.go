@@ -6,6 +6,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"os"
 
@@ -28,7 +29,7 @@ func ParseFile(name string) (*dmutparser.TopLevel, error) {
 	}
 
 	expr := &dmutparser.TopLevel{}
-	err = dmutparser.Parser.Parse(reader, expr)
+	err = dmutparser.Parser.Parse("", reader, expr)
 	return expr, err
 }
 
@@ -47,10 +48,10 @@ func main() {
 		} else {
 			if cli.AST {
 				// } else {
-				for name, mut := range *mp {
-					fmt.Printf("--- %s --- \n", name)
-					pp.PrintMapTypes = false
-					pp.Print(map[string][]string{"Up": mut.Up, "Down": mut.Down})
+				pp.PrintMapTypes = false
+				for _, mut := range (*mp).GetInOrder() {
+					fmt.Printf("\n\n---- %s ----- \n", mut.Name)
+					pp.Print(map[string]interface{}{"Name": mut.Name, "Up": mut.Up, "Down": mut.Down, "Hash": hex.EncodeToString(mut.Hash())})
 				}
 				// fmt.Println(expr)
 			}

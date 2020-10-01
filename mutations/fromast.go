@@ -27,7 +27,7 @@ func GetMutationsInFile(filename string, set *MutationSet) error {
 		return err
 	}
 
-	root, err := dmutparser.ParseString(contents)
+	root, err := dmutparser.ParseString(filename, contents)
 	if err != nil {
 		return err
 	}

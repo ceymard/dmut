@@ -3,6 +3,7 @@ package dmutparser
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"regexp"
@@ -51,7 +52,7 @@ func (rd *regexpDefinition2) EndMatch(endmatch string) *regexpDefinition2 {
 	return rd
 }
 
-func (rd *regexpDefinition2) Lex(reader io.Reader) (lexer.Lexer, error) {
+func (rd *regexpDefinition2) Lex(filename string, reader io.Reader) (lexer.Lexer, error) {
 	// Read up all the contents.
 	// FIXME: it would be so much better if we could do some buffering !
 	// Note : shoul
@@ -168,7 +169,7 @@ nextToken:
 
 	// If we get here, it most likely means that we didn't match anything in the input, so we'll return an error.
 	rn, _ := utf8.DecodeRune(rl.buffer)
-	return lexer.Token{}, lexer.Errorf(rl.pos, "invalid token %q", rn)
+	return lexer.Token{}, fmt.Errorf("invalid token %q at %v", rn, rl.pos)
 }
 
 ////////////////////////////////////////////////////////////
@@ -176,7 +177,7 @@ nextToken:
 var (
 	// SqlLexer is a lexer for sql
 	SqlLexer = Regexp2Lexer().Token(
-		"_WhiteSpace", `\s+|--[^\n]*\n|/\*(.|\n)*?\*/`,
+		"_WhiteSpace", `\s+|--[^\n]*\n?|/\*(.|\n)*?\*/`,
 	).Token(
 		"Semicolon", `;`,
 	).Token(

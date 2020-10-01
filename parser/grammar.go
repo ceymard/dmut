@@ -5,6 +5,7 @@ import (
 
 	"github.com/alecthomas/participle"
 	lexer "github.com/alecthomas/participle/lexer"
+	"github.com/alecthomas/participle/lexer/stateful"
 )
 
 type NeedFullMatch struct {
@@ -24,7 +25,7 @@ type Include struct {
 type MutationDecl struct {
 	Name       *string         `parser:"   'mutation' @SqlId   "`
 	DependsOn  *[]string       `parser:"   ('depends' 'on' @SqlId (',' @SqlId)*)?   "`
-	Statements *[]ASTStatement `parser:"   (@@)+   "`
+	Statements *[]ASTStatement `parser:"   (@@)*   "`
 }
 
 type ASTStatement struct {
@@ -32,13 +33,14 @@ type ASTStatement struct {
 	NeedFullMatch
 	UpOrDownStmt    *UpOrDownStmt    `parser:"   @@   "`
 	CreateStatement *CreateStatement `parser:" | @@   "`
+	RlsStatement    *RlsStatement    `parser:" | @@   "`
 	GrantStatement  *GrantStatement  `parser:" | @@   "`
 	// EndPos          lexer.Position
 }
 
 /// Auto grant
 type GrantStatement struct {
-	Perms *[]string `parser:"  'grant' ( @!'on' )+ 'on'  "`
+	Perms *[]string `parser:"  'grant' @( !'on' )+ 'on'  "`
 	Kind  *[]string `parser:"  @( 'table' | 'materialized'? 'view' | 'schema' | 'foreign' 'server' | 'tablespace' | 'foreign' 'data' 'wrapper' | 'database' | 'sequence' | 'function')?  "`
 	Id    *string   `parser:"  @SqlId  "`
 	To    *string   `parser:" 'to' @SqlId  "`
@@ -55,15 +57,31 @@ type UpOrDownStmt struct {
 type CreateStatement struct {
 	Simple          *SimpleCreateStatement   `parser:" 'create' ('or' 'replace')? ( @@"`
 	Function        *CreateFunctionStatement `parser:"  | @@   "`
-	PolicyOrTrigger *CreatePolicyStmt        `parser:" | @@ ) "`
+	Index           *CreateIndexStatement    `parser:"  | @@   "`
+	PolicyOrTrigger *CreatePolicyStmt        `parser:"  | @@ ) "`
 	End             *string                  `parser:" @';'  "`
 }
 
 ///
 
+type RlsStatement struct {
+	Table *string `parser:"  'alter' 'table' @SqlId 'enable' 'row' 'level' 'security' ';' "`
+}
+
 type CreateFunctionStatement struct {
 	Name *string   `parser:"   'function' @SqlId '('   "`
-	Args *[]string `parser:"   (@!')')* ')' (!';')+  "`
+	Args *[]string `parser:"   (@!')')* ')' (!(';'))+ "`
+}
+
+type CreateIndexStatement struct {
+	Name  *string `parser:"  'index' @SqlId 'on'  "`
+	Table *string `parser:" @SqlId  (!(';'))+  "`
+}
+
+type MultilineString struct {
+	Start    *string `parser:"  @MultiStart   "`
+	Contents *string `parser:"  (@Char)*  "`
+	Stop     *string `parser:"  @MultiStop  "`
 }
 
 type SimpleCreateStatement struct {
@@ -78,22 +96,51 @@ type CreatePolicyStmt struct {
 	Rest   *[]string `parser:" @!';'* "`
 }
 
+func r(name string, pattern string, actions ...stateful.Action) stateful.Rule {
+	var act stateful.Action = nil
+	if len(actions) > 0 {
+		act = actions[0]
+	}
+	return stateful.Rule{Name: name, Pattern: pattern, Action: act}
+}
+
 // Parser is a dmut parser that outputs an AST
-var Parser = participle.MustBuild(
-	&TopLevel{},
-	participle.UseLookahead(2),
-	participle.Lexer(SqlLexer),
-	participle.CaseInsensitive("SqlId"),
+var (
+	// The sql lexer
+	// SqlLexer = stateful.Must(stateful.Rules{
+	// 	"Root": {
+	// 		r("MultiStart", `(\$[a-zA-Z_0-9]*\$)`, stateful.Push("MultilineString")),
+	// 		stateful.Include("Common"),
+	// 	},
+	// 	"Common": {
+	// 		r("whiteSpace", `(\s|\n)+|--[^\n]*\n?|/\*(.|\n)*?\*/`),
+	// 		r("Semicolon", `;`),
+	// 		r("SqlId", `(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\])(?:\.(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\]))*`),
+	// 		r("String", `'(?:''|[^'])*'`),
+	// 		r("Rest", `::|<>|!=|<=|>=|[-+?!~|^#*/%,.()=<>:\[\]]`),
+	// 	},
+	// 	"MultilineString": {
+	// 		r("MultiStop", `\1`, stateful.Pop()),
+	// 		r("Char", `(.|\n)`),
+	// 	},
+	// })
+
+	Parser = participle.MustBuild(
+		&TopLevel{},
+		participle.UseLookahead(2),
+		participle.Lexer(SqlLexer),
+		participle.CaseInsensitive("SqlId"),
+	)
 )
 
-func ParseString(str string) (*TopLevel, error) {
+func ParseString(filename string, str string) (*TopLevel, error) {
 	var res = &TopLevel{}
-	err := Parser.ParseString(str, res)
+	err := Parser.ParseString(filename, str, res)
 	return res, err
 }
 
-func ParseReader(reader io.Reader) (*TopLevel, error) {
+func ParseReader(filename string, reader io.Reader) (*TopLevel, error) {
 	var res = &TopLevel{}
-	err := Parser.Parse(reader, res)
+	err := Parser.Parse(filename, reader, res)
 	return res, err
 }

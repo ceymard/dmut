@@ -21,8 +21,14 @@ func (stmt *ASTStatement) Down() string {
 		return stmt.GrantStatement.Down()
 	} else if stmt.UpOrDownStmt != nil {
 		return stmt.UpOrDownStmt.Down()
+	} else if stmt.RlsStatement != nil {
+		return stmt.RlsStatement.Down()
 	}
-	return ""
+	panic("Not implemented")
+}
+
+func (rls *RlsStatement) Down() string {
+	return fmt.Sprintf(`ALTER TABLE %s DISABLE ROW LEVEL SECURITY;`, *rls.Table)
 }
 
 func (grant *GrantStatement) Down() string {
@@ -36,8 +42,19 @@ func (create *CreateStatement) Down() string {
 		return create.Function.Down()
 	} else if create.PolicyOrTrigger != nil {
 		return create.PolicyOrTrigger.Down()
+	} else if create.Index != nil {
+		return create.Index.Down()
 	}
 	panic("not implemented")
+}
+
+func (ind *CreateIndexStatement) Down() string {
+	var splt = strings.Split(*ind.Table, ".")
+	var schema = ""
+	if len(splt) > 1 {
+		schema = splt[0] + "."
+	}
+	return fmt.Sprintf(`DROP INDEX %s%s`, schema, *ind.Name)
 }
 
 func (pol *CreatePolicyStmt) Down() string {

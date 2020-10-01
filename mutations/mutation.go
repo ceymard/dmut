@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/alecthomas/participle/lexer"
 	dmutparser "github.com/ceymard/dmut/parser"
 )
 
@@ -26,13 +25,17 @@ type DigestBuffer struct {
 // and does so by "simplifying" it, ignoring white space where convenient, but
 // not inside strings or string like constructs like $$ ... $$
 func (dg *DigestBuffer) AddStatement(stmt string) {
+	stmt = "   " + stmt
 	var reader = strings.NewReader(stmt)
 
 	// not checking err since "normally" only code previously lexed
 	// is analyzed here
-	var lx, _ = dmutparser.SqlLexer.Lex(reader)
-	for tk, _ := lx.Next(); tk.Type != lexer.EOF; tk, _ = lx.Next() {
-		dg.WriteString(tk.Value)
+	var lx, _ = dmutparser.SqlLexer.Lex("", reader)
+	for tk, err := lx.Next(); !tk.EOF(); tk, err = lx.Next() {
+		if err != nil {
+			panic(fmt.Errorf("shouldn't happen: %s", err))
+		}
+		dg.WriteString(tk.String())
 		dg.WriteByte(' ')
 	}
 }
@@ -46,6 +49,10 @@ func (dg *DigestBuffer) Digest() []byte {
 type MutationSet map[string]*Mutation
 
 func (ms *MutationSet) Add(mut *Mutation) *MutationSet {
+	if val, ok := (*ms)[mut.Name]; ok {
+		// FIXME should be an error.
+		panic(fmt.Errorf("mutation %s already in set", val.Name))
+	}
 	(*ms)[mut.Name] = mut
 	return ms
 }
@@ -53,6 +60,34 @@ func (ms *MutationSet) Add(mut *Mutation) *MutationSet {
 func (ms *MutationSet) Delete(mut *Mutation) *MutationSet {
 	delete(*ms, mut.Name)
 	return ms
+}
+
+func (ms *MutationSet) GetInOrder() []*Mutation {
+	var (
+		res  []*Mutation
+		seen = make(map[string]struct{})
+		do   func(mut *Mutation)
+	)
+
+	do = func(mut *Mutation) {
+		if _, ok := seen[mut.Name]; ok {
+			return
+		} else {
+			seen[mut.Name] = struct{}{}
+		}
+
+		for _, m := range mut.Parents {
+			do(m)
+		}
+
+		res = append(res, mut)
+	}
+
+	for _, mut := range *ms {
+		do(mut)
+	}
+
+	return res
 }
 
 type Mutation struct {
@@ -152,17 +187,17 @@ func first(args ...string) string {
 }
 
 var (
-	DMUT_SCHEMA  = first(os.Getenv("DMUT_SCHEMA"), "dmut")
-	DmutMutation = NewMutation(
+	dmutSchema   = first(os.Getenv("DMUT_SCHEMA"), "dmut")
+	dmutMutation = NewMutation(
 		"dmut.base",
 		nil,
 		nil,
 	).AddDown(
-		fmt.Sprintf(`DROP SCHEMA "%s";`, DMUT_SCHEMA),
+		fmt.Sprintf(`DROP SCHEMA "%s";`, dmutSchema),
 	).AddUp(
-		fmt.Sprintf(`CREATE SCHEMA "%s";`, DMUT_SCHEMA),
+		fmt.Sprintf(`CREATE SCHEMA "%s";`, dmutSchema),
 	).AddDown(
-		fmt.Sprintf(`DROP TABLE "%s".mutations`, DMUT_SCHEMA),
+		fmt.Sprintf(`DROP TABLE "%s".mutations`, dmutSchema),
 	).AddUp(
 		fmt.Sprintf(`
 		CREATE TABLE "%s".mutations (
@@ -174,6 +209,6 @@ var (
 			"parents" TEXT[] NOT NULL,
 			"date_applied" TIMESTAMP DEFAULT NOW()
 		);
-		`, DMUT_SCHEMA),
+		`, dmutSchema),
 	)
 )
