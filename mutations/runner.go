@@ -184,10 +184,6 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) error {
 		err    error
 	)
 
-	if db, err = pgx.Connect(ctx(), "postgres://app:app@2009-bms-engagement_postgres_1.docker/app?sslmode=disable"); err != nil {
-		return err
-	}
-
 	// Start by downing the mutations that should be removed before being re-applied.
 	if dbmuts, err = getDbMutations(db); err != nil {
 		return err
@@ -197,7 +193,9 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) error {
 
 	// Down the mutations that have to go
 	for _, to_d := range to_down {
-		_, _ = fmt.Print(au.Bold(au.Red(" < ")), to_d.Identifier, "\n")
+		if !testing {
+			_, _ = fmt.Print(au.Bold(au.Red(" < ")), to_d.Identifier, "\n")
+		}
 
 		for _, down := range to_d.Down {
 			if err = execCheck(db, down); err != nil {
@@ -212,6 +210,10 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) error {
 
 	// Now run the mutations that should be ran.
 	for _, m := range to_up {
+		if !testing {
+			_, _ = fmt.Printf(" %s %s\n", au.Green(`*`), m.Name)
+		}
+
 		for _, up := range m.Up {
 			if err = execCheck(db, up); err != nil {
 				return fmt.Errorf("while running mutation %s : %w", m.Name, err)
@@ -230,8 +232,6 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) error {
 		); err != nil {
 			return fmt.Errorf("can't insert into mutations table %w", err)
 		}
-
-		_, _ = fmt.Printf(" %s %s\n", au.Green(`*`), m.Name)
 	}
 
 	// Testing should be done on *all* the mutations that are present, to check for faulty logic
@@ -249,9 +249,10 @@ func RunMutations(muts Mutations) error {
 		return err
 	}
 
-	db.Exec(ctx(), `BEGIN`)
+	db.Begin(ctx())
 	defer func() {
 		if err != nil {
+			log.Print(`Rollbacking and canceling`)
 			db.Exec(ctx(), `ROLLBACK`)
 		} else {
 			log.Print("committing changes")
@@ -272,14 +273,14 @@ func RunMutations(muts Mutations) error {
 
 		var testm = MutationsWithout(muts, m.Name)
 		db.Exec(ctx(), `SAVEPOINT testdmut`)
-		if err = runMutations(db, testm, true); err != nil {
-			return err
-		}
-		// Also re-run the mutations right after
-		if err = runMutations(db, muts, true); err != nil {
-			return err
+		err = runMutations(db, testm, true)
+		if err != nil {
+			err = runMutations(db, muts, true)
 		}
 		db.Exec(ctx(), `ROLLBACK TO SAVEPOINT testdmut`)
+		if err != nil {
+			return err
+		}
 	}
 
 	return err
