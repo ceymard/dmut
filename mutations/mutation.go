@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	dmutparser "github.com/ceymard/dmut/parser"
@@ -102,6 +103,20 @@ type Mutation struct {
 	hashIsStale bool
 }
 
+type Mutations []*Mutation
+
+func (ms Mutations) Len() int {
+	return len(ms)
+}
+
+func (ms Mutations) Swap(i, j int) {
+	ms[i], ms[j] = ms[j], ms[i]
+}
+
+func (ms Mutations) Less(i, j int) bool {
+	return ms[i].Name < ms[j].Name
+}
+
 func NewMutation(name string, dependsOn *[]string, hashLock *[]byte) *Mutation {
 	return &Mutation{
 		Name:        name,
@@ -114,6 +129,23 @@ func NewMutation(name string, dependsOn *[]string, hashLock *[]byte) *Mutation {
 		hash:        nil,
 		hashIsStale: true,
 	}
+}
+
+func (mut *Mutation) GetParents() []*Mutation {
+	var res Mutations
+	for _, m := range mut.Parents {
+		res = append(res, m)
+	}
+	sort.Sort(res)
+	return res
+}
+
+func (mut *Mutation) GetParentNames() []string {
+	var res []string = make([]string, 0)
+	for _, m := range mut.GetParents() {
+		res = append(res, m.Name)
+	}
+	return res
 }
 
 func (mut *Mutation) Lock(lock string) *Mutation {
@@ -188,7 +220,7 @@ func first(args ...string) string {
 
 var (
 	dmutSchema   = first(os.Getenv("DMUT_SCHEMA"), "dmut")
-	dmutMutation = NewMutation(
+	DmutMutation = NewMutation(
 		"dmut.base",
 		nil,
 		nil,
@@ -202,13 +234,14 @@ var (
 		fmt.Sprintf(`
 		CREATE TABLE "%s".mutations (
 			"hash" TEXT PRIMARY KEY NOT NULL,
-			"namespace" TEXT,
 			"identifier" TEXT NOT NULL,
-			"statements" TEXT[] NOT NULL,
-			"undo" TEXT[] NOT NULL,
+			"up" TEXT[] NOT NULL,
+			"down" TEXT[] NOT NULL,
 			"parents" TEXT[] NOT NULL,
 			"date_applied" TIMESTAMP DEFAULT NOW()
 		);
 		`, dmutSchema),
 	)
+
+	DmutMutations = []*Mutation{DmutMutation}
 )

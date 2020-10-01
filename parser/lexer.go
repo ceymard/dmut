@@ -134,6 +134,7 @@ nextToken:
 
 		// Now we have the match sorted out, compute the number of lines it consumes
 		// and the new column index
+		var curpos = rl.pos
 		rl.pos.Offset += loc[1]
 		lines := bytes.Count(match, eolBytes)
 		rl.pos.Line += lines
@@ -156,7 +157,7 @@ nextToken:
 		// We can now build the token !
 		token := lexer.Token{
 			Type:  def.rune,
-			Pos:   rl.pos,
+			Pos:   curpos,
 			Value: string(match),
 		}
 		// log.Print(token)

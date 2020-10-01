@@ -8,12 +8,15 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/alecthomas/kong"
 	"github.com/ceymard/dmut/mutations"
 	dmutparser "github.com/ceymard/dmut/parser"
 	"github.com/k0kubun/pp"
+
+	_ "github.com/lib/pq"
 )
 
 var cli struct {
@@ -43,21 +46,27 @@ func main() {
 	for _, filename := range cli.Files {
 		mp, err := mutations.GetMutationMapFromFile(filename)
 		if err != nil {
-			fmt.Print(err)
+			_, _ = fmt.Print(err)
 			// continue
 		} else {
+			var mutsOrig mutations.Mutations = (*mp).GetInOrder()
+			var muts = append([]*mutations.Mutation{}, mutations.DmutMutations...)
+			muts = append(muts, mutsOrig...)
+
 			if cli.AST {
 				// } else {
 				pp.PrintMapTypes = false
-				for _, mut := range (*mp).GetInOrder() {
-					fmt.Printf("\n\n---- %s ----- \n", mut.Name)
+				for _, mut := range muts {
+					_, _ = fmt.Printf("\n\n---- %s ----- \n", mut.Name)
 					pp.Print(map[string]interface{}{"Name": mut.Name, "Up": mut.Up, "Down": mut.Down, "Hash": hex.EncodeToString(mut.Hash())})
 				}
 				// fmt.Println(expr)
 			}
 
-			fmt.Print("ok. ")
-
+			// now that we have
+			if err = mutations.RunMutations(muts); err != nil {
+				log.Print(err)
+			}
 		}
 
 	}

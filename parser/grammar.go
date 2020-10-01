@@ -9,8 +9,7 @@ import (
 )
 
 type NeedFullMatch struct {
-	Tok    lexer.Token
-	EndTok lexer.Token
+	Tokens []lexer.Token
 }
 
 type TopLevel struct {

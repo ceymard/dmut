@@ -9,8 +9,14 @@ func (stmt *ASTStatement) Up(fileContents string) string {
 	if stmt.UpOrDownStmt != nil {
 		return stmt.UpOrDownStmt.Up()
 	}
+	// var str = ""
+	// for _, tok := range stmt.Tokens {
+	// 	str = str + tok.Value
+	// }
 	// the rest is to be sent as is.
-	var cts = fileContents[stmt.Tok.Pos.Offset-len(stmt.Tok.Value) : stmt.EndTok.Pos.Offset-len(stmt.EndTok.Value)]
+	var start = stmt.Tokens[0]
+	var end = stmt.Tokens[len(stmt.Tokens)-1]
+	var cts = fileContents[start.Pos.Offset : end.Pos.Offset+len(end.Value)]
 	return cts
 }
 
