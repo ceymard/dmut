@@ -43,7 +43,6 @@ func MutationsWithout(muts Mutations, without string) Mutations {
 
 	// tag the children that will have to go
 	tag = func(m *Mutation) {
-		log.Print("tagged ", m.Name)
 		mp[m.Name] = struct{}{}
 		for _, c := range m.Children {
 			tag(c)
