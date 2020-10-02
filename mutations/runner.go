@@ -242,14 +242,14 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) (bool, error)
 	return true, nil
 }
 
-func RunMutations(muts Mutations) error {
+func RunMutations(host string, muts Mutations) error {
 	var (
 		db          *pgx.Conn
 		err         error
 		should_test bool
 	)
 
-	if db, err = pgx.Connect(ctx(), "postgres://app:app@2009-bms-engagement_postgres_1.docker/app?sslmode=disable"); err != nil {
+	if db, err = pgx.Connect(ctx(), host); err != nil {
 		return err
 	}
 

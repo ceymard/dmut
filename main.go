@@ -22,6 +22,7 @@ import (
 var cli struct {
 	AST   bool               `help:"Print AST for expression."`
 	Set   map[string]float64 `short:"s" help:"Set variables."`
+	Host  string             `arg required help:"postgres uri"`
 	Files []string           `arg required help:"Files to include"`
 }
 
@@ -64,7 +65,7 @@ func main() {
 			}
 
 			// now that we have
-			if err = mutations.RunMutations(muts); err != nil {
+			if err = mutations.RunMutations(cli.Host, muts); err != nil {
 				log.Print(err)
 			}
 		}
