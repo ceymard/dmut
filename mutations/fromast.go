@@ -26,32 +26,56 @@ func readAll(filename string) (string, error) {
 
 type tplenv struct{}
 
-func runTemplate(infile string, cts string, set *MutationSet) string {
+var tpl = template.New("stmt")
+
+func runTemplate(infile string, cts string, set *MutationSet) (string, error) {
 	var (
-		tpl = template.New("stmt").Funcs(template.FuncMap{
-			"env": func(name string) string {
-				return os.Getenv(name)
-			},
-			"include": func(pth string) string {
-				var dirname = path.Dir(infile)
-				var newname = path.Join(dirname, pth)
-				if err := GetMutationsInFile(newname, set); err != nil {
-					panic(err)
-				}
-				return ""
-			},
-		})
-		err error
+		err      error
+		prevtree = tpl.Tree
 	)
+
+	tpl.Funcs(template.FuncMap{
+		"env": func(name string) string {
+			return os.Getenv(name)
+		},
+		"include": func(pth string) string {
+			var dirname = path.Dir(infile)
+			var newname = path.Join(dirname, pth)
+			if err := GetMutationsInFile(newname, set); err != nil {
+				panic(err)
+			}
+			return ""
+		},
+		"arr": func(values ...interface{}) []interface{} {
+			return values
+		},
+		"dict": func(values ...interface{}) (map[string]interface{}, error) {
+			if len(values)%2 != 0 {
+				return nil, errors.New("invalid dict call")
+			}
+			dict := make(map[string]interface{}, len(values)/2)
+			for i := 0; i < len(values); i += 2 {
+				key, ok := values[i].(string)
+				if !ok {
+					return nil, errors.New("dict keys must be strings")
+				}
+				dict[key] = values[i+1]
+			}
+			return dict, nil
+		},
+	})
+
 	var buf bytes.Buffer
 	if tpl, err = tpl.Parse(cts); err != nil {
-		panic(err)
+		return "", err
 	}
 
-	if err = tpl.Execute(&buf, tplenv{}); err != nil {
-		panic(err)
+	if prevtree != tpl.Tree {
+		if err = tpl.Execute(&buf, tplenv{}); err != nil {
+			return "", err
+		}
 	}
-	return buf.String()
+	return buf.String(), nil
 }
 
 func GetMutationsInFile(filename string, set *MutationSet) error {
@@ -60,7 +84,10 @@ func GetMutationsInFile(filename string, set *MutationSet) error {
 		return err
 	}
 
-	contents = runTemplate(filename, contents, set)
+	contents, err = runTemplate(filename, contents, set)
+	if err != nil {
+		return fmt.Errorf("in %s, %w", filename, err)
+	}
 	root, err := dmutparser.ParseString(filename, contents)
 	if err != nil {
 		return fmt.Errorf("in %s, %w", filename, err)
