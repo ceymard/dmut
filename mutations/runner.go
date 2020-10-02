@@ -2,7 +2,6 @@ package mutations
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"strings"
@@ -154,7 +153,7 @@ func computeMutationDifference(dbmuts []*DbMutation, newmuts []*Mutation) (to_do
 	// for all the mutations already in database, figure out if they're still in the to_up list
 	// and if they are, whether the hash has changed.
 	for _, dm := range dbmuts {
-		if corres, ok := localmap[dm.Name]; !ok || hex.EncodeToString(corres.Hash()) != dm.Hash {
+		if corres, ok := localmap[dm.Name]; !ok || corres.Hash != dm.Hash {
 			// this mutation will have to be removed. whatever is in the to_up will have to go
 			// log.Print(dm.Identifier, ": ", string(hex.EncodeToString(corres.Hash())))
 			down(dm)
@@ -227,7 +226,7 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) (bool, error)
 		if _, err = db.Exec(
 			ctx(),
 			`INSERT INTO dmut.mutations(hash, name, up, down, children) VALUES ($1, $2, $3, $4, $5)`,
-			hex.EncodeToString(m.Hash()),
+			m.Hash,
 			m.Name,
 			m.Up,
 			m.Down,

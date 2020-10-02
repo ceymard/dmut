@@ -3,7 +3,9 @@ package mutations
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"sort"
 	"strings"
@@ -25,7 +27,7 @@ type DigestBuffer struct {
 // AddStatement Adds an SQL statement to the buffer for later hash computing
 // and does so by "simplifying" it, ignoring white space where convenient, but
 // not inside strings or string like constructs like $$ ... $$
-func (dg *DigestBuffer) AddStatement(stmt string) {
+func (dg *DigestBuffer) AddStatement(stmt string) error {
 	stmt = "   " + stmt
 	var reader = strings.NewReader(stmt)
 
@@ -34,11 +36,13 @@ func (dg *DigestBuffer) AddStatement(stmt string) {
 	var lx, _ = dmutparser.SqlLexer.Lex("", reader)
 	for tk, err := lx.Next(); !tk.EOF(); tk, err = lx.Next() {
 		if err != nil {
-			panic(fmt.Errorf("shouldn't happen on %s : %w", stmt, err))
+			log.Print(stmt)
+			return err
 		}
 		_, _ = dg.WriteString(tk.String())
 		_ = dg.WriteByte(' ')
 	}
+	return nil
 }
 
 //Digest computes the SHA256 sum of what was written so far
@@ -73,9 +77,8 @@ func (ms *MutationSet) GetInOrder() []*Mutation {
 	do = func(mut *Mutation) {
 		if _, ok := seen[mut.Name]; ok {
 			return
-		} else {
-			seen[mut.Name] = struct{}{}
 		}
+		seen[mut.Name] = struct{}{}
 
 		for _, m := range mut.Parents {
 			do(m)
@@ -99,7 +102,7 @@ type Mutation struct {
 	Up          []string
 	Down        []string
 	HashLock    *[]byte
-	hash        []byte
+	Hash        string
 	hashIsStale bool
 }
 
@@ -126,7 +129,7 @@ func NewMutation(name string, dependsOn *[]string, hashLock *[]byte) *Mutation {
 		Down:        make([]string, 0, 16),
 		DependsOn:   dependsOn,
 		HashLock:    hashLock,
-		hash:        nil,
+		Hash:        "",
 		hashIsStale: true,
 	}
 }
@@ -141,7 +144,7 @@ func (mut *Mutation) GetParents() []*Mutation {
 }
 
 func (mut *Mutation) GetParentNames() []string {
-	var res []string = make([]string, 0)
+	var res = make([]string, 0)
 	for _, m := range mut.GetParents() {
 		res = append(res, m.Name)
 	}
@@ -149,7 +152,7 @@ func (mut *Mutation) GetParentNames() []string {
 }
 
 func (mut *Mutation) GetChildrenNames() []string {
-	var res []string = make([]string, 0)
+	var res = make([]string, 0)
 	for _, m := range mut.Children {
 		res = append(res, m.Name)
 	}
@@ -162,27 +165,37 @@ func (mut *Mutation) Lock(lock string) *Mutation {
 	return mut
 }
 
-func (mut *Mutation) Hash() []byte {
-	if mut.hash != nil && !mut.hashIsStale {
-		return mut.hash
+func (mut *Mutation) ComputeHash() (string, error) {
+	var err error
+
+	if mut.Hash != "" && !mut.hashIsStale {
+		return mut.Hash, nil
 	}
 
 	var buffer = NewDigestBuffer(make([]byte, 0, 1024))
 
 	for _, parent := range mut.GetParents() {
-		_, _ = buffer.Write(parent.Hash())
+		hash, err := parent.ComputeHash()
+		if err != nil {
+			return "", err
+		}
+		_, _ = buffer.WriteString(hash)
 	}
 
 	for _, up := range mut.Up {
-		buffer.AddStatement(up)
+		if err = buffer.AddStatement(up); err != nil {
+			return "", err
+		}
 	}
 
 	for _, down := range mut.Down {
-		buffer.AddStatement(down)
+		if err = buffer.AddStatement(down); err != nil {
+			return "", err
+		}
 	}
 
-	mut.hash = buffer.Digest()
-	return mut.hash
+	mut.Hash = hex.EncodeToString(buffer.Digest())
+	return mut.Hash, nil
 }
 
 func (mut *Mutation) AddParent(parent *Mutation) *Mutation {

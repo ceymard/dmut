@@ -2,6 +2,7 @@ package dmutparser
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -83,16 +84,18 @@ func (simple *SimpleCreateStatement) Down() string {
 	return fmt.Sprintf(`DROP %s %s;`, strings.Join(*simple.Kind, " "), *simple.Id)
 }
 
+var reMulti = regexp.MustCompile(`^\s*\$\w*\$\s*|\s*\$\w*\$\s*$`)
+
 func (ud *UpOrDownStmt) Up() string {
 	if *ud.Kind == "down" {
 		return ""
 	}
-	return ""
+	return reMulti.ReplaceAllString(*ud.Stmt, "")
 }
 
 func (ud *UpOrDownStmt) Down() string {
 	if *ud.Kind == "up" {
 		return ""
 	}
-	return ""
+	return reMulti.ReplaceAllString(*ud.Stmt, "")
 }

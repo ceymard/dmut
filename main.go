@@ -6,7 +6,6 @@
 package main
 
 import (
-	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -59,7 +58,7 @@ func main() {
 				pp.PrintMapTypes = false
 				for _, mut := range muts {
 					_, _ = fmt.Printf("\n\n---- %s ----- \n", mut.Name)
-					pp.Print(map[string]interface{}{"Name": mut.Name, "Up": mut.Up, "Down": mut.Down, "Hash": hex.EncodeToString(mut.Hash())})
+					pp.Print(map[string]interface{}{"Name": mut.Name, "Up": mut.Up, "Down": mut.Down, "Hash": mut.Hash})
 				}
 				// fmt.Println(expr)
 			}

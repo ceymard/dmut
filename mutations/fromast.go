@@ -1,10 +1,12 @@
 package mutations
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
+	"text/template"
 
 	dmutparser "github.com/ceymard/dmut/parser"
 	"github.com/pkg/errors"
@@ -22,12 +24,43 @@ func readAll(filename string) (string, error) {
 	return string(contents), nil
 }
 
+type tplenv struct{}
+
+func runTemplate(infile string, cts string, set *MutationSet) string {
+	var (
+		tpl = template.New("stmt").Funcs(template.FuncMap{
+			"env": func(name string) string {
+				return os.Getenv(name)
+			},
+			"include": func(pth string) string {
+				var dirname = path.Dir(infile)
+				var newname = path.Join(dirname, pth)
+				if err := GetMutationsInFile(newname, set); err != nil {
+					panic(err)
+				}
+				return ""
+			},
+		})
+		err error
+	)
+	var buf bytes.Buffer
+	if tpl, err = tpl.Parse(cts); err != nil {
+		panic(err)
+	}
+
+	if err = tpl.Execute(&buf, tplenv{}); err != nil {
+		panic(err)
+	}
+	return buf.String()
+}
+
 func GetMutationsInFile(filename string, set *MutationSet) error {
 	contents, err := readAll(filename)
 	if err != nil {
 		return err
 	}
 
+	contents = runTemplate(filename, contents, set)
 	root, err := dmutparser.ParseString(filename, contents)
 	if err != nil {
 		return fmt.Errorf("in %s, %w", filename, err)
@@ -48,24 +81,7 @@ func GetMutationsInFile(filename string, set *MutationSet) error {
 		return err
 	}
 
-	if root.Includes != nil {
-		for _, incl := range *root.Includes {
-			var pth = *incl.Path
-			var name = pth[1 : len(pth)-1]
-			err = GetMutationMapFromInclude(filename, name, set)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
 	return nil
-}
-
-func GetMutationMapFromInclude(origFilename string, relName string, set *MutationSet) error {
-	var dirname = path.Dir(origFilename)
-	var newname = path.Join(dirname, relName)
-	return GetMutationsInFile(newname, set)
 }
 
 func GetMutationMapFromFile(filename string) (*MutationSet, error) {
@@ -86,6 +102,13 @@ func GetMutationMapFromFile(filename string) (*MutationSet, error) {
 				// FIXME should probably detect cycles here ?
 				mut.AddParent(parent)
 			}
+		}
+	}
+
+	for _, mut := range set {
+		_, err = mut.ComputeHash()
+		if err != nil {
+			return nil, errors.Errorf("mutation '%s' hash error %w", mut.Name, err)
 		}
 	}
 
