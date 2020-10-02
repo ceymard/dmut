@@ -226,6 +226,7 @@ func reorderMutations(muts []*Mutation) []*Mutation {
 		if _, ok := mp[m.Name]; ok {
 			return
 		}
+		mp[m.Name] = m
 		for _, p := range m.Parents {
 			add(p)
 		}

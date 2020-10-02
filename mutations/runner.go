@@ -283,7 +283,7 @@ func RunMutations(host string, muts Mutations) error {
 		db.Exec(ctx(), `SAVEPOINT testdmut`)
 		// Test removing the mutation
 		// This is incorrect ; mutation removal should be tested in all orders...
-		_, err = runMutations(db, testm, false)
+		_, err = runMutations(db, testm, true)
 		if err == nil {
 			// Now test re-running it
 			_, err = runMutations(db, muts, true)
@@ -315,6 +315,7 @@ func reorderDbMutations(muts []*DbMutation) []*DbMutation {
 		if _, ok := mp[m.Name]; ok {
 			return
 		}
+		mp[m.Name] = m
 		for _, p := range m.Children {
 			var thedbmut = all_muts[p]
 			if thedbmut != nil {
