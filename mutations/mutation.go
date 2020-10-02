@@ -215,7 +215,7 @@ func (mut *Mutation) AddDown(down string) *Mutation {
 	return mut
 }
 
-func reorderMutations(muts []*Mutation, reverse bool) []*Mutation {
+func reorderMutations(muts []*Mutation) []*Mutation {
 	var (
 		mp  = make(map[string]*Mutation)
 		res = make([]*Mutation, 0, len(muts))
@@ -234,14 +234,6 @@ func reorderMutations(muts []*Mutation, reverse bool) []*Mutation {
 
 	for _, m := range muts {
 		add(m)
-	}
-
-	if reverse {
-		var newres = make([]*Mutation, 0, len(muts))
-		for i, l := 0, len(muts); i < l; i++ {
-			newres[i] = res[l-i-1]
-		}
-		res = newres
 	}
 
 	return res

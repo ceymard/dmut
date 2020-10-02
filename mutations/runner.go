@@ -171,7 +171,7 @@ func computeMutationDifference(dbmuts []*DbMutation, newmuts []*Mutation) (to_do
 	}
 
 	// !!
-	return to_down, to_up
+	return reorderDbMutations(to_down), to_up
 }
 
 // RunMutations runs the mutations in the database
@@ -281,8 +281,11 @@ func RunMutations(host string, muts Mutations) error {
 
 		var testm = MutationsWithout(muts, m.Name)
 		db.Exec(ctx(), `SAVEPOINT testdmut`)
-		_, err = runMutations(db, testm, true)
+		// Test removing the mutation
+		// This is incorrect ; mutation removal should be tested in all orders...
+		_, err = runMutations(db, testm, false)
 		if err == nil {
+			// Now test re-running it
 			_, err = runMutations(db, muts, true)
 		}
 		db.Exec(ctx(), `ROLLBACK TO SAVEPOINT testdmut`)
@@ -293,4 +296,37 @@ func RunMutations(host string, muts Mutations) error {
 	}
 
 	return err
+}
+
+func reorderDbMutations(muts []*DbMutation) []*DbMutation {
+	var (
+		all_muts = make(map[string]*DbMutation)
+		mp       = make(map[string]*DbMutation)
+		res      = make([]*DbMutation, 0, len(muts))
+		add      func(m *DbMutation)
+	)
+
+	for _, m := range muts {
+		all_muts[m.Name] = m
+	}
+
+	add = func(m *DbMutation) {
+		// do not process a mutation that already was added
+		if _, ok := mp[m.Name]; ok {
+			return
+		}
+		for _, p := range m.Children {
+			var thedbmut = all_muts[p]
+			if thedbmut != nil {
+				add(thedbmut)
+			}
+		}
+		res = append(res, m)
+	}
+
+	for _, m := range muts {
+		add(m)
+	}
+
+	return res
 }
