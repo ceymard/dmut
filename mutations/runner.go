@@ -24,8 +24,7 @@ func TestMutations() {
 func execCheck(db *pgx.Conn, sql string) error {
 	_, err := db.Exec(ctx(), sql)
 	if err != nil {
-		log.Printf("error in statement: %s\n", au.Gray(12-1, sql))
-		return err
+		return fmt.Errorf("error in statement: %s %w", au.Gray(12-1, sql), err)
 	}
 	return nil
 }
@@ -68,11 +67,11 @@ func MutationsWithout(muts Mutations, without string) Mutations {
 }
 
 type DbMutation struct {
-	Hash       string
-	Identifier string
-	Up         []string
-	Down       []string
-	Children   []string
+	Hash     string
+	Name     string
+	Up       []string
+	Down     []string
+	Children []string
 }
 
 // get the mutations already in the database
@@ -124,15 +123,15 @@ func computeMutationDifference(dbmuts []*DbMutation, newmuts []*Mutation) (to_do
 	)
 
 	down = func(m *DbMutation) {
-		if _, ok := dbmap[m.Identifier]; !ok {
+		if _, ok := dbmap[m.Name]; !ok {
 			return
 		}
-		delete(dbmap, m.Identifier)
+		delete(dbmap, m.Name)
 		var back = to_down
 		to_down = []*DbMutation{m}
 		to_down = append(to_down, back...)
 		for _, c := range m.Children {
-			if _, ok := dbmap[m.Identifier]; ok {
+			if _, ok := dbmap[m.Name]; ok {
 				down(dbmap[c])
 			}
 		}
@@ -140,7 +139,7 @@ func computeMutationDifference(dbmuts []*DbMutation, newmuts []*Mutation) (to_do
 
 	////
 	for _, dm := range dbmuts {
-		dbmap[dm.Identifier] = dm
+		dbmap[dm.Name] = dm
 	}
 
 	for _, mut := range newmuts {
@@ -155,13 +154,13 @@ func computeMutationDifference(dbmuts []*DbMutation, newmuts []*Mutation) (to_do
 	// for all the mutations already in database, figure out if they're still in the to_up list
 	// and if they are, whether the hash has changed.
 	for _, dm := range dbmuts {
-		if corres, ok := localmap[dm.Identifier]; !ok || hex.EncodeToString(corres.Hash()) != dm.Hash {
+		if corres, ok := localmap[dm.Name]; !ok || hex.EncodeToString(corres.Hash()) != dm.Hash {
 			// this mutation will have to be removed. whatever is in the to_up will have to go
 			// log.Print(dm.Identifier, ": ", string(hex.EncodeToString(corres.Hash())))
 			down(dm)
 		} else {
 			// if it is still valid, remove it from the local map, as it shouldn't be processed.
-			delete(localmap, dm.Identifier)
+			delete(localmap, dm.Name)
 		}
 	}
 
@@ -178,7 +177,7 @@ func computeMutationDifference(dbmuts []*DbMutation, newmuts []*Mutation) (to_do
 // RunMutations runs the mutations in the database
 //
 //
-func runMutations(db *pgx.Conn, mutations Mutations, testing bool) error {
+func runMutations(db *pgx.Conn, mutations Mutations, testing bool) (bool, error) {
 	var (
 		dbmuts []*DbMutation
 		err    error
@@ -186,25 +185,29 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) error {
 
 	// Start by downing the mutations that should be removed before being re-applied.
 	if dbmuts, err = getDbMutations(db); err != nil {
-		return err
+		return false, fmt.Errorf("error when getting mutations: %w", err)
 	}
 
 	to_down, to_up := computeMutationDifference(dbmuts, mutations)
 
+	if len(to_down) == 0 && len(to_up) == 0 {
+		return false, nil
+	}
+
 	// Down the mutations that have to go
 	for _, to_d := range to_down {
 		if !testing {
-			_, _ = fmt.Print(au.Bold(au.Red(" < ")), to_d.Identifier, "\n")
+			_, _ = fmt.Print(au.Bold(au.Red(" < ")), to_d.Name, "\n")
 		}
 
 		for _, down := range to_d.Down {
 			if err = execCheck(db, down); err != nil {
-				return fmt.Errorf("while downing mutation %s : %w", to_d.Identifier, err)
+				return false, fmt.Errorf("while downing mutation %s : %w", to_d.Name, err)
 			}
 		}
 
-		if _, err = db.Exec(ctx(), `DELETE FROM dmut.mutations WHERE identifier = $1`, to_d.Identifier); err != nil {
-			return fmt.Errorf("while downing mutation %s : %w", to_d.Identifier, err)
+		if _, err = db.Exec(ctx(), `DELETE FROM dmut.mutations WHERE name = $1`, to_d.Name); err != nil {
+			return false, fmt.Errorf("while downing mutation %s : %w", to_d.Name, err)
 		}
 	}
 
@@ -216,33 +219,34 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) error {
 
 		for _, up := range m.Up {
 			if err = execCheck(db, up); err != nil {
-				return fmt.Errorf("while running mutation %s : %w", m.Name, err)
+				return false, fmt.Errorf("while running mutation %s : %w", m.Name, err)
 			}
 		}
 
 		// If we got here, insert into dmut base table
 		if _, err = db.Exec(
 			ctx(),
-			`INSERT INTO dmut.mutations(hash, identifier, up, down, children) VALUES ($1, $2, $3, $4, $5)`,
+			`INSERT INTO dmut.mutations(hash, name, up, down, children) VALUES ($1, $2, $3, $4, $5)`,
 			hex.EncodeToString(m.Hash()),
 			m.Name,
 			m.Up,
 			m.Down,
 			m.GetChildrenNames(),
 		); err != nil {
-			return fmt.Errorf("can't insert into mutations table %w", err)
+			return false, fmt.Errorf("can't insert into mutations table %w", err)
 		}
 	}
 
 	// Testing should be done on *all* the mutations that are present, to check for faulty logic
 
-	return nil
+	return true, nil
 }
 
 func RunMutations(muts Mutations) error {
 	var (
-		db  *pgx.Conn
-		err error
+		db          *pgx.Conn
+		err         error
+		should_test bool
 	)
 
 	if db, err = pgx.Connect(ctx(), "postgres://app:app@2009-bms-engagement_postgres_1.docker/app?sslmode=disable"); err != nil {
@@ -260,11 +264,15 @@ func RunMutations(muts Mutations) error {
 		}
 	}()
 
-	if err = runMutations(db, muts, false); err != nil {
+	if should_test, err = runMutations(db, muts, false); err != nil {
 		return err
 	}
 
-	log.Print("Now testing mutations")
+	if !should_test {
+		return nil
+	}
+
+	// log.Print("Now testing mutations")
 	for _, m := range muts {
 		log.Print("Testing ", m.Name)
 		if strings.HasPrefix(m.Name, "dmut.") {
@@ -273,12 +281,13 @@ func RunMutations(muts Mutations) error {
 
 		var testm = MutationsWithout(muts, m.Name)
 		db.Exec(ctx(), `SAVEPOINT testdmut`)
-		err = runMutations(db, testm, true)
-		if err != nil {
-			err = runMutations(db, muts, true)
+		_, err = runMutations(db, testm, true)
+		if err == nil {
+			_, err = runMutations(db, muts, true)
 		}
 		db.Exec(ctx(), `ROLLBACK TO SAVEPOINT testdmut`)
 		if err != nil {
+			err = fmt.Errorf("while testing mutations: %w", err)
 			return err
 		}
 	}

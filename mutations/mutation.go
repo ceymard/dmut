@@ -215,6 +215,38 @@ func (mut *Mutation) AddDown(down string) *Mutation {
 	return mut
 }
 
+func reorderMutations(muts []*Mutation, reverse bool) []*Mutation {
+	var (
+		mp  = make(map[string]*Mutation)
+		res = make([]*Mutation, 0, len(muts))
+		add func(m *Mutation)
+	)
+	add = func(m *Mutation) {
+		// do not process a mutation that already was added
+		if _, ok := mp[m.Name]; ok {
+			return
+		}
+		for _, p := range m.Parents {
+			add(p)
+		}
+		res = append(res, m)
+	}
+
+	for _, m := range muts {
+		add(m)
+	}
+
+	if reverse {
+		var newres = make([]*Mutation, 0, len(muts))
+		for i, l := 0, len(muts); i < l; i++ {
+			newres[i] = res[l-i-1]
+		}
+		res = newres
+	}
+
+	return res
+}
+
 ///////////////
 
 func first(args ...string) string {
@@ -242,7 +274,7 @@ var (
 		fmt.Sprintf(`
 		CREATE TABLE "%s".mutations (
 			"hash" TEXT PRIMARY KEY NOT NULL,
-			"identifier" TEXT NOT NULL,
+			"name" TEXT NOT NULL,
 			"up" TEXT[] NOT NULL,
 			"down" TEXT[] NOT NULL,
 			"children" TEXT[] NOT NULL,

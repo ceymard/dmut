@@ -1,6 +1,7 @@
 package mutations
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path"
@@ -29,7 +30,7 @@ func GetMutationsInFile(filename string, set *MutationSet) error {
 
 	root, err := dmutparser.ParseString(filename, contents)
 	if err != nil {
-		return err
+		return fmt.Errorf("in %s, %w", filename, err)
 	}
 
 	if root.Decls != nil {
