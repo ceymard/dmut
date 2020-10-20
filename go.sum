@@ -1,6 +1,8 @@
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/alecthomas/kong v0.2.11 h1:RKeJXXWfg9N47RYfMm0+igkxBCTF4bzbneAxaqid0c4=
 github.com/alecthomas/kong v0.2.11/go.mod h1:kQOmtJgV+Lb4aj+I2LEn40cbtawdWJ9Y8QLq+lElKxE=
+github.com/alecthomas/participle v0.6.1-0.20200930115232-37cfcfa20b16 h1:kjlpaMGP4efQGLd+reaPewN3qPy4+I0U7+IJupiYePw=
+github.com/alecthomas/participle v0.6.1-0.20200930115232-37cfcfa20b16/go.mod h1:HfdmEuwvr12HXQN44HPWXR0lHmVolVYe4dyL6lQ3duY=
 github.com/alecthomas/repr v0.0.0-20181024024818-d37bc2a10ba1 h1:GDQdwm/gAcJcLAKQQZGOJ4knlw+7rfEQQcmwTbt4p5E=
 github.com/alecthomas/repr v0.0.0-20181024024818-d37bc2a10ba1/go.mod h1:xTS7Pm1pD1mvyM075QCDSRqH6qRLXylzS24ZTpRiSzQ=
 github.com/cockroachdb/apd v1.1.0 h1:3LFP3629v+1aKXU5Q37mxmRxX/pIu1nijXydLShEq5I=

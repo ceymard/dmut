@@ -2,11 +2,9 @@ module github.com/ceymard/dmut
 
 go 1.15
 
-replace github.com/alecthomas/participle => /home/chris/projects/participle
-
 require (
 	github.com/alecthomas/kong v0.2.11
-	github.com/alecthomas/participle v0.6.1-0.20200905115227-c1de023f7c13
+	github.com/alecthomas/participle v0.6.1-0.20200930115232-37cfcfa20b16
 	github.com/jackc/pgx/v4 v4.9.0
 	github.com/k0kubun/colorstring v0.0.0-20150214042306-9440f1994b88 // indirect
 	github.com/k0kubun/pp v3.0.1+incompatible
