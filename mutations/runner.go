@@ -330,3 +330,28 @@ func reorderDbMutations(muts []*DbMutation) []*DbMutation {
 
 	return res
 }
+
+// ParseAndRunMutations parses mutations from one or several files
+// and attemts to run them on a host
+func ParseAndRunMutations(pghost string, files ...string) error {
+	// expr := &TopLevel{}
+	for _, filename := range files {
+
+		mp, err := GetMutationMapFromFile(filename)
+		if err != nil {
+			return err
+			// continue
+		}
+
+		var mutsOrig Mutations = (*mp).GetInOrder()
+		var muts = append([]*Mutation{}, DmutMutations...)
+		muts = append(muts, mutsOrig...)
+
+		// now that we have
+		if err = RunMutations(pghost, muts); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}

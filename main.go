@@ -8,11 +8,9 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/alecthomas/kong"
 	"github.com/ceymard/dmut/mutations"
-	dmutparser "github.com/ceymard/dmut/parser"
 	"github.com/k0kubun/pp"
 
 	_ "github.com/lib/pq"
@@ -23,17 +21,6 @@ var cli struct {
 	Set   map[string]float64 `short:"s" help:"Set variables."`
 	Host  string             `arg required help:"postgres uri"`
 	Files []string           `arg required help:"Files to include"`
-}
-
-func ParseFile(name string) (*dmutparser.TopLevel, error) {
-	reader, err := os.Open(name)
-	if err != nil {
-		return nil, err
-	}
-
-	expr := &dmutparser.TopLevel{}
-	err = dmutparser.Parser.Parse("", reader, expr)
-	return expr, err
 }
 
 func main() {
