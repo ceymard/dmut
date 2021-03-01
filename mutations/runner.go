@@ -218,7 +218,7 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) (bool, error)
 
 		for _, up := range m.Up {
 			if err = execCheck(db, up); err != nil {
-				return false, fmt.Errorf("while running mutation %s : %w", m.Name, err)
+				return false, fmt.Errorf("while running mutation %s in '%s': %w", m.Name, m.File, err)
 			}
 		}
 

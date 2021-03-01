@@ -13,7 +13,8 @@ type NeedFullMatch struct {
 }
 
 type TopLevel struct {
-	Decls *[]MutationDecl `parser:"   @@*    "`
+	Decls    []MutationDecl `parser:"   (@@ |  "`
+	Includes []Include      `parser:"  @@ )*"`
 }
 
 type Include struct {

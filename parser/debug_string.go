@@ -49,7 +49,7 @@ func (s *UpOrDownStmt) String() string {
 
 func (t *TopLevel) String() string {
 	muts := ""
-	for _, m := range *t.Decls {
+	for _, m := range t.Decls {
 		muts += m.String() + "\n"
 	}
 	return "Decls:\n" + muts

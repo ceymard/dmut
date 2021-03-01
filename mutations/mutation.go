@@ -95,6 +95,7 @@ func (ms *MutationSet) GetInOrder() []*Mutation {
 }
 
 type Mutation struct {
+	File        string
 	Name        string
 	Parents     MutationSet
 	Children    MutationSet
@@ -120,8 +121,9 @@ func (ms Mutations) Less(i, j int) bool {
 	return ms[i].Name < ms[j].Name
 }
 
-func NewMutation(name string, dependsOn *[]string, hashLock *[]byte) *Mutation {
+func NewMutation(filename string, name string, dependsOn *[]string, hashLock *[]byte) *Mutation {
 	return &Mutation{
+		File:        filename,
 		Name:        name,
 		Parents:     make(MutationSet),
 		Children:    make(MutationSet),
@@ -267,6 +269,7 @@ func first(args ...string) string {
 var (
 	dmutSchema   = first(os.Getenv("DMUT_SCHEMA"), "dmut")
 	DmutMutation = NewMutation(
+		"--base--",
 		"dmut.base",
 		nil,
 		nil,

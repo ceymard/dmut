@@ -3,6 +3,7 @@ package mutations
 import (
 	"fmt"
 	"os"
+	"path"
 
 	dmutparser "github.com/ceymard/dmut/parser"
 	"github.com/flosch/pongo2/v4"
@@ -30,12 +31,26 @@ func GetMutationsInFile(filename string, set *MutationSet) error {
 		return fmt.Errorf("in %s, %w", filename, err)
 	}
 
+	for _, incl := range root.Includes {
+		if incl.Path == nil {
+			continue
+		}
+		var dirname = path.Dir(filename)
+		var npath = path.Join(dirname, (*incl.Path)[1:len(*incl.Path)-1])
+		if e := GetMutationsInFile(npath, set); e != nil {
+			return e
+		}
+	}
+
 	if root.Decls != nil {
-		for _, astmut := range *root.Decls {
-			var mut = NewMutation(*astmut.Name, astmut.DependsOn, nil)
+		for _, astmut := range root.Decls {
+			var mut = NewMutation(filename, *astmut.Name, astmut.DependsOn, nil)
 			for _, stmt := range *astmut.Statements {
 				mut.AddDown(stmt.Down())
 				mut.AddUp(stmt.Up(contents))
+			}
+			if om, ok := (*set)[mut.Name]; ok {
+				return fmt.Errorf("in %s, mutation '%s' was already defined in '%s'", filename, mut.Name, om.File)
 			}
 			(*set)[mut.Name] = mut
 		}
@@ -61,7 +76,7 @@ func GetMutationMapFromFile(filename string) (*MutationSet, error) {
 			for _, dep := range *mut.DependsOn {
 				parent := set[dep]
 				if parent == nil {
-					return nil, errors.Errorf("mutation '%s' requests an inexistent mutation '%s'", mut.Name, dep)
+					return nil, errors.Errorf("in '%s', mutation '%s' requests an inexistent mutation '%s'", mut.File, mut.Name, dep)
 				}
 				// FIXME should probably detect cycles here ?
 				mut.AddParent(parent)
