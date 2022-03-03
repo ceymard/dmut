@@ -292,5 +292,22 @@ var (
 		`, dmutSchema),
 	)
 
-	DmutMutations = []*Mutation{DmutMutation}
+	DmutSqliteMutation = NewMutation(
+		"--base--",
+		"dmut.base",
+		nil,
+		nil,
+	).AddDown(`DROP TABLE _dmut_mutations`).AddUp(`
+		CREATE TABLE _dmut_mutations (
+			"hash" TEXT PRIMARY KEY NOT NULL,
+			"name" TEXT NOT NULL,
+			"up" JSON NOT NULL,
+			"down" JSON NOT NULL,
+			"children" JSON NOT NULL,
+			"date_applied" TIMESTAMP DEFAULT NOW()
+		);
+	`)
+
+	DmutMutations       = []*Mutation{DmutMutation}
+	DmutSqliteMutations = []*Mutation{DmutSqliteMutation}
 )

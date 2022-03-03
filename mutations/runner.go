@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 
-	"github.com/jackc/pgx/v4"
 	"github.com/logrusorgru/aurora"
 )
 
@@ -14,15 +14,19 @@ var (
 	au = aurora.NewAurora(true)
 )
 
-// TestMutations test the mutations by doing, for each mutation in the set ;
-//   remove them and apply the removal, check that there are no errors by doing so...
-func TestMutations() {
-
+type Runner interface {
+	GetDBMutations() ([]*DbMutation, error)
+	SavePoint(name string) error
+	// if name == "" then it's the total rollback
+	RollbackToSavepoint(name string) error
+	Commit() error
+	DeleteMutation(name string) error
+	SaveMutation(m *Mutation) error
+	Exec(sql string) error
 }
 
-func execCheck(db *pgx.Conn, sql string) error {
-	_, err := db.Exec(ctx(), sql)
-	if err != nil {
+func execCheck(runner Runner, sql string) error {
+	if err := runner.Exec(sql); err != nil {
 		return fmt.Errorf("error in statement: %s %w", au.Gray(12-1, sql), err)
 	}
 	return nil
@@ -71,45 +75,6 @@ type DbMutation struct {
 	Up       []string
 	Down     []string
 	Children []string
-}
-
-// get the mutations already in the database
-func getDbMutations(db *pgx.Conn) ([]*DbMutation, error) {
-	var (
-		res    = make([]*DbMutation, 0)
-		rows   pgx.Rows
-		exists bool
-		err    error
-	)
-
-	row := db.QueryRow(ctx(), `SELECT EXISTS (
-		SELECT FROM information_schema.tables
-		WHERE  table_schema = 'dmut'
-		AND    table_name   = 'mutations'
-		);
- `)
-	if err = row.Scan(&exists); err != nil {
-		return nil, err
-	}
-	if !exists {
-		return res, nil
-	}
-
-	// First, extract a list of already active mutations and check if they have to be downed because they're
-	// either inexistant or their hash changed.
-	if rows, err = db.Query(ctx(), `select row_to_json(m) from dmut.mutations m order by date_applied`); err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var dbmut DbMutation
-		if err = rows.Scan(&dbmut); err != nil {
-			return nil, err
-		}
-		res = append(res, &dbmut)
-	}
-
-	return res, nil
 }
 
 // Compute what mutations should be downed from the database and which of the new set do actually have to be up.
@@ -176,14 +141,14 @@ func computeMutationDifference(dbmuts []*DbMutation, newmuts []*Mutation) (to_do
 // RunMutations runs the mutations in the database
 //
 //
-func runMutations(db *pgx.Conn, mutations Mutations, testing bool) (bool, error) {
+func runMutations(runner Runner, mutations Mutations, testing bool) (bool, error) {
 	var (
 		dbmuts []*DbMutation
 		err    error
 	)
 
 	// Start by downing the mutations that should be removed before being re-applied.
-	if dbmuts, err = getDbMutations(db); err != nil {
+	if dbmuts, err = runner.GetDBMutations(); err != nil {
 		return false, fmt.Errorf("error when getting mutations: %w", err)
 	}
 
@@ -200,12 +165,12 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) (bool, error)
 		}
 
 		for _, down := range to_d.Down {
-			if err = execCheck(db, down); err != nil {
+			if err = execCheck(runner, down); err != nil {
 				return false, fmt.Errorf("while downing mutation %s : %w", to_d.Name, err)
 			}
 		}
 
-		if _, err = db.Exec(ctx(), `DELETE FROM dmut.mutations WHERE name = $1`, to_d.Name); err != nil {
+		if err = runner.DeleteMutation(to_d.Name); err != nil {
 			return false, fmt.Errorf("while downing mutation %s : %w", to_d.Name, err)
 		}
 	}
@@ -217,22 +182,14 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) (bool, error)
 		}
 
 		for _, up := range m.Up {
-			if err = execCheck(db, up); err != nil {
+			if err = execCheck(runner, up); err != nil {
 				return false, fmt.Errorf("while running mutation %s in '%s': %w", m.Name, m.File, err)
 			}
 		}
 
 		// If we got here, insert into dmut base table
-		if _, err = db.Exec(
-			ctx(),
-			`INSERT INTO dmut.mutations(hash, name, up, down, children) VALUES ($1, $2, $3, $4, $5)`,
-			m.Hash,
-			m.Name,
-			m.Up,
-			m.Down,
-			m.GetChildrenNames(),
-		); err != nil {
-			return false, fmt.Errorf("can't insert into mutations table %w", err)
+		if err = runner.SaveMutation(m); err != nil {
+			return false, err
 		}
 	}
 
@@ -241,29 +198,28 @@ func runMutations(db *pgx.Conn, mutations Mutations, testing bool) (bool, error)
 	return true, nil
 }
 
-func RunMutations(host string, muts Mutations) error {
+func RunMutations(runner Runner, muts Mutations) error {
 	var (
-		db          *pgx.Conn
+		// db          *pgx.Conn
 		err         error
 		should_test bool
 	)
 
-	if db, err = pgx.Connect(ctx(), host); err != nil {
-		return err
-	}
-
-	db.Begin(ctx())
+	runner.SavePoint("")
+	// db.Begin(ctx())
 	defer func() {
 		if err != nil {
 			log.Print(`Rollbacking and canceling`)
-			db.Exec(ctx(), `ROLLBACK`)
+			runner.RollbackToSavepoint("")
+			// db.Exec(ctx(), `ROLLBACK`)
 		} else {
 			log.Print("committing changes")
-			db.Exec(ctx(), `COMMIT`)
+			runner.Commit()
+			// db.Exec(ctx(), `COMMIT`)
 		}
 	}()
 
-	if should_test, err = runMutations(db, muts, false); err != nil {
+	if should_test, err = runMutations(runner, muts, false); err != nil {
 		return err
 	}
 
@@ -279,15 +235,15 @@ func RunMutations(host string, muts Mutations) error {
 		}
 
 		var testm = MutationsWithout(muts, m.Name)
-		db.Exec(ctx(), `SAVEPOINT testdmut`)
+		runner.SavePoint("testdmut")
 		// Test removing the mutation
 		// This is incorrect ; mutation removal should be tested in all orders...
-		_, err = runMutations(db, testm, true)
+		_, err = runMutations(runner, testm, true)
 		if err == nil {
 			// Now test re-running it
-			_, err = runMutations(db, muts, true)
+			_, err = runMutations(runner, muts, true)
 		}
-		db.Exec(ctx(), `ROLLBACK TO SAVEPOINT testdmut`)
+		runner.RollbackToSavepoint("testdmut")
 		if err != nil {
 			err = fmt.Errorf("while testing mutations: %w", err)
 			return err
@@ -331,10 +287,20 @@ func reorderDbMutations(muts []*DbMutation) []*DbMutation {
 	return res
 }
 
+var reIsPostgres = regexp.MustCompilePOSIX(`^(postgres|pg)://`)
+
+func isPgUrl(host string) bool {
+	return true
+}
+
 // ParseAndRunMutations parses mutations from one or several files
 // and attemts to run them on a host
-func ParseAndRunMutations(pghost string, files ...string) error {
+func ParseAndRunMutations(host string, files ...string) error {
 	// expr := &TopLevel{}
+	var (
+		runner Runner
+	)
+
 	for _, filename := range files {
 
 		mp, err := GetMutationMapFromFile(filename)
@@ -344,11 +310,22 @@ func ParseAndRunMutations(pghost string, files ...string) error {
 		}
 
 		var mutsOrig Mutations = (*mp).GetInOrder()
-		var muts = append([]*Mutation{}, DmutMutations...)
+		var muts []*Mutation
+		if reIsPostgres.Match([]byte(host)) {
+			muts = append([]*Mutation{}, DmutMutations...)
+			if runner, err = NewPgRunner(host); err != nil {
+				return err
+			}
+		} else {
+			muts = append([]*Mutation{}, DmutSqliteMutations...)
+			if runner, err = NewSqliteRunner(host); err != nil {
+				return err
+			}
+		}
 		muts = append(muts, mutsOrig...)
 
 		// now that we have
-		if err = RunMutations(pghost, muts); err != nil {
+		if err = RunMutations(runner, muts); err != nil {
 			return err
 		}
 	}
