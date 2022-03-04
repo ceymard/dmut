@@ -2,10 +2,22 @@ package mutations
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	sqlite3 "github.com/mattn/go-sqlite3"
 )
+
+func toJsonArray(s []string) string {
+	res, _ := json.Marshal(s)
+	return string(res)
+}
+
+func fromJsonArray(s string) []string {
+	var res []string
+	_ = json.Unmarshal([]byte(s), &res)
+	return res
+}
 
 func testCompileSqlite() {
 	// The only use of this function is to make sure we implement the interface correctly
@@ -35,9 +47,9 @@ func (r *SqliteRunner) SaveMutation(m *Mutation) error {
 		`INSERT INTO _dmut_mutations(hash, name, up, down, children) VALUES ($1, $2, $3, $4, $5)`,
 		m.Hash,
 		m.Name,
-		m.Up,
-		m.Down,
-		m.GetChildrenNames(),
+		toJsonArray(m.Up),
+		toJsonArray(m.Down),
+		toJsonArray(m.GetChildrenNames()),
 	); err != nil {
 		return fmt.Errorf("can't insert into mutations table %w", err)
 	}
@@ -45,7 +57,7 @@ func (r *SqliteRunner) SaveMutation(m *Mutation) error {
 }
 
 func (r *SqliteRunner) DeleteMutation(name string) error {
-	_, err := r.db.Exec(`DELETE FROM dmut.mutations WHERE name = $1`, name)
+	_, err := r.db.Exec(`DELETE FROM _dmut_mutations WHERE name = $1`, name)
 	return err
 }
 
@@ -81,12 +93,7 @@ func (r *SqliteRunner) GetDBMutations() ([]*DbMutation, error) {
 		err    error
 	)
 
-	row := db.QueryRow(`SELECT EXISTS (
-		SELECT FROM information_schema.tables
-		WHERE  table_schema = 'dmut'
-		AND    table_name   = 'mutations'
-		);
- `)
+	row := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='_dmut_mutations';`)
 	if err = row.Scan(&exists); err != nil {
 		return nil, err
 	}
@@ -96,15 +103,44 @@ func (r *SqliteRunner) GetDBMutations() ([]*DbMutation, error) {
 
 	// First, extract a list of already active mutations and check if they have to be downed because they're
 	// either inexistant or their hash changed.
-	if rows, err = db.Query(`select row_to_json(m) from dmut.mutations m order by date_applied`); err != nil {
+	if rows, err = db.Query(`
+		select
+			json_object(
+				'hash', hash,
+				'name', name,
+				'up', up,
+				'down', down,
+				'children', children
+			) as json
+		from _dmut_mutations m order by date_applied`); err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
+	type intermediaryMut struct {
+		Hash     string `json:"hash"`
+		Name     string `json:"name"`
+		Up       string `json:"up"`
+		Down     string `json:"down"`
+		Children string `json:"children"`
+	}
+
 	for rows.Next() {
+		var inter intermediaryMut
+		var jint string
 		var dbmut DbMutation
-		if err = rows.Scan(&dbmut); err != nil {
+		// besoin peut être d'une string pour lire le json avant
+		if err = rows.Scan(&jint); err != nil {
 			return nil, err
 		}
+		if err = json.Unmarshal([]byte(jint), &inter); err != nil {
+			return nil, err
+		}
+		dbmut.Name = inter.Name
+		dbmut.Hash = inter.Hash
+		dbmut.Children = fromJsonArray(inter.Children)
+		dbmut.Up = fromJsonArray(inter.Up)
+		dbmut.Down = fromJsonArray(inter.Down)
 		res = append(res, &dbmut)
 	}
 

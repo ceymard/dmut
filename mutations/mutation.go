@@ -304,7 +304,7 @@ var (
 			"up" JSON NOT NULL,
 			"down" JSON NOT NULL,
 			"children" JSON NOT NULL,
-			"date_applied" TIMESTAMP DEFAULT NOW()
+			"date_applied" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		);
 	`)
 
