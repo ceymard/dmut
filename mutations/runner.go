@@ -205,7 +205,9 @@ func RunMutations(runner Runner, muts Mutations) error {
 		should_test bool
 	)
 
-	runner.SavePoint("")
+	if err := runner.SavePoint(""); err != nil {
+		return err
+	}
 	// db.Begin(ctx())
 	defer func() {
 		if err != nil {

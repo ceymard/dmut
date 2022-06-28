@@ -50,6 +50,12 @@ func (r *PgRunner) Commit() error {
 }
 
 func (r *PgRunner) SavePoint(name string) error {
+	if name == "" {
+		if err := r.Exec("BEGIN"); err != nil {
+			return err
+		}
+		return nil
+	}
 	return r.Exec(`SAVEPOINT ` + name)
 }
 
