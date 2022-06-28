@@ -73,8 +73,9 @@ type CreateFunctionStatement struct {
 }
 
 type CreateIndexStatement struct {
-	Name  *string `parser:"  'index' @SqlId 'on'  "`
-	Table *string `parser:" @SqlId  (!(';'))+  "`
+	Unique *string `parser:"  (@'unique')? 'index'"`
+	Name   *string `parser:"  @SqlId 'on'  "`
+	Table  *string `parser:" @SqlId  (!(';'))+  "`
 }
 
 type MultilineString struct {
