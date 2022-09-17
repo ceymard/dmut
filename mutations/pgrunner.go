@@ -3,6 +3,7 @@ package mutations
 import (
 	"fmt"
 
+	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 )
 
@@ -10,6 +11,14 @@ func testCompile() {
 	// The only use of this function is to make sure we implement the interface correctly
 	var tst = func(r Runner) {}
 	tst(&PgRunner{})
+}
+
+func wrapPgError(err error) error {
+	if pgerr, ok := err.(*pgconn.PgError); ok {
+		var details = pgerr.Detail
+		return fmt.Errorf("%s (original error: %w)", details, err)
+	}
+	return err
 }
 
 type PgRunner struct {
@@ -34,25 +43,25 @@ func (r *PgRunner) SaveMutation(m *Mutation) error {
 		m.Down,
 		m.GetChildrenNames(),
 	); err != nil {
-		return fmt.Errorf("can't insert into mutations table %w", err)
+		return fmt.Errorf("can't insert into mutations table %w", wrapPgError(err))
 	}
 	return nil
 }
 
 func (r *PgRunner) DeleteMutation(name string) error {
 	_, err := r.conn.Exec(ctx(), `DELETE FROM dmut.mutations WHERE name = $1`, name)
-	return err
+	return wrapPgError(err)
 }
 
 func (r *PgRunner) Commit() error {
 	_, err := r.conn.Exec(ctx(), `COMMIT`)
-	return err
+	return wrapPgError(err)
 }
 
 func (r *PgRunner) SavePoint(name string) error {
 	if name == "" {
 		if err := r.Exec("BEGIN"); err != nil {
-			return err
+			return wrapPgError(err)
 		}
 		return nil
 	}
@@ -69,7 +78,7 @@ func (r *PgRunner) RollbackToSavepoint(name string) error {
 
 func (r *PgRunner) Exec(sql string) error {
 	_, err := r.conn.Exec(ctx(), sql)
-	return err
+	return wrapPgError(err)
 }
 
 // get the mutations already in the database
@@ -98,13 +107,13 @@ func (r *PgRunner) GetDBMutations() ([]*DbMutation, error) {
 	// First, extract a list of already active mutations and check if they have to be downed because they're
 	// either inexistant or their hash changed.
 	if rows, err = db.Query(ctx(), `select row_to_json(m) from dmut.mutations m order by date_applied`); err != nil {
-		return nil, err
+		return nil, wrapPgError(err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var dbmut DbMutation
 		if err = rows.Scan(&dbmut); err != nil {
-			return nil, err
+			return nil, wrapPgError(err)
 		}
 		res = append(res, &dbmut)
 	}

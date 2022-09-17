@@ -27,7 +27,7 @@ type Runner interface {
 
 func execCheck(runner Runner, sql string) error {
 	if err := runner.Exec(sql); err != nil {
-		return fmt.Errorf("error in statement: %s %w", au.Gray(12-1, sql), err)
+		return fmt.Errorf("error in statement: %s %w", au.Gray(12, sql), err)
 	}
 	return nil
 }
@@ -158,6 +158,7 @@ func runMutations(runner Runner, mutations Mutations, testing bool) (bool, error
 		return false, nil
 	}
 
+	fmt.Print("------\n")
 	// Down the mutations that have to go
 	for _, to_d := range to_down {
 		if !testing {
@@ -165,13 +166,14 @@ func runMutations(runner Runner, mutations Mutations, testing bool) (bool, error
 		}
 
 		for _, down := range to_d.Down {
+			// fmt.Print(au.Gray(4, down), "\n")
 			if err = execCheck(runner, down); err != nil {
 				return false, fmt.Errorf("while downing mutation %s : %w", to_d.Name, err)
 			}
 		}
 
 		if err = runner.DeleteMutation(to_d.Name); err != nil {
-			return false, fmt.Errorf("while downing mutation %s : %w", to_d.Name, err)
+			return false, fmt.Errorf("while removing mutation from dmut %s : %w", to_d.Name, err)
 		}
 	}
 

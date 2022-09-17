@@ -6,6 +6,7 @@ require (
 	github.com/alecthomas/kong v0.2.11
 	github.com/alecthomas/participle v0.6.1-0.20200930115232-37cfcfa20b16
 	github.com/flosch/pongo2/v4 v4.0.0
+	github.com/jackc/pgconn v1.7.0 // indirect
 	github.com/jackc/pgx/v4 v4.9.0
 	github.com/k0kubun/colorstring v0.0.0-20150214042306-9440f1994b88 // indirect
 	github.com/k0kubun/pp v3.0.1+incompatible
