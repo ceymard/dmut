@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"strings"
 
@@ -143,8 +144,9 @@ func computeMutationDifference(dbmuts []*DbMutation, newmuts []*Mutation) (to_do
 //
 func runMutations(runner Runner, mutations Mutations, testing bool) (bool, error) {
 	var (
-		dbmuts []*DbMutation
-		err    error
+		dbmuts   []*DbMutation
+		err      error
+		show_all = os.Getenv("DMUT_SHOW_ALL")
 	)
 
 	// Start by downing the mutations that should be removed before being re-applied.
@@ -158,10 +160,9 @@ func runMutations(runner Runner, mutations Mutations, testing bool) (bool, error
 		return false, nil
 	}
 
-	fmt.Print("------\n")
 	// Down the mutations that have to go
 	for _, to_d := range to_down {
-		if !testing {
+		if show_all != "" || !testing {
 			_, _ = fmt.Print(au.Bold(au.Red(" < ")), to_d.Name, "\n")
 		}
 
@@ -179,7 +180,7 @@ func runMutations(runner Runner, mutations Mutations, testing bool) (bool, error
 
 	// Now run the mutations that should be ran.
 	for _, m := range to_up {
-		if !testing {
+		if show_all != "" || !testing {
 			_, _ = fmt.Printf(" %s %s\n", au.Green(`*`), m.Name)
 		}
 
