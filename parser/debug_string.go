@@ -22,7 +22,11 @@ func (m *MutationDecl) String() string {
 		out += " depends on "
 		strs := make([]string, 0, 1)
 		for _, d := range *m.DependsOn {
-			strs = append(strs, d)
+			name := d.Name
+			if d.Starred != nil {
+				name += ".*"
+			}
+			strs = append(strs, d.Name)
 		}
 		out += strings.Join(strs, ", ")
 	}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"regexp"
+	"strings"
 
 	dmutparser "github.com/ceymard/dmut/parser"
 	"github.com/flosch/pongo2/v4"
@@ -44,7 +46,17 @@ func GetMutationsInFile(filename string, set *MutationSet) error {
 
 	if root.Decls != nil {
 		for _, astmut := range root.Decls {
-			var mut = NewMutation(filename, *astmut.Name, astmut.DependsOn, nil)
+			var dependson []string
+			if astmut.DependsOn != nil {
+				for _, dp := range *astmut.DependsOn {
+					if dp.Starred != nil {
+						dependson = append(dependson, dp.Name+".*")
+					} else {
+						dependson = append(dependson, dp.Name)
+					}
+				}
+			}
+			var mut = NewMutation(filename, *astmut.Name, dependson, nil)
 			for _, stmt := range *astmut.Statements {
 				mut.AddDown(stmt.Down())
 				mut.AddUp(stmt.Up(contents))
@@ -73,16 +85,49 @@ func GetMutationMapFromFile(filename string) (*MutationSet, error) {
 	// Now, apply the parent / child logic
 	for _, mut := range set {
 		if mut.DependsOn != nil {
-			for _, dep := range *mut.DependsOn {
-				parent := set[dep]
-				if parent == nil {
-					return nil, errors.Errorf("in '%s', mutation '%s' requests an inexistent mutation '%s'", mut.File, mut.Name, dep)
+			for _, dep := range mut.DependsOn {
+				if strings.Contains(dep, "*") {
+					// Build the regexp that will look for mutations
+					reg, err := regexp.Compile("^" + dep + "$")
+
+					if err != nil {
+						return nil, errors.Errorf("in '%s', mutation '%s' uses an incorrect dependency '%s'", mut.File, mut.Name, dep)
+					}
+
+					var found = false
+
+					for _, potential_dep := range set {
+						// Do not add self as a mutation
+						if mut == potential_dep {
+							continue
+						}
+
+						if reg.MatchString(potential_dep.Name) {
+							found = true
+							// log.Print("adding ", potential_dep.Name, " to ", mut.Name)
+							mut.AddParent(potential_dep)
+						}
+					}
+
+					if !found {
+						return nil, errors.Errorf("in '%s', mutation '%s' wants to depend on '%s', but no mutations match that name", mut.File, mut.Name, dep)
+					}
+
+				} else {
+					parent := set[dep]
+
+					if parent == nil {
+						return nil, errors.Errorf("in '%s', mutation '%s' requests an inexistent mutation '%s'", mut.File, mut.Name, dep)
+					}
+
+					mut.AddParent(parent)
 				}
-				// FIXME should probably detect cycles here ?
-				mut.AddParent(parent)
+
 			}
 		}
 	}
+
+	// FIXME should probably detect cycles here ?
 
 	for _, mut := range set {
 		_, err = mut.ComputeHash()

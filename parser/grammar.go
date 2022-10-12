@@ -21,10 +21,15 @@ type Include struct {
 	Path *string `parser:"   'include' @String ';'?   "`
 }
 
+type MutationReference struct {
+	Name    string  `parser:"@SqlId"`
+	Starred *string `parser:"@DotStar?"`
+}
+
 type MutationDecl struct {
-	Name       *string         `parser:"   'mutation' @SqlId   "`
-	DependsOn  *[]string       `parser:"   ('depends' 'on' @SqlId (',' @SqlId)*)?   "`
-	Statements *[]ASTStatement `parser:"   (@@)*   "`
+	Name       *string              `parser:"   'mutation' @SqlId   "`
+	DependsOn  *[]MutationReference `parser:"   ('depends' 'on' @@ (',' @@)* )?   "`
+	Statements *[]ASTStatement      `parser:"   (@@)*   "`
 }
 
 type ASTStatement struct {

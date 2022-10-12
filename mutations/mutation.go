@@ -99,7 +99,7 @@ type Mutation struct {
 	Name        string
 	Parents     MutationSet
 	Children    MutationSet
-	DependsOn   *[]string
+	DependsOn   []string
 	Up          []string
 	Down        []string
 	HashLock    *[]byte
@@ -121,7 +121,7 @@ func (ms Mutations) Less(i, j int) bool {
 	return ms[i].Name < ms[j].Name
 }
 
-func NewMutation(filename string, name string, dependsOn *[]string, hashLock *[]byte) *Mutation {
+func NewMutation(filename string, name string, dependsOn []string, hashLock *[]byte) *Mutation {
 	return &Mutation{
 		File:        filename,
 		Name:        name,
@@ -201,6 +201,9 @@ func (mut *Mutation) ComputeHash() (string, error) {
 }
 
 func (mut *Mutation) AddParent(parent *Mutation) *Mutation {
+	if _, ok := mut.Parents[parent.Name]; ok {
+		return mut
+	}
 	mut.hashIsStale = true
 	mut.Parents.Add(parent)
 	parent.Children.Add(mut)
