@@ -218,8 +218,12 @@ func RunMutations(runner Runner, muts Mutations) error {
 			runner.RollbackToSavepoint("")
 			// db.Exec(ctx(), `ROLLBACK`)
 		} else {
-			log.Print("committing changes")
-			runner.Commit()
+			if len(muts) > 0 {
+				log.Print("committing changes")
+				runner.Commit()
+			} else {
+				log.Print("no changes, not doing anything")
+			}
 			// db.Exec(ctx(), `COMMIT`)
 		}
 	}()

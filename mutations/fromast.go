@@ -50,7 +50,7 @@ func GetMutationsInFile(filename string, set *MutationSet) error {
 			if astmut.DependsOn != nil {
 				for _, dp := range *astmut.DependsOn {
 					if dp.Starred != nil {
-						dependson = append(dependson, dp.Name+".*")
+						dependson = append(dependson, dp.Name+"(\\..*)?")
 					} else {
 						dependson = append(dependson, dp.Name)
 					}
