@@ -97,12 +97,11 @@ func GetMutationMapFromFile(filename string) (*MutationSet, error) {
 					var found = false
 
 					for _, potential_dep := range set {
-						// Do not add self as a mutation
-						if mut == potential_dep {
-							continue
-						}
 
 						if reg.MatchString(potential_dep.Name) {
+							if mut == potential_dep {
+								return nil, errors.Errorf("mutation '%s' depends on wildcard mutation that include itsef", mut.Name)
+							}
 							found = true
 							// log.Print("adding ", potential_dep.Name, " to ", mut.Name)
 							mut.AddParent(potential_dep)
