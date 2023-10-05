@@ -57,10 +57,15 @@ func GetMutationsInFile(filename string, set *MutationSet) error {
 				}
 			}
 			var mut = NewMutation(filename, *astmut.Name, dependson, nil)
-			for _, stmt := range *astmut.Statements {
-				mut.AddDown(stmt.Down())
-				mut.AddUp(stmt.Up(contents))
-			}
+			if astmut.Statements != nil {
+				for _, stmt := range *astmut.Statements {
+					mut.AddDown(stmt.Down())
+					mut.AddUp(stmt.Up(contents))
+				}
+			} 
+			// else {
+				// return fmt.Errorf("in %s, mutation '%s' has no statements", filename, mut.Name, om.File)
+			// }
 			if om, ok := (*set)[mut.Name]; ok {
 				return fmt.Errorf("in %s, mutation '%s' was already defined in '%s'", filename, mut.Name, om.File)
 			}

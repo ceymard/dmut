@@ -35,14 +35,20 @@ type MutationDecl struct {
 type ASTStatement struct {
 	// StartPos        lexer.Position
 	NeedFullMatch
-	UpOrDownStmt    *UpOrDownStmt    `parser:"   @@   "`
-	CreateStatement *CreateStatement `parser:" | @@   "`
-	RlsStatement    *RlsStatement    `parser:" | @@   "`
-	GrantStatement  *GrantStatement  `parser:" | @@   "`
+	UpOrDownStmt     *UpOrDownStmt     `parser:"   @@   "`
+	CreateStatement  *CreateStatement  `parser:" | @@   "`
+	RlsStatement     *RlsStatement     `parser:" | @@   "`
+	GrantStatement   *GrantStatement   `parser:" | @@   "`
+	CommentStatement *CommentStatement `parser:" | @@   "`
 	// EndPos          lexer.Position
 }
 
-/// Auto grant
+type CommentStatement struct {
+	On   *[]string `parser:" @'comment' @'on' (!'is' @SqlId)+ "`
+	Name *string   `parser:"  @SqlId  "`
+}
+
+// / Auto grant
 type GrantStatement struct {
 	Perms *[]string `parser:"  'grant' @( !'on' )+ 'on'  "`
 	Kind  *[]string `parser:"  @( 'table' | 'materialized'? 'view' | 'schema' | 'foreign' 'server' | 'tablespace' | 'foreign' 'data' 'wrapper' | 'database' | 'sequence' | 'function')?  "`
