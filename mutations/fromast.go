@@ -62,9 +62,9 @@ func GetMutationsInFile(filename string, set *MutationSet) error {
 					mut.AddDown(stmt.Down())
 					mut.AddUp(stmt.Up(contents))
 				}
-			} 
+			}
 			// else {
-				// return fmt.Errorf("in %s, mutation '%s' has no statements", filename, mut.Name, om.File)
+			// return fmt.Errorf("in %s, mutation '%s' has no statements", filename, mut.Name, om.File)
 			// }
 			if om, ok := (*set)[mut.Name]; ok {
 				return fmt.Errorf("in %s, mutation '%s' was already defined in '%s'", filename, mut.Name, om.File)
@@ -89,6 +89,27 @@ func GetMutationMapFromFile(filename string) (*MutationSet, error) {
 
 	// Now, apply the parent / child logic
 	for _, mut := range set {
+		if strings.Contains(mut.Name, ".") {
+
+			var parts = strings.Split(mut.Name, ".")
+			// log.Println(mut.Name, "->", parts)
+			var slic = parts[0 : len(parts)-1] // Only keep until our parent
+			var iter = ""
+
+			for _, pt := range slic {
+				if iter != "" {
+					iter += "."
+				}
+
+				iter += pt
+
+				if parent, ok := set[iter]; ok {
+					// log.Println(mut.Name, " << ", parent.Name)
+					mut.AddParent(parent)
+				}
+			}
+		}
+
 		if mut.DependsOn != nil {
 			for _, dep := range mut.DependsOn {
 				if strings.Contains(dep, "*") {
