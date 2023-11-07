@@ -140,8 +140,6 @@ func computeMutationDifference(dbmuts []*DbMutation, newmuts []*Mutation) (to_do
 }
 
 // RunMutations runs the mutations in the database
-//
-//
 func runMutations(runner Runner, mutations Mutations, testing bool) (bool, error) {
 	var (
 		dbmuts   []*DbMutation
@@ -218,13 +216,12 @@ func RunMutations(runner Runner, muts Mutations) error {
 			runner.RollbackToSavepoint("")
 			// db.Exec(ctx(), `ROLLBACK`)
 		} else {
-			if len(muts) > 0 {
-				log.Print("committing changes")
+			if len(muts) > 0 && should_test {
+				log.Print("dmut: committing changes ")
 				runner.Commit()
 			} else {
-				log.Print("no changes, not doing anything")
+				log.Print("dmut: no changes, not doing anything")
 			}
-			// db.Exec(ctx(), `COMMIT`)
 		}
 	}()
 
