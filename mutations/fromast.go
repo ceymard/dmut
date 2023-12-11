@@ -104,8 +104,9 @@ func GetMutationMapFromFile(filename string) (*MutationSet, error) {
 				iter += pt
 
 				if parent, ok := set[iter]; ok {
-					// log.Println(mut.Name, " << ", parent.Name)
-					mut.AddParent(parent)
+					if _, err := mut.AddParent(parent); err != nil {
+						return nil, err
+					}
 				}
 			}
 		}
@@ -129,8 +130,10 @@ func GetMutationMapFromFile(filename string) (*MutationSet, error) {
 								return nil, errors.Errorf("mutation '%s' depends on wildcard mutation that include itsef", mut.Name)
 							}
 							found = true
-							// log.Print("adding ", potential_dep.Name, " to ", mut.Name)
-							mut.AddParent(potential_dep)
+
+							if _, err := mut.AddParent(potential_dep); err != nil {
+								return nil, err
+							}
 						}
 					}
 
@@ -145,7 +148,9 @@ func GetMutationMapFromFile(filename string) (*MutationSet, error) {
 						return nil, errors.Errorf("in '%s', mutation '%s' requests an inexistent mutation '%s'", mut.File, mut.Name, dep)
 					}
 
-					mut.AddParent(parent)
+					if _, err := mut.AddParent(parent); err != nil {
+						return nil, err
+					}
 				}
 
 			}

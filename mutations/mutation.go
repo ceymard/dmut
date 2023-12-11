@@ -11,15 +11,16 @@ import (
 	"strings"
 
 	dmutparser "github.com/ceymard/dmut/parser"
+	"github.com/pkg/errors"
 )
 
-//NewDigestBuffer returns a new DigestBuffer
+// NewDigestBuffer returns a new DigestBuffer
 func NewDigestBuffer(bf []byte) *DigestBuffer {
 	var buf = bytes.NewBuffer(bf)
 	return &DigestBuffer{*buf}
 }
 
-//DigestBuffer is just a wrapper for bytes.Buffer
+// DigestBuffer is just a wrapper for bytes.Buffer
 type DigestBuffer struct {
 	bytes.Buffer
 }
@@ -45,7 +46,7 @@ func (dg *DigestBuffer) AddStatement(stmt string) error {
 	return nil
 }
 
-//Digest computes the SHA256 sum of what was written so far
+// Digest computes the SHA256 sum of what was written so far
 func (dg *DigestBuffer) Digest() []byte {
 	var res = sha256.Sum256(dg.Bytes())
 	return res[:]
@@ -200,14 +201,43 @@ func (mut *Mutation) ComputeHash() (string, error) {
 	return mut.Hash, nil
 }
 
-func (mut *Mutation) AddParent(parent *Mutation) *Mutation {
-	if _, ok := mut.Parents[parent.Name]; ok {
-		return mut
+// CheckParentCycle replies with true if the potential parent would create a circular reference
+func (mut *Mutation) CheckParentCycle(potential_parent *Mutation) bool {
+	var visited = make(map[*Mutation]struct{})
+	var found = false
+	var visit func(mt *Mutation)
+
+	visit = func(mt *Mutation) {
+		if _, ok := visited[mt]; ok {
+			return
+		}
+		if mt == potential_parent {
+			found = true
+		}
+		visited[mt] = struct{}{}
+		for _, chld := range mut.Children {
+			visit(chld)
+		}
 	}
+
+	visit(mut)
+
+	return found
+}
+
+func (mut *Mutation) AddParent(parent *Mutation) (*Mutation, error) {
+	if _, ok := mut.Parents[parent.Name]; ok {
+		return mut, nil
+	}
+
+	if mut.CheckParentCycle(parent) {
+		return nil, errors.Errorf("in '%s', mutation '%s' would create a cycle with '%s' as parent", mut.File, mut.Name, parent.Name)
+	}
+
 	mut.hashIsStale = true
 	mut.Parents.Add(parent)
 	parent.Children.Add(mut)
-	return mut
+	return mut, nil
 }
 
 func (mut *Mutation) RemoveParent(parent *Mutation) *Mutation {
