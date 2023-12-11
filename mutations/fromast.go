@@ -89,27 +89,6 @@ func GetMutationMapFromFile(filename string) (*MutationSet, error) {
 
 	// Now, apply the parent / child logic
 	for _, mut := range set {
-		if strings.Contains(mut.Name, ".") {
-
-			var parts = strings.Split(mut.Name, ".")
-			// log.Println(mut.Name, "->", parts)
-			var slic = parts[0 : len(parts)-1] // Only keep until our parent
-			var iter = ""
-
-			for _, pt := range slic {
-				if iter != "" {
-					iter += "."
-				}
-
-				iter += pt
-
-				if parent, ok := set[iter]; ok {
-					if _, err := mut.AddParent(parent); err != nil {
-						return nil, err
-					}
-				}
-			}
-		}
 
 		if mut.DependsOn != nil {
 			for _, dep := range mut.DependsOn {
