@@ -32,8 +32,9 @@ var (
 	_ DownerStatement = &CreateIndexStatement{}
 	_ DownerStatement = &SimpleCreateStatement{}
 	_ DownerStatement = &CreatePolicyOrTriggerStmt{}
-	_ DownerStatement = &GrantStatement{}
 	_ DownerStatement = &CommentStatement{}
+	_ DownerStatement = &GrantStatement{}
+	_ DownerStatement = &GrantToUserStatement{}
 )
 
 type IMigrationStatement interface {
@@ -65,16 +66,41 @@ func (comment *CommentStatement) Down() string {
 	return ""
 }
 
-// / Auto grant
 type GrantStatement struct {
-	Perms *[]string `parser:"  'grant' @( !'on' )+ 'on'  "`
+	Grant   string                 `parser:" 'grant'  ( "`
+	Users   *GrantToUserStatement  `parser:" @@ | "`
+	General *GrantGeneralStatement `parser:" @@ ) "`
+}
+
+func (grant *GrantStatement) Down() string {
+	if grant.Users != nil {
+		return grant.Users.Down()
+	}
+	if grant.General != nil {
+		return grant.General.Down()
+	}
+	return ""
+}
+
+type GrantToUserStatement struct {
+	Role *string  `parser:"  @SqlId  "`
+	To   []string `parser:" 'to' @SqlId (',' @SqlId)* ';'?"`
+}
+
+func (grant *GrantToUserStatement) Down() string {
+	return fmt.Sprintf(`REVOKE %s FROM %s;`, *grant.Role, strings.Join(grant.To, ", "))
+}
+
+// / Auto grant
+type GrantGeneralStatement struct {
+	Perms *[]string `parser:"   @( !'on' )+ 'on'  "`
 	Kind  *[]string `parser:"  @( 'table' | 'materialized'? 'view' | 'schema' | 'foreign' 'server' | 'tablespace' | 'foreign' 'data' 'wrapper' | 'database' | 'sequence' | 'function')?  "`
 	Id    *string   `parser:"  @SqlId  "`
 	To    *string   `parser:" 'to' @SqlId  "`
 	Rest  *[]string `parser:"  ( @!';' )* @';'  "`
 }
 
-func (grant *GrantStatement) Down() string {
+func (grant *GrantGeneralStatement) Down() string {
 	var kind = ""
 	if grant.Kind != nil {
 		kind = strings.Join(*grant.Kind, " ")
@@ -255,6 +281,6 @@ var (
 		participle.Elide("whiteSpace"),
 		participle.Union[AlterTableDownerStmt](&AlterTableEnableRlsStmt{}, &AlterTableAddColumnStmt{}, &AlterTableAlterColumnSetDefaultStmt{}, &AlterTableAddConstraintStmt{}),
 		participle.Union[DownerStatement](&CreateFunctionStatement{}, &CreateIndexStatement{}, &SimpleCreateStatement{}, &CreatePolicyOrTriggerStmt{}, &CommentStatement{}),
-		participle.Union[TopLevelStatement](&AlterTableStmt{}, &CreateStatement{}, &GrantStatement{}, &CommentStatement{}),
+		participle.Union[TopLevelStatement](&AlterTableStmt{}, &CreateStatement{}, &GrantStatement{}, &CommentStatement{}, &GrantToUserStatement{}),
 	)
 )

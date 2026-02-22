@@ -102,7 +102,8 @@ type Mutation struct {
 	DependsOn   []string
 	Up          []string
 	Down        []string
-	HashLock    *[]byte
+	MetaUp      []string
+	MetaDown    []string
 	Hash        string
 	hashIsStale bool
 }
@@ -121,7 +122,7 @@ func (ms Mutations) Less(i, j int) bool {
 	return ms[i].Name < ms[j].Name
 }
 
-func NewMutation(filename string, name string, dependsOn []string, hashLock *[]byte) *Mutation {
+func NewMutation(filename string, name string, dependsOn []string, metaUp []string, metaDown []string) *Mutation {
 	return &Mutation{
 		File:        filename,
 		Name:        name,
@@ -129,8 +130,9 @@ func NewMutation(filename string, name string, dependsOn []string, hashLock *[]b
 		Children:    make(MutationSet),
 		Up:          make([]string, 0, 16),
 		Down:        make([]string, 0, 16),
+		MetaUp:      metaUp,
+		MetaDown:    metaDown,
 		DependsOn:   dependsOn,
-		HashLock:    hashLock,
 		Hash:        "",
 		hashIsStale: true,
 	}
@@ -159,12 +161,6 @@ func (mut *Mutation) GetChildrenNames() []string {
 		res = append(res, m.Name)
 	}
 	return res
-}
-
-func (mut *Mutation) Lock(lock string) *Mutation {
-	var lk = []byte(lock)
-	mut.HashLock = &lk
-	return mut
 }
 
 func (mut *Mutation) ComputeHash() (string, error) {
@@ -305,6 +301,7 @@ var (
 		"dmut.base",
 		nil,
 		nil,
+		nil,
 	).AddDown(
 		fmt.Sprintf(`DROP SCHEMA "%s";`, dmutSchema),
 	).AddUp(
@@ -327,6 +324,7 @@ var (
 	DmutSqliteMutation = NewMutation(
 		"--base--",
 		"dmut.base",
+		nil,
 		nil,
 		nil,
 	).AddDown(`DROP TABLE _dmut_mutations`).AddUp(`

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
@@ -14,32 +16,8 @@ type YamlMigration struct {
 	Name    string          `yaml:"name"`
 	Depends []string        `yaml:"depends"`
 	Sql     []YamlStatement `yaml:"sql"`
-	Perms   []YamlStatement `yaml:"perms"`
+	Meta    []YamlStatement `yaml:"meta"`
 	Roles   []string        `yaml:"roles"`
-}
-
-func (m *YamlMigration) UnmarshalYAML(node ast.Node) error {
-	m.Node = node
-
-	// Check if there was data for the Sql key, but it was just a string instead of an array
-	if node.Type() == ast.StringType {
-		str_node, ok := node.(*ast.StringNode)
-		if !ok {
-			return fmt.Errorf("expected string node, got %T", node)
-		}
-		stmt, err := yamlStatementFromString(str_node.Value)
-		if err != nil {
-			return fmt.Errorf("error parsing yaml statement: %w", err)
-		}
-		m.Sql = []YamlStatement{stmt}
-	}
-
-	// var simpleSql string
-
-	// dec := yaml.NewDecoder(node)
-	// yaml.NodeToValue(node, &m.Sql)
-
-	return nil
 }
 
 type YamlStatement struct {
@@ -51,20 +29,35 @@ type YamlStatement struct {
 func (stm *YamlStatement) UnmarshalYAML(node ast.Node) error {
 	stm.Node = node
 
-	// Check if the current node is a string instead of a mapping with Up and Down
-	if node.Type() == ast.StringType {
-		str_node, ok := node.(*ast.StringNode)
-		if !ok {
-			return fmt.Errorf("expected string node, got %T", node)
-		}
-		stmt, err := yamlStatementFromString(str_node.Value)
+	if node.Type() == ast.StringType || node.Type() == ast.LiteralType {
+		var val string
+		yaml.NodeToValue(node, &val)
+		stmt, err := yamlStatementFromString(val)
 		if err != nil {
 			return fmt.Errorf("error parsing yaml statement: %w", err)
 		}
+		stm.Up = stmt.Up
 		stm.Down = stmt.Down
+		return nil
+	} else if node.Type() == ast.MappingType {
+		map_node, ok := node.(*ast.MappingNode)
+		if !ok {
+			return fmt.Errorf("expected mapping node, got %T", node)
+		}
+		for _, value := range map_node.Values {
+			if !ok {
+				continue
+			}
+			if value.Key.String() == "up" {
+				stm.Up = value.Value.String()
+			} else if value.Key.String() == "down" {
+				stm.Down = value.Value.String()
+			}
+		}
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf("expected string or mapping node, got %T", node)
 }
 
 func yamlStatementFromString(str string) (YamlStatement, error) {
@@ -97,4 +90,56 @@ func readYamlFile(filename string) ([]YamlMigration, error) {
 		res = append(res, ym)
 	}
 	return res, nil
+}
+
+func LoadYamlMutations(paths ...string) ([]YamlMigration, error) {
+	var res []YamlMigration
+	for _, path := range paths {
+		if info, err := os.Stat(path); err != nil {
+			return nil, err
+		} else if info.IsDir() {
+			files, err := os.ReadDir(path)
+			if err != nil {
+				return nil, err
+			}
+			for _, file := range files {
+				if file.IsDir() {
+					continue
+				}
+				if strings.HasPrefix(file.Name(), "_") {
+					continue
+				}
+				muts, err := readYamlFile(filepath.Join(path, file.Name()))
+				if err != nil {
+					return nil, err
+				}
+				res = append(res, muts...)
+			}
+		} else {
+			muts, err := readYamlFile(path)
+			if err != nil {
+				return nil, err
+			}
+			res = append(res, muts...)
+		}
+	}
+	return res, nil
+}
+
+func CollectYamlMutations(muts []YamlMigration, filename string) error {
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	enc := yaml.NewEncoder(f)
+	for _, mut := range muts {
+		if err := enc.Encode(mut); err != nil {
+			return err
+		}
+		if _, err := f.WriteString("---\n"); err != nil {
+			return err
+		}
+	}
+	return nil
 }

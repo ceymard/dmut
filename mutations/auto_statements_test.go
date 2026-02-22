@@ -120,6 +120,11 @@ func TestDownGeneration(t *testing.T) {
 			upSQL:    "GRANT USAGE ON sequence seq TO u;",
 			wantDown: "REVOKE USAGE ON sequence seq FROM u;",
 		},
+		{
+			name:     "GRANT ROLE to other",
+			upSQL:    `GRANT "admin" TO "user1", "user2";`,
+			wantDown: `REVOKE "admin" FROM "user1", "user2";`,
+		},
 		// CommentStatement (no undo)
 		{
 			name:     "COMMENT ON",
