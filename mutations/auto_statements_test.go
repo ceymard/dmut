@@ -75,7 +75,7 @@ func TestDownGeneration(t *testing.T) {
 		// CreateFunctionStatement
 		{
 			name:     "CREATE FUNCTION",
-			upSQL:    "CREATE FUNCTION f(integer) RETURNS int AS $$ SELECT 1 $$ LANGUAGE sql;",
+			upSQL:    "CREATE FUNCTION f(integer) RETURNS int AS $f$ SELECT 1 $f$ LANGUAGE sql;",
 			wantDown: "DROP FUNCTION f (integer);",
 		},
 		{

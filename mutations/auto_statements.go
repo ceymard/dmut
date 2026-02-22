@@ -248,25 +248,6 @@ var (
 		},
 	})
 
-	// SqlLexer is a lexer for sql
-	// SqlLexer = Regexp2Lexer().Token(
-	// 	"_WhiteSpace", `\s+|--[^\n]*\n?|/\*(.|\n)*?\*/`,
-	// ).Token(
-	// 	"Semicolon", `;`,
-	// ).Token(
-	// 	"MultilineString", `\$[a-zA-Z_0-9]*\$`,
-	// ).EndMatch(`\1`).Token(
-	// 	"SqlId", `(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\])(?:\.(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\]))*`,
-	// ).Token(
-	// 	"DotStar", `\.\*`,
-	// ).Token(
-	// 	"Number", `[-+]?\d*\.?\d+([eE][-+]?\d+)?`,
-	// ).Token(
-	// 	"String", `'(?:''|[^'])*'`,
-	// ).Token(
-	// 	"Rest", `::|<>|!=|<=|>=|[-+?!~|^#*/%,.(&)=<>:\[\]]`,
-	// )
-
 	Parser = participle.MustBuild[TopLevelStatement](
 		participle.UseLookahead(2),
 		participle.Lexer(SqlLexer),
