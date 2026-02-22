@@ -303,38 +303,38 @@ func isPgUrl(host string) bool {
 // and attemts to run them on a host
 func ParseAndRunMutations(host string, files ...string) error {
 	// expr := &TopLevel{}
-	var (
-		runner Runner
-	)
+	// var (
+	// 	runner Runner
+	// )
 
-	for _, filename := range files {
+	// for _, filename := range files {
 
-		mp, err := GetMutationMapFromFile(filename)
-		if err != nil {
-			return err
-			// continue
-		}
+	// 	mp, err := GetMutationMapFromFile(filename)
+	// 	if err != nil {
+	// 		return err
+	// 		// continue
+	// 	}
 
-		var mutsOrig Mutations = (*mp).GetInOrder()
-		var muts []*Mutation
-		if reIsPostgres.Match([]byte(host)) {
-			muts = append([]*Mutation{}, DmutMutations...)
-			if runner, err = NewPgRunner(host); err != nil {
-				return err
-			}
-		} else {
-			muts = append([]*Mutation{}, DmutSqliteMutations...)
-			if runner, err = NewSqliteRunner(host); err != nil {
-				return err
-			}
-		}
-		muts = append(muts, mutsOrig...)
+	// 	var mutsOrig Mutations = (*mp).GetInOrder()
+	// 	var muts []*Mutation
+	// 	if reIsPostgres.Match([]byte(host)) {
+	// 		muts = append([]*Mutation{}, DmutMutations...)
+	// 		if runner, err = NewPgRunner(host); err != nil {
+	// 			return err
+	// 		}
+	// 	} else {
+	// 		muts = append([]*Mutation{}, DmutSqliteMutations...)
+	// 		if runner, err = NewSqliteRunner(host); err != nil {
+	// 			return err
+	// 		}
+	// 	}
+	// 	muts = append(muts, mutsOrig...)
 
-		// now that we have
-		if err = RunMutations(runner, muts); err != nil {
-			return err
-		}
-	}
+	// 	// now that we have
+	// 	if err = RunMutations(runner, muts); err != nil {
+	// 		return err
+	// 	}
+	// }
 
 	return nil
 }

@@ -5,12 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"os"
 	"sort"
 	"strings"
 
-	dmutparser "github.com/ceymard/dmut/parser"
+	// dmutparser "github.com/ceymard/dmut/parser"
 	"github.com/pkg/errors"
 )
 
@@ -30,19 +29,19 @@ type DigestBuffer struct {
 // not inside strings or string like constructs like $$ ... $$
 func (dg *DigestBuffer) AddStatement(stmt string) error {
 	stmt = "   " + stmt
-	var reader = strings.NewReader(stmt)
+	// var reader = strings.NewReader(stmt)
 
 	// not checking err since "normally" only code previously lexed
 	// is analyzed here
-	var lx, _ = dmutparser.SqlLexer.Lex("", reader)
-	for tk, err := lx.Next(); !tk.EOF(); tk, err = lx.Next() {
-		if err != nil {
-			log.Print(stmt)
-			return err
-		}
-		_, _ = dg.WriteString(tk.String())
-		_ = dg.WriteByte(' ')
-	}
+	// var lx, _ = dmutparser.SqlLexer.Lex("", reader)
+	// for tk, err := lx.Next(); !tk.EOF(); tk, err = lx.Next() {
+	// 	if err != nil {
+	// 		log.Print(stmt)
+	// 		return err
+	// 	}
+	// 	_, _ = dg.WriteString(tk.String())
+	// 	_ = dg.WriteByte(' ')
+	// }
 	return nil
 }
 

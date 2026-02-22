@@ -1,22 +1,9 @@
 package mutations
 
-import (
-	"fmt"
-	"os"
-	"path"
-	"regexp"
-	"strings"
-
-	dmutparser "github.com/ceymard/dmut/parser"
-	"github.com/flosch/pongo2/v4"
-	"github.com/pkg/errors"
-)
-
 func init() {
-	pongo2.SetAutoescape(false)
-	pongo2.Globals["env"] = os.Getenv
 }
 
+/*
 func GetMutationsInFile(filename string, set *MutationSet) error {
 	// Send empty context.
 	contents, err := pongo2.RenderTemplateFile(filename, pongo2.Context{})
@@ -28,7 +15,7 @@ func GetMutationsInFile(filename string, set *MutationSet) error {
 	// contents, err = runTemplate(filename, contents, set)
 	// if err != nil {
 	// }
-	root, err := dmutparser.ParseString(filename, contents)
+	root, err := Parser.ParseString(filename, contents)
 	if err != nil {
 		return fmt.Errorf("in %s, %w", filename, err)
 	}
@@ -147,3 +134,4 @@ func GetMutationMapFromFile(filename string) (*MutationSet, error) {
 
 	return &set, nil
 }
+*/
