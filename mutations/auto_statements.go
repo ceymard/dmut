@@ -112,7 +112,7 @@ func (grant *GrantGeneralStatement) Down() string {
 
 type CreateStatement struct {
 	NeedFullMatch
-	Statement DownerStatement `parser:" 'create' ('or' 'replace')? @@ ';'? "`
+	Statement DownerStatement `parser:" 'create' ('or' 'replace')? @@ (!(';'))* ';'? "`
 }
 
 func (create *CreateStatement) Down() string {
@@ -122,7 +122,7 @@ func (create *CreateStatement) Down() string {
 // CREATE FUNCTION <name> <args> ... ;
 type CreateFunctionStatement struct {
 	Name *string   `parser:"   'function' @SqlId '('   "`
-	Args *[]string `parser:"   (@!')')* ')' (!(';'))+ "`
+	Args *[]string `parser:"   (@!')')* ')'  "`
 }
 
 func (fun *CreateFunctionStatement) Down() string {
@@ -255,22 +255,16 @@ var (
 	SqlLexer = lexer.MustStateful(lexer.Rules{
 		"Root": {
 			{Name: "MultiStart", Pattern: `(\$[a-zA-Z_0-9]*\$)`, Action: lexer.Push("MultilineString")},
-			{Name: "whiteSpace", Pattern: `(\s|\n)+|--[^\n]*\n?|/\*(.|\n)*?\*/`},
+			{Name: "whiteSpace", Pattern: `( |\s|\n)+|--[^\n]*\n?|/\*(.|\n)*?\*/`},
 			{Name: "Semicolon", Pattern: `;`},
 			{Name: "SqlId", Pattern: `(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\])(?:\.(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\]))*`},
 			{Name: "String", Pattern: `'(?:''|[^'])*'`},
 			{Name: "Rest", Pattern: RestPattern},
 		},
-		"Common": {
-			{Name: "whiteSpace", Pattern: `(\s|\n)+|--[^\n]*\n?|/\*(.|\n)*?\*/`},
-			{Name: "Semicolon", Pattern: `;`},
-			{Name: "SqlId", Pattern: `(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\])(?:\.(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\]))*`},
-			{Name: "String", Pattern: `'(?:''|[^'])*'`},
-			{Name: "Rest", Pattern: RestPattern},
-		},
+
 		"MultilineString": {
 			{Name: "MultiStop", Pattern: `\1`, Action: lexer.Pop()},
-			{Name: "Char", Pattern: `(.|\n)`},
+			{Name: "char", Pattern: `.|\n`},
 		},
 	})
 

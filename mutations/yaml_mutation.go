@@ -34,6 +34,7 @@ func (stm *YamlStatement) UnmarshalYAML(node ast.Node) error {
 		yaml.NodeToValue(node, &val)
 		stmt, err := yamlStatementFromString(val)
 		if err != nil {
+			// pp.Println(node.GetToken().Position)
 			return fmt.Errorf("error parsing yaml statement: %w", err)
 		}
 		stm.Up = stmt.Up
