@@ -1,29 +1,45 @@
 package mutations
 
+import (
+	"log"
+	"slices"
+)
+
 // Testing happens in two phases:
 // First, all leaf mutations are tested independently.
 // Secondly, all mutations are passed, and then all are removed one by one with their dependencies.
 // The tests are only done on the current batch of mutations.
 
-func testMutations(runner Runner, mutations DbMutationMap) error {
+func TestMutationsIndependently(runner Runner, mutations DbMutationMap) error {
 
-	runner.SavePoint("test_leaf_mutation")
+	if err := runner.SavePoint("test_mutations_independently"); err != nil {
+		return err
+	}
+	defer runner.RollbackToSavepoint("test_mutations_independently")
+
+	if err := runner.SavePoint("test_leaf_mutation"); err != nil {
+		return err
+	}
 	// Test all leaf mutations independently
 	for _, leaf := range mutations.GetLeafMutations() {
-
-		for _, mut := range mutations.GetMutationsInOrder(true, leaf.Hash) {
+		log.Println("testing leaf mutation", leaf.DisplayName())
+		mut_slice := mutations.GetMutationsInOrder(true, leaf.Hash)
+		for _, mut := range mut_slice {
 			if err := runner.ApplyMutation(mut); err != nil {
 				return err
 			}
 		}
 
-		for _, m := range mutations.GetMutationsInOrder(false, leaf.Hash) {
+		slices.Reverse(mut_slice)
+		for _, m := range mut_slice {
 			if err := runner.UndoMutation(m); err != nil {
 				return err
 			}
 		}
 
-		runner.RollbackToSavepoint("test_leaf_mutation")
+		if err := runner.RollbackToSavepoint("test_leaf_mutation"); err != nil {
+			return err
+		}
 	}
 
 	// Now do all the mutations, as we will then down them from the full set.
@@ -33,7 +49,9 @@ func testMutations(runner Runner, mutations DbMutationMap) error {
 		}
 	}
 
-	runner.SavePoint("test_mutation_full")
+	if err := runner.SavePoint("test_mutation_full"); err != nil {
+		return err
+	}
 	for _, mut := range mutations {
 		// For this mutation, we get all its children in undo order, and undo them one by one
 		for _, m := range mutations.GetMutationsInOrder(false, mut.Hash) {
@@ -42,30 +60,45 @@ func testMutations(runner Runner, mutations DbMutationMap) error {
 			}
 		}
 
-		runner.RollbackToSavepoint("test_mutation_full")
+		if err := runner.RollbackToSavepoint("test_mutation_full"); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 func TestMutationsFromOriginal(runner Runner, test_runner Runner, mutations DbMutationMap) error {
+
 	current, err := runner.GetDBMutationsFromDb()
 	if err != nil {
 		return err
 	}
 
-	test_runner.SavePoint("test_mutations_from_original")
-	if err := ApplyMutationsFromCurrent(test_runner, mutations, current); err != nil {
+	if err := test_runner.SavePoint("test_mutations_from_original"); err != nil {
 		return err
 	}
-	test_runner.RollbackToSavepoint("test_mutations_from_original")
 
-	return TestMutations(test_runner, mutations)
-}
+	log.Println("applying mutations of database to test database")
+	for _, mut := range current.GetMutationsInOrder(true) {
+		if err := test_runner.ApplyMutation(mut); err != nil {
+			return err
+		}
+	}
 
-func TestMutations(runner Runner, mutations DbMutationMap) error {
-	runner.SavePoint("test_mutations")
-	defer runner.RollbackToSavepoint("test_mutations")
+	log.Println("now run the mutations from disk")
+	// Test applying the mutations
+	if err := ApplyMutationsFromCurrent(test_runner, mutations); err != nil {
+		return err
+	}
 
-	return testMutations(runner, mutations)
+	if err := test_runner.RollbackToSavepoint("test_mutations_from_original"); err != nil {
+		return err
+	}
+
+	if err := TestMutationsIndependently(test_runner, mutations); err != nil {
+		return err
+	}
+
+	return nil
 }

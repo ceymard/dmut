@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
+	"os"
 
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/jackc/pgconn"
@@ -16,6 +18,7 @@ var _ Runner = &PgRunner{}
 
 type PgRunner struct {
 	isTesting bool
+	uri       string
 	conn      *pgx.Conn
 }
 
@@ -34,11 +37,39 @@ func NewPgRunner(url string, isTesting bool) (*PgRunner, error) {
 		return nil, err
 	}
 
-	res := &PgRunner{conn: conn, isTesting: isTesting}
+	res := &PgRunner{conn: conn, isTesting: isTesting, uri: url}
 	if err := res.InstallDmut(); err != nil {
 		return nil, wrapPgError(err)
 	}
 	return res, nil
+}
+
+func (r *PgRunner) GetTestRunner() (Runner, error) {
+
+	if err := r.exec(`DROP DATABASE IF EXISTS __dmut_test__`); err != nil {
+		return nil, err
+	}
+
+	if err := r.exec(`CREATE DATABASE __dmut_test__`); err != nil {
+		return nil, err
+	}
+
+	// replace the portion of the url after the URI with __dmut_test__ with URI manipulation library
+	uri, err := url.Parse(r.uri)
+	if err != nil {
+		return nil, err
+	}
+	uri.Path = "__dmut_test__"
+	new_url := uri.String()
+
+	conn, err := pgx.Connect(context.Background(), new_url)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &PgRunner{conn: conn, isTesting: true}
+
+	return res, res.InstallDmut()
 }
 
 func wrapPgError(err error) error {
@@ -60,7 +91,9 @@ func (r *PgRunner) execStatements(stmts []string) error {
 
 func (r *PgRunner) ApplyMutation(m *DbMutation) error {
 
-	log.Println(au.BrightGreen("✓"), m.DisplayName())
+	if !r.isTesting {
+		log.Println(au.BrightGreen("✓"), m.DisplayName())
+	}
 
 	if err := r.execStatements(m.Up); err != nil {
 		return errors.Wrap(err, "error applying mutation "+m.DisplayName())
@@ -71,7 +104,10 @@ func (r *PgRunner) ApplyMutation(m *DbMutation) error {
 
 func (r *PgRunner) UndoMutation(m *DbMutation) error {
 
-	log.Println(au.BrightRed("🗑"), m.DisplayName())
+	if !r.isTesting {
+		log.Println(au.BrightRed("🗑"), m.DisplayName())
+	}
+
 	if err := r.execStatements(m.Down); err != nil {
 		return err
 	}
@@ -79,18 +115,28 @@ func (r *PgRunner) UndoMutation(m *DbMutation) error {
 }
 
 func (r *PgRunner) deleteMutation(m *DbMutation) error {
-	_, err := r.conn.Exec(context.Background(), `DELETE FROM dmut.mutations WHERE hash = $1`, m.Hash)
+	err := r.exec(`DELETE FROM dmut.mutations WHERE hash = $1`, m.Hash)
 	return wrapPgError(err)
 }
 
 func (r *PgRunner) saveMutation(m *DbMutation) error {
-	_, err := r.conn.Exec(context.Background(), `INSERT INTO dmut.mutations(hash, name, meta, up, down, children, parents) VALUES ($1, $2, $3, $4, $5, $6, $7)`, m.Hash, m.Name, m.Meta, m.Up, m.Down, m.Children, m.Parents)
+	err := r.exec(`INSERT INTO dmut.mutations(hash, name, meta, up, down, children, parents) VALUES ($1, $2, $3, $4, $5, $6, $7)`, m.Hash, m.Name, m.Meta, m.Up, m.Down, m.Children, m.Parents)
 	return wrapPgError(err)
 }
 
 func (r *PgRunner) Commit() error {
-	_, err := r.conn.Exec(context.Background(), `COMMIT`)
-	return wrapPgError(err)
+	log.Println(au.BrightGreen("💾"), "committing")
+	return r.exec(`COMMIT`)
+}
+
+func (r *PgRunner) Begin() error {
+	log.Println(au.BrightGreen("💾"), "BEGIN")
+	return r.exec("BEGIN")
+}
+
+func (r *PgRunner) Rollback() error {
+	log.Println(au.BrightRed("💾"), "rolling back")
+	return r.exec("ROLLBACK")
 }
 
 func (r *PgRunner) SavePoint(name string) error {
@@ -100,6 +146,7 @@ func (r *PgRunner) SavePoint(name string) error {
 		}
 		return nil
 	}
+	log.Println(au.BrightGreen("💾"), "saving point", name)
 	return r.exec(`SAVEPOINT ` + name)
 }
 
@@ -108,11 +155,15 @@ func (r *PgRunner) RollbackToSavepoint(name string) error {
 	if name != "" {
 		cmd += ` TO SAVEPOINT ` + name
 	}
+	log.Println(au.BrightRed("💾"), "rolling back to point", name)
 	return r.exec(cmd)
 }
 
-func (r *PgRunner) exec(sql string) error {
-	_, err := r.conn.Exec(context.Background(), sql)
+func (r *PgRunner) exec(sql string, args ...interface{}) error {
+	if os.Getenv("DMUT_VERBOSE") != "" {
+		log.Println(au.BrightBlue(sql))
+	}
+	_, err := r.conn.Exec(context.Background(), sql, args...)
 	if err != nil {
 		err = errors.Wrap(err, au.BrightRed("error in statement").String()+" "+au.BrightBlue(sql).String())
 	}
@@ -210,7 +261,7 @@ func (r *PgRunner) GetDBMutationsFromDb() (DbMutationMap, error) {
 }
 
 func (r *PgRunner) InstallDmut() error {
-	_, err := r.conn.Exec(context.Background(), `
+	err := r.exec(`
 	CREATE SCHEMA IF NOT EXISTS dmut;
 	CREATE TABLE IF NOT EXISTS dmut.mutations (
 		hash TEXT PRIMARY KEY,

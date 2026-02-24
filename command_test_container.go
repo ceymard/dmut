@@ -31,6 +31,11 @@ func (t TestCmd) Run() error {
 	}
 	log.Println("testing mutations on", image)
 
+	muts, err := mutations.LoadYamlMutations(t.Paths...)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 	container, err := postgres.Run(ctx,
 		image,
@@ -65,11 +70,6 @@ func (t TestCmd) Run() error {
 		return err
 	}
 	defer runner.Close()
-
-	muts, err := mutations.LoadYamlMutations(t.Paths...)
-	if err != nil {
-		return err
-	}
 
 	db_mutations := muts.ToDbMutationMap()
 	roles := muts.Roles()

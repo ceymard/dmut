@@ -244,7 +244,7 @@ func splitStatements(stmts []YamlStatement) ([]string, []string) {
 	var down []string = make([]string, 0)
 	for _, stmt := range stmts {
 		up = append(up, stmt.Up)
-		down = append(down, stmt.Down)
+		down = append([]string{stmt.Down}, down...)
 	}
 	return up, down
 }
