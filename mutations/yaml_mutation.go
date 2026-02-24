@@ -14,6 +14,28 @@ import (
 
 type YamlMigrationFile map[string]*YamlMigration
 
+type YamlMigration struct {
+	Node ast.Node `yaml:"-"`
+	Name string   `yaml:"-"`
+	File string   `yaml:"file,omitempty"`
+
+	Needs []string        `yaml:"needs,omitempty,flow"`
+	Sql   []YamlStatement `yaml:"sql,omitempty"`
+	Meta  []YamlStatement `yaml:"meta,omitempty"`
+	Roles []string        `yaml:"roles,omitempty"`
+
+	children mapset.Set[*YamlMigration]
+	parents  mapset.Set[*YamlMigration]
+	db_sql   *DbMutation
+	db_meta  *DbMutation
+}
+
+type YamlStatement struct {
+	Node ast.Node `yaml:"-"`
+	Up   string   `yaml:"up"`
+	Down string   `yaml:"down"`
+}
+
 func (ymf YamlMigrationFile) Roles() mapset.Set[string] {
 	var res = mapset.NewSet[string]()
 	for _, mut := range ymf {
@@ -108,28 +130,6 @@ func (ymf YamlMigrationFile) AddMutation(name string, mut *YamlMigration) error 
 	mut.db_sql.Children = append(mut.db_sql.Children, mut.db_meta.Hash)
 
 	return nil
-}
-
-type YamlMigration struct {
-	Node ast.Node
-	Name string `yaml:"name"`
-	File string `yaml:"file"`
-
-	Needs []string        `yaml:"needs"`
-	Sql   []YamlStatement `yaml:"sql"`
-	Meta  []YamlStatement `yaml:"meta"`
-	Roles []string        `yaml:"roles"`
-
-	children mapset.Set[*YamlMigration]
-	parents  mapset.Set[*YamlMigration]
-	db_sql   *DbMutation
-	db_meta  *DbMutation
-}
-
-type YamlStatement struct {
-	Node ast.Node
-	Up   string `yaml:"up"`
-	Down string `yaml:"down"`
 }
 
 func (stm *YamlStatement) UnmarshalYAML(node ast.Node) error {

@@ -30,14 +30,14 @@ func (r *PgRunner) IsTesting() bool {
 	return r.isTesting
 }
 
-func NewPgRunner(url string, isTesting bool) (*PgRunner, error) {
+func NewPgRunner(url string) (*PgRunner, error) {
 	log.Println("connecting to", url)
 	conn, err := pgx.Connect(context.Background(), url)
 	if err != nil {
 		return nil, err
 	}
 
-	res := &PgRunner{conn: conn, isTesting: isTesting, uri: url}
+	res := &PgRunner{conn: conn, isTesting: false, uri: url}
 	if err := res.InstallDmut(); err != nil {
 		return nil, wrapPgError(err)
 	}

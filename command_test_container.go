@@ -65,7 +65,7 @@ func (t TestCmd) Run() error {
 	}
 	log.Println("test container URI:", uri)
 
-	runner, err := mutations.NewPgRunner(uri, false)
+	runner, err := mutations.NewPgRunner(uri)
 	if err != nil {
 		return err
 	}

@@ -5,7 +5,6 @@ import (
 )
 
 type Runner interface {
-	IsTesting() bool
 	// ReconcileRoles reconciles the roles in the database with the roles in the mutations.
 	// Removing a role from the database will result in dropping all meta mutations before reconciling them.
 	ReconcileRoles(roles mapset.Set[string]) error
