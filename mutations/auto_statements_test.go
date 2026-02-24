@@ -85,8 +85,13 @@ func TestDownGeneration(t *testing.T) {
 			wantDown: "DROP FUNCTION f (a1 integer , a2 text);",
 		},
 		{
-			name:     "CREATE OR REPLACE FUNCTION",
-			upSQL:    "CREATE OR REPLACE FUNCTION f() RETURNS int AS $$ SELECT 1 $$;",
+			name:     "CREATE FUNCTION with default",
+			upSQL:    "CREATE FUNCTION f(a1 integer, a2 text DEFAULT 'foo') RETURNS void AS $$ $$ LANGUAGE sql;",
+			wantDown: "DROP FUNCTION f (a1 integer , a2 text);",
+		},
+		{
+			name:     "CREATE FUNCTION",
+			upSQL:    "CREATE FUNCTION f() RETURNS int AS $$ SELECT 1 $$;",
 			wantDown: "DROP FUNCTION f ();",
 		},
 		// CreatePolicyOrTriggerStmt

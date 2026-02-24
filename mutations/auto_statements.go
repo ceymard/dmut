@@ -136,7 +136,7 @@ func (fun *CreateFunctionStatement) Down() string {
 			} else if in_default && (arg == ")" || arg == ",") {
 				in_default = false
 				args += arg
-			} else {
+			} else if !in_default {
 				if strings.ToLower(arg) == "default" {
 					in_default = true
 				} else {
