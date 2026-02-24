@@ -47,13 +47,15 @@ func (c LegacyCmd) Run() error {
 			return err
 		}
 
-		mut_map[mut.Name] = &mut
+		if mut.Name != "dmut.base" && mut.Name != "dmut" {
+			mut_map[mut.Name] = &mut
+		}
 	}
 
 	for _, mut := range mut_map {
 		for _, child := range mut.Children {
 			child_mut := mut_map[child]
-			child_mut.Needs = append(mut.Needs, mut.Name)
+			child_mut.Needs = append(child_mut.Needs, mut.Name)
 		}
 	}
 
