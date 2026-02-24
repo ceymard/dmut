@@ -49,8 +49,12 @@ func (ymf YamlMigrationFile) Roles() mapset.Set[string] {
 func (ymf YamlMigrationFile) ToDbMutationMap() DbMutationMap {
 	var res DbMutationMap = make(DbMutationMap)
 	for _, mut := range ymf {
-		res[mut.db_sql.Hash] = mut.db_sql
-		res[mut.db_meta.Hash] = mut.db_meta
+		if mut.db_sql.HasStatements() {
+			res[mut.db_sql.Hash] = mut.db_sql
+		}
+		if mut.db_meta.HasStatements() {
+			res[mut.db_meta.Hash] = mut.db_meta
+		}
 	}
 	return res
 }
@@ -60,11 +64,19 @@ func (mut *YamlMigration) AddParent(parent *YamlMigration) {
 		return
 	}
 	mut.parents.Add(parent)
-	mut.db_sql.Parents = append(mut.db_sql.Parents, parent.db_sql.Hash)
-	mut.db_meta.Parents = append(mut.db_meta.Parents, parent.db_meta.Hash)
+	if mut.db_sql.HasStatements() && parent.db_sql.HasStatements() {
+		mut.db_sql.Parents = append(mut.db_sql.Parents, parent.db_sql.Hash)
+	}
+	if mut.db_meta.HasStatements() && parent.db_meta.HasStatements() {
+		mut.db_meta.Parents = append(mut.db_meta.Parents, parent.db_meta.Hash)
+	}
 	parent.children.Add(mut)
-	parent.db_sql.Children = append(parent.db_sql.Children, mut.db_sql.Hash)
-	parent.db_meta.Children = append(parent.db_meta.Children, mut.db_meta.Hash)
+	if parent.db_sql.HasStatements() && mut.db_sql.HasStatements() {
+		parent.db_sql.Children = append(parent.db_sql.Children, mut.db_sql.Hash)
+	}
+	if parent.db_meta.HasStatements() && mut.db_meta.HasStatements() {
+		parent.db_meta.Children = append(parent.db_meta.Children, mut.db_meta.Hash)
+	}
 }
 
 func (ymf YamlMigrationFile) ResolveDependencies() error {
@@ -126,8 +138,10 @@ func (ymf YamlMigrationFile) AddMutation(name string, mut *YamlMigration) error 
 	meta_mut.ComputeHash()
 	mut.db_meta = meta_mut
 
-	mut.db_meta.Parents = append(mut.db_meta.Parents, mut.db_sql.Hash)
-	mut.db_sql.Children = append(mut.db_sql.Children, mut.db_meta.Hash)
+	if mut.db_meta.HasStatements() && mut.db_sql.HasStatements() {
+		mut.db_meta.Parents = append(mut.db_meta.Parents, mut.db_sql.Hash)
+		mut.db_sql.Children = append(mut.db_sql.Children, mut.db_meta.Hash)
+	}
 
 	return nil
 }

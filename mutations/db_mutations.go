@@ -18,6 +18,10 @@ type DbMutation struct {
 	Parents  []string `db:"parents"`  // hashes of the parents that this mutation depends upon
 }
 
+func (mut *DbMutation) HasStatements() bool {
+	return len(mut.Up) > 0 || len(mut.Down) > 0
+}
+
 func (mut *DbMutation) ComputeHash() {
 	digest := NewDigestBuffer()
 	digest.WriteString(mut.Name)
