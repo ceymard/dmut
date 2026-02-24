@@ -106,10 +106,6 @@ func (r *PgRunner) execStatements(stmts []string) error {
 
 func (r *PgRunner) ApplyMutation(m *DbMutation) error {
 
-	if !r.isTesting {
-		r.logger.Println(au.BrightGreen("✓"), m.DisplayName())
-	}
-
 	if err := r.execStatements(m.Up); err != nil {
 		return errors.Wrap(err, "error applying mutation "+m.DisplayName())
 	}
@@ -118,13 +114,8 @@ func (r *PgRunner) ApplyMutation(m *DbMutation) error {
 }
 
 func (r *PgRunner) UndoMutation(m *DbMutation) error {
-
-	if !r.isTesting {
-		r.logger.Println(au.BrightRed("🗑"), m.DisplayName(), "!!")
-	}
-
 	if err := r.execStatements(m.Down); err != nil {
-		return err
+		return errors.Wrap(err, "error undoing mutation "+m.DisplayName())
 	}
 	return r.deleteMutation(m)
 }
@@ -150,12 +141,12 @@ func (r *PgRunner) Commit() error {
 }
 
 func (r *PgRunner) Begin() error {
-	r.logger.Println(au.BrightGreen("💾"), "BEGIN")
+	// r.logger.Println(au.BrightGreen("💾"), "BEGIN")
 	return r.exec("BEGIN")
 }
 
 func (r *PgRunner) Rollback() error {
-	r.logger.Println(au.BrightRed("💾"), "rolling back")
+	// r.logger.Println(au.BrightRed("💾"), "rolling back")
 	return r.exec("ROLLBACK")
 }
 
@@ -166,7 +157,7 @@ func (r *PgRunner) SavePoint(name string) error {
 		}
 		return nil
 	}
-	r.logger.Println(au.BrightGreen("💾"), "saving point", name)
+	// r.logger.Println(au.BrightGreen("💾"), "saving point", name)
 	return r.exec(`SAVEPOINT ` + name)
 }
 
@@ -175,7 +166,7 @@ func (r *PgRunner) RollbackToSavepoint(name string) error {
 	if name != "" {
 		cmd += ` TO SAVEPOINT ` + name
 	}
-	r.logger.Println(au.BrightRed("💾"), "rolling back to point", name)
+	// r.logger.Println(au.BrightRed("💾"), "rolling back to point", name)
 	return r.exec(cmd)
 }
 

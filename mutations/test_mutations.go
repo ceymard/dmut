@@ -1,7 +1,6 @@
 package mutations
 
 import (
-	"log"
 	"slices"
 )
 
@@ -13,7 +12,7 @@ func TestLeafMutations(runner Runner, mutations DbMutationMap) error {
 	}
 	// Test all leaf mutations independently
 	for _, leaf := range mutations.GetLeafMutations() {
-		log.Println("testing leaf mutation", leaf.DisplayName())
+		runner.Logger().Println("testing leaf mutation", leaf.DisplayName())
 		mut_slice := mutations.GetMutationsInOrder(true, leaf.Hash)
 		for _, mut := range mut_slice {
 			if err := runner.ApplyMutation(mut); err != nil {

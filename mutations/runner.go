@@ -4,6 +4,7 @@ import (
 	"log"
 
 	mapset "github.com/deckarep/golang-set/v2"
+	au "github.com/logrusorgru/aurora"
 )
 
 type Runner interface {
@@ -76,6 +77,10 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 		if err := TestLeafMutations(test_runner, disk_mutations); err != nil {
 			return err
 		}
+
+		if err := test_runner.Rollback(); err != nil {
+			return err
+		}
 	}
 
 	if options.Override {
@@ -87,6 +92,7 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 			if err := test_runner.SaveMutation(mut); err != nil {
 				return err
 			}
+			runner.Logger().Println(au.BrightGreen("✓"), mut.DisplayName())
 		}
 	}
 
@@ -96,16 +102,22 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 
 	if options.TestBefore {
 
+		if err := runner.SavePoint("test_downing_mutations"); err != nil {
+			return err
+		}
+
 		if err := TestDowningMutations(runner); err != nil {
 			return err
 		}
 
-		if err := test_runner.Rollback(); err != nil {
+		if err := runner.RollbackToSavepoint("test_downing_mutations"); err != nil {
 			return err
 		}
 	}
 
+	runner.Logger().Println(au.BrightGreen("🎉"), "no errors")
 	if options.Commit {
+		runner.Logger().Println(au.BrightGreen("💾"), "committing")
 		if err := runner.Commit(); err != nil {
 			return err
 		}
@@ -131,6 +143,7 @@ func ApplyMutations(runner Runner, disk_mutations DbMutationMap) error {
 			return err
 		}
 
+		runner.Logger().Println(au.BrightRed("🗑"), mut.DisplayName())
 		current.Remove(mut)
 	}
 
@@ -141,6 +154,7 @@ func ApplyMutations(runner Runner, disk_mutations DbMutationMap) error {
 		if err := runner.ApplyMutation(mut); err != nil {
 			return err
 		}
+		runner.Logger().Println(au.BrightGreen("✓"), mut.DisplayName())
 	}
 
 	return nil
