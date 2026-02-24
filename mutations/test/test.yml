@@ -1,115 +1,126 @@
 # yaml-embedded-languages: sql
----
-name: pgcrypto
 
-sql:
-  - create extension pgcrypto;
+pgcrypto:
 
----
-name: auth
+  sql:
+    - create extension pgcrypto;
 
-roles:
-  - "@admin"
-  - "@active"
+auth:
 
-sql:
-  - create schema auth;
+  roles:
+    - "@admin"
+    - "@active"
 
-meta:
-  # @admins are always active
-  - |
-    grant "@active" to "@admin";
+  sql:
+    - create schema auth;
 
-  # No one should be able to execute anything on this schema without explicit grants.
-  - up: |
-     ALTER DEFAULT PRIVILEGES IN SCHEMA auth
-     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+  meta:
+    # @admins are always active
+    - |
+      grant "@active" to "@admin";
 
----
+    # No one should be able to execute anything on this schema without explicit grants.
+    # There is no down. We just don't want that for new schemas.
+    - up: |
+        ALTER DEFAULT PRIVILEGES IN SCHEMA auth
+        REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+
 # The auth.passwords table is a way to store
-name: auth.passwords
-needs: [pgcrypto]
-sql:
-  - |
-    create table auth.passwords (
-      username text not null primary key,
-      password text not null
-    );
+auth.passwords:
+  needs: [pgcrypto]
+  sql:
+    - |
+      create table auth.passwords (
+        username text not null primary key,
+        password text not null
+      );
 
-meta:
-  - |
-    create function auth.trigger_passwords_crypt() returns trigger as $$
-    begin
-      return new;
-    end $$ language plpgsql security definer;
+  meta:
+    # password triggers to make sure the password is always hashed
+    - |
+      create function auth.update_password() returns trigger as $$
+        declare
+          newpass text;
+        begin
+            if (NEW.password <> '')
+            then
+              -- update the password inside the password table
+              newpass := pgcrypto.crypt(NEW.password, pgcrypto.gen_salt('bf'));
+              -- and erase it from the old one
+              NEW.password = '';
 
-  - |
-    create trigger on
+              insert into auth.passwords(username, password) values (NEW.username, newpass)
+                on conflict (username) do update set password = newpass;
+            end if;
+            return NEW;
+        end
+      $$ language plpgsql security definer;
 
-  # login with a traditional password
-  - |
-    create function auth.login(username text, password text) returns ?? as $$
-    begin
+    # install the trigger
+    - |
+      create trigger update_password before insert or update on api.users
+        for each row
+        execute procedure auth.update_password();
+    # login with a traditional password
+    - |
+      create function auth.login(username text, password text) returns ?? as $$
+      begin
 
-    end $$ language plpgsql security definer;
+      end $$ language plpgsql security definer;
 
-  # password_update gives a way to the current user to change their password
-  - |
-    create function auth.password_update(
-      username text,
-      current_password text,
-      new_password text
-    ) returns boolean as $$ begin
+    # password_update gives a way to the current user to change their password
+    - |
+      create function auth.password_update(
+        username text,
+        current_password text,
+        new_password text
+      ) returns boolean as $$ begin
 
-    end $$ language plpgsql;
+      end $$ language plpgsql;
 
----
 # Our main schema
-name: api
-sql:
-  - |
-    create schema api;
+api:
+  sql:
+    - |
+      create schema api;
 
-meta:
-  # No one should be able to execute anything on this schema without explicit grants.
-  - up: |
-     ALTER DEFAULT PRIVILEGES IN SCHEMA auth
-     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
-  - |
-    grant usage on schema api to "@active";
+  meta:
+    # No one should be able to execute anything on this schema without explicit grants.
+    - up: |
+        ALTER DEFAULT PRIVILEGES IN SCHEMA auth
+        REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+    - |
+      grant usage on schema api to "@active";
 
----
-name: api.users
 
-sql:
-  - |
-    CREATE TABLE api.users (
-      id uuid PRIMARY KEY,
-      roles TEXT[],
-      first_name TEXT,
-      last_name TEXT,
-      name text NOT NULL,
-      email text NOT NULL,
-      password text NOT NULL,
-      created_at timestamp with time zone default now(),
-      updated_at timestamp with time zone default now()
-    );
+api.users:
 
-meta:
-  - |
-    alter table api.users
-      alter column id set default gen_random_uuid()
-      , alter column roles set not null
-      , alter column roles set default '{}'::text[]
-    ;
-  - |
-    grant all on table api.users to "@admin";
-  - |
-    grant select on table api.users to "@active";
-  - |
-    alter table api.users enable row level security;
-  - |
-    create policy api.users_only_see_my_rows on api.users to "@active"
-      using (pg_has_role(username, 'member'))
-      with check (username = current_user or pg_has_role(current_user, '@admin', 'member'))
-    ;
+  sql:
+    - |
+      CREATE TABLE api.users (
+        id uuid PRIMARY KEY,
+        roles TEXT[],
+        first_name TEXT,
+        last_name TEXT,
+        name text NOT NULL,
+        email text NOT NULL,
+        password text NOT NULL,
+        created_at timestamp with time zone default now(),
+        updated_at timestamp with time zone default now()
+      );
+
+  meta:
+    - |
+      alter table api.users
+        alter column id set default gen_random_uuid()
+        , alter column roles set not null
+        , alter column roles set default '{}'::text[]
+      ;
+    - grant all on table api.users to "@admin";
+    - grant select on table api.users to "@active";
+    - alter table api.users enable row level security;
+    - |
+      create policy api.users_only_see_my_rows on api.users to "@active"
+        using (pg_has_role(username, 'member'))
+        with check (username = current_user or pg_has_role(current_user, '@admin', 'member'))
+      ;

@@ -7,17 +7,106 @@ import (
 	"path/filepath"
 	"strings"
 
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
+	"github.com/k0kubun/pp"
 )
 
+type YamlMigrationFile map[string]*YamlMigration
+
+func (ymf YamlMigrationFile) Roles() mapset.Set[string] {
+	var res = mapset.NewSet[string]()
+	for _, mut := range ymf {
+		for _, role := range mut.Roles {
+			res.Add(role)
+		}
+	}
+	return res
+}
+
+func (ymf YamlMigrationFile) ToDbMutationMap() DbMutationMap {
+	var res DbMutationMap = make(DbMutationMap)
+	for _, mut := range ymf {
+		res[mut.db_sql.Hash] = mut.db_sql
+		res[mut.db_meta.Hash] = mut.db_meta
+	}
+	return res
+}
+
+func (ymf YamlMigrationFile) ResolveDependencies() error {
+	for _, mut := range ymf {
+		for _, parent_name := range mut.Needs {
+			parent, ok := ymf[parent_name]
+			if !ok {
+				return fmt.Errorf("dependency %s not found", parent_name)
+			}
+
+			mut.parents.Add(parent)
+			mut.db_sql.Parents = append(mut.db_sql.Parents, parent.db_sql.Hash)
+			mut.db_meta.Parents = append(mut.db_meta.Parents, parent.db_meta.Hash)
+			parent.children.Add(mut)
+			parent.db_sql.Children = append(parent.db_sql.Children, mut.db_sql.Hash)
+			parent.db_meta.Children = append(parent.db_meta.Children, mut.db_meta.Hash)
+		}
+	}
+	pp.Println(ymf)
+	return nil
+}
+
+func (ymf YamlMigrationFile) AddMutation(name string, mut *YamlMigration) error {
+	if _, ok := ymf[name]; ok {
+		return fmt.Errorf("duplicate migration name: %s", name)
+	}
+	ymf[name] = mut
+	mut.Name = name
+	mut.children = mapset.NewSet[*YamlMigration]()
+	mut.parents = mapset.NewSet[*YamlMigration]()
+
+	sql_up, sql_down := splitStatements(mut.Sql)
+
+	sql_mut := &DbMutation{
+		Name:     mut.Name,
+		File:     mut.File,
+		Meta:     false,
+		Children: make([]string, 0),
+		Up:       sql_up,
+		Down:     sql_down,
+	}
+	sql_mut.ComputeHash()
+	mut.db_sql = sql_mut
+
+	meta_up, meta_down := splitStatements(mut.Meta)
+	meta_mut := &DbMutation{
+		Name:     mut.Name,
+		File:     mut.File,
+		Meta:     true,
+		Children: make([]string, 0),
+		Up:       meta_up,
+		Down:     meta_down,
+	}
+	meta_mut.ComputeHash()
+	mut.db_meta = meta_mut
+	mut.db_meta.Parents = append(mut.db_meta.Parents, mut.db_sql.Hash)
+	mut.db_sql.Children = append(mut.db_sql.Children, mut.db_meta.Hash)
+
+	return nil
+}
+
 type YamlMigration struct {
-	Node    ast.Node
-	Name    string          `yaml:"name"`
-	Depends []string        `yaml:"depends"`
-	Sql     []YamlStatement `yaml:"sql"`
-	Meta    []YamlStatement `yaml:"meta"`
-	Roles   []string        `yaml:"roles"`
+	Node ast.Node
+	Name string `yaml:"name"`
+	File string `yaml:"file"`
+
+	Needs []string        `yaml:"needs"`
+	Sql   []YamlStatement `yaml:"sql"`
+	Meta  []YamlStatement `yaml:"meta"`
+	Roles []string        `yaml:"roles"`
+
+	children mapset.Set[*YamlMigration]
+	parents  mapset.Set[*YamlMigration]
+	db_sql   *DbMutation
+	db_meta  *DbMutation
 }
 
 type YamlStatement struct {
@@ -69,32 +158,35 @@ func yamlStatementFromString(str string) (YamlStatement, error) {
 	return YamlStatement{Up: str, Down: (*res).Down()}, nil
 }
 
-func readYamlFile(filename string) ([]YamlMigration, error) {
+func readYamlFile(file YamlMigrationFile, filename string) error {
 	f, err := os.Open(filename)
 	if err != nil {
-		return nil, fmt.Errorf("error reading file %s: %w", filename, err)
+		return fmt.Errorf("error reading file %s: %w", filename, err)
 	}
 	defer f.Close()
 
-	var res []YamlMigration
 	dec := yaml.NewDecoder(f)
 	for {
-		var ym YamlMigration
+		var ym YamlMigrationFile = make(YamlMigrationFile)
 		err = dec.Decode(&ym)
 		if err == io.EOF {
 			break // normal end of stream
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("error decoding yaml: %w", err)
+			return fmt.Errorf("error decoding yaml: %w", err)
 		}
-		res = append(res, ym)
+		for name, mut := range ym {
+			if err := file.AddMutation(name, mut); err != nil {
+				return err
+			}
+		}
 	}
-	return res, nil
+	return nil
 }
 
-func LoadYamlMutations(paths ...string) ([]YamlMigration, error) {
-	var res []YamlMigration
+func LoadYamlMutations(paths ...string) (YamlMigrationFile, error) {
+	var res YamlMigrationFile = make(YamlMigrationFile)
 	for _, path := range paths {
 		if info, err := os.Stat(path); err != nil {
 			return nil, err
@@ -110,37 +202,32 @@ func LoadYamlMutations(paths ...string) ([]YamlMigration, error) {
 				if strings.HasPrefix(file.Name(), "_") {
 					continue
 				}
-				muts, err := readYamlFile(filepath.Join(path, file.Name()))
+				err = readYamlFile(res, filepath.Join(path, file.Name()))
 				if err != nil {
 					return nil, err
 				}
-				res = append(res, muts...)
 			}
 		} else {
-			muts, err := readYamlFile(path)
+			err = readYamlFile(res, path)
 			if err != nil {
 				return nil, err
 			}
-			res = append(res, muts...)
 		}
 	}
+
+	if err := res.ResolveDependencies(); err != nil {
+		return nil, err
+	}
+
 	return res, nil
 }
 
-func CollectYamlMutations(muts []YamlMigration, filename string) error {
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return err
+func splitStatements(stmts []YamlStatement) ([]string, []string) {
+	var up []string = make([]string, 0)
+	var down []string = make([]string, 0)
+	for _, stmt := range stmts {
+		up = append(up, stmt.Up)
+		down = append(down, stmt.Down)
 	}
-	defer f.Close()
-	enc := yaml.NewEncoder(f)
-	for _, mut := range muts {
-		if err := enc.Encode(mut); err != nil {
-			return err
-		}
-		if _, err := f.WriteString("---\n"); err != nil {
-			return err
-		}
-	}
-	return nil
+	return up, down
 }

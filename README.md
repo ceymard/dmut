@@ -51,7 +51,7 @@ Permissions, row-level security statements, grants, policies, even triggers and 
 
 It is also a fairly safe space to define column expressions, views, and generally any thing that is purely run-time and does not affect the data structure.
 
-They are all always undone and redone whatever happens, in the same mutation order.
+As a rule of thumb, try to keep everything related to role to the meta section.
 
 ## Changes
 

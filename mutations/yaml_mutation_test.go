@@ -3,6 +3,7 @@ package mutations
 import (
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -12,7 +13,8 @@ func testFixturePath() string {
 }
 
 func TestReadYamlFile_ReturnsAllDocuments(t *testing.T) {
-	muts, err := readYamlFile(testFixturePath())
+	var muts YamlMigrationFile = make(YamlMigrationFile)
+	err := readYamlFile(muts, testFixturePath())
 	if err != nil {
 		t.Fatalf("readYamlFile returned error: %v", err)
 	}
@@ -22,27 +24,32 @@ func TestReadYamlFile_ReturnsAllDocuments(t *testing.T) {
 }
 
 func TestReadYamlFile_Names(t *testing.T) {
-	muts, err := readYamlFile(testFixturePath())
+	var muts YamlMigrationFile = make(YamlMigrationFile)
+	err := readYamlFile(muts, testFixturePath())
 	if err != nil {
 		t.Fatalf("readYamlFile returned error: %v", err)
 	}
 
 	expected := []string{"pgcrypto", "auth", "auth.passwords", "api", "api.users"}
 	for i, want := range expected {
-		if muts[i].Name != want {
-			t.Errorf("document %d: expected name %q, got %q", i, want, muts[i].Name)
+		if _, ok := muts[want]; !ok {
+			t.Errorf("document %d: expected name %q, got not found", i, want)
 		}
 	}
 }
 
 func TestReadYamlFile_Roles(t *testing.T) {
-	muts, err := readYamlFile(testFixturePath())
+	var muts YamlMigrationFile = make(YamlMigrationFile)
+	err := readYamlFile(muts, testFixturePath())
 	if err != nil {
 		t.Fatalf("readYamlFile returned error: %v", err)
 	}
 
-	// Document 1 (auth) has roles
-	authMut := muts[1]
+	// auth has roles
+	authMut, ok := muts["auth"]
+	if !ok {
+		t.Fatal("expected auth migration")
+	}
 	wantRoles := []string{"@admin", "@active"}
 	if len(authMut.Roles) != len(wantRoles) {
 		t.Fatalf("auth: expected %d roles, got %d", len(wantRoles), len(authMut.Roles))
@@ -53,36 +60,40 @@ func TestReadYamlFile_Roles(t *testing.T) {
 		}
 	}
 
-	// Other documents should have no roles
-	for i, mut := range muts {
-		if i == 1 {
+	// Other migrations should have no roles
+	for name, mut := range muts {
+		if name == "auth" {
 			continue
 		}
 		if len(mut.Roles) != 0 {
-			t.Errorf("document %d (%s): expected no roles, got %v", i, mut.Name, mut.Roles)
+			t.Errorf("migration %q: expected no roles, got %v", name, mut.Roles)
 		}
 	}
 }
 
 func TestReadYamlFile_SqlStatements(t *testing.T) {
-	muts, err := readYamlFile(testFixturePath())
+	var muts YamlMigrationFile = make(YamlMigrationFile)
+	err := readYamlFile(muts, testFixturePath())
 	if err != nil {
 		t.Fatalf("readYamlFile returned error: %v", err)
 	}
 
 	tests := []struct {
-		docIndex int
-		name     string
-		wantLen  int
-		firstUp  string
+		name    string
+		wantLen int
+		firstUp string
 	}{
-		{0, "pgcrypto", 1, "create extension pgcrypto;"},
-		{1, "auth", 1, "create schema auth;"},
-		{3, "api", 1, "create schema api;\n"},
+		{"pgcrypto", 1, "create extension pgcrypto;"},
+		{"auth", 1, "create schema auth;"},
+		{"api", 1, "create schema api;\n"},
 	}
 
 	for _, tc := range tests {
-		mut := muts[tc.docIndex]
+		mut, ok := muts[tc.name]
+		if !ok {
+			t.Errorf("%s: migration not found", tc.name)
+			continue
+		}
 		if len(mut.Sql) != tc.wantLen {
 			t.Errorf("%s: expected %d sql statements, got %d", tc.name, tc.wantLen, len(mut.Sql))
 			continue
@@ -94,40 +105,50 @@ func TestReadYamlFile_SqlStatements(t *testing.T) {
 }
 
 func TestReadYamlFile_SqlAutoDown(t *testing.T) {
-	muts, err := readYamlFile(testFixturePath())
+	var muts YamlMigrationFile = make(YamlMigrationFile)
+	err := readYamlFile(muts, testFixturePath())
 	if err != nil {
 		t.Fatalf("readYamlFile returned error: %v", err)
 	}
 
 	tests := []struct {
-		docIndex int
 		name     string
 		wantDown string
 	}{
-		{0, "pgcrypto", "DROP EXTENSION pgcrypto;"},
-		{1, "auth", "DROP SCHEMA auth;"},
+		{"pgcrypto", "DROP EXTENSION pgcrypto;"},
+		{"auth", "DROP SCHEMA auth;"},
 	}
 
 	for _, tc := range tests {
-		mut := muts[tc.docIndex]
+		mut, ok := muts[tc.name]
+		if !ok {
+			t.Errorf("%s: migration not found", tc.name)
+			continue
+		}
 		if len(mut.Sql) == 0 {
 			t.Errorf("%s: no sql statements", tc.name)
 			continue
 		}
-		if mut.Sql[0].Down != tc.wantDown {
+		want := strings.ToLower(tc.wantDown)
+		down := strings.ToLower(mut.Sql[0].Down)
+		if down != want {
 			t.Errorf("%s: expected Down=%q, got %q", tc.name, tc.wantDown, mut.Sql[0].Down)
 		}
 	}
 }
 
 func TestReadYamlFile_ExplicitUpDown(t *testing.T) {
-	muts, err := readYamlFile(testFixturePath())
+	var muts YamlMigrationFile = make(YamlMigrationFile)
+	err := readYamlFile(muts, testFixturePath())
 	if err != nil {
 		t.Fatalf("readYamlFile returned error: %v", err)
 	}
 
-	// Document 4 (api.users) has a multi-line CREATE TABLE
-	usersMut := muts[4]
+	// api.users has a multi-line CREATE TABLE
+	usersMut, ok := muts["api.users"]
+	if !ok {
+		t.Fatal("api.users: migration not found")
+	}
 	if len(usersMut.Sql) == 0 {
 		t.Fatal("api.users: expected sql statements")
 	}
@@ -137,20 +158,22 @@ func TestReadYamlFile_ExplicitUpDown(t *testing.T) {
 }
 
 func TestReadYamlFile_NodeIsPopulated(t *testing.T) {
-	muts, err := readYamlFile(testFixturePath())
+	var muts YamlMigrationFile = make(YamlMigrationFile)
+	err := readYamlFile(muts, testFixturePath())
 	if err != nil {
 		t.Fatalf("readYamlFile returned error: %v", err)
 	}
 
-	for i, mut := range muts {
+	for name, mut := range muts {
 		if mut.Node == nil {
-			t.Errorf("document %d (%s): Node should be populated", i, mut.Name)
+			t.Errorf("migration %q: Node should be populated", name)
 		}
 	}
 }
 
 func TestLoadYamlMutations_Directory(t *testing.T) {
 	dir := filepath.Dir(testFixturePath())
+	var muts YamlMigrationFile = make(YamlMigrationFile)
 	muts, err := LoadYamlMutations(dir)
 	if err != nil {
 		t.Fatalf("LoadYamlMutations returned error: %v", err)

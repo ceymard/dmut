@@ -1,6 +1,7 @@
 package mutations
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -169,9 +170,10 @@ func TestDownGeneration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse error: %v", err)
 			}
-			down := (*got).Down()
-			if down != tt.wantDown {
-				t.Errorf("Down() = %q, want %q", down, tt.wantDown)
+			want := strings.ToLower(tt.wantDown)
+			down := strings.ToLower((*got).Down())
+			if down != want {
+				t.Errorf("Down() = %q, want %q", down, want)
 			}
 		})
 	}

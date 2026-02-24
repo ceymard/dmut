@@ -23,18 +23,18 @@ var (
 	_ AlterTableDownerStmt = &AlterTableAddConstraintStmt{}
 )
 
-type DownerStatement interface {
+type CreateDownerStatement interface {
 	Down() string
 }
 
 var (
-	_ DownerStatement = &CreateFunctionStatement{}
-	_ DownerStatement = &CreateIndexStatement{}
-	_ DownerStatement = &SimpleCreateStatement{}
-	_ DownerStatement = &CreatePolicyOrTriggerStmt{}
-	_ DownerStatement = &CommentStatement{}
-	_ DownerStatement = &GrantStatement{}
-	_ DownerStatement = &GrantToUserStatement{}
+	_ CreateDownerStatement = &CreateFunctionStatement{}
+	_ CreateDownerStatement = &CreateIndexStatement{}
+	_ CreateDownerStatement = &SimpleCreateStatement{}
+	_ CreateDownerStatement = &CreatePolicyOrTriggerStmt{}
+	_ CreateDownerStatement = &CommentStatement{}
+	_ CreateDownerStatement = &GrantStatement{}
+	_ CreateDownerStatement = &GrantToUserStatement{}
 )
 
 type IMigrationStatement interface {
@@ -112,7 +112,7 @@ func (grant *GrantGeneralStatement) Down() string {
 
 type CreateStatement struct {
 	NeedFullMatch
-	Statement DownerStatement `parser:" 'create' ('or' 'replace')? @@ (!(';'))* ';'? "`
+	Statement CreateDownerStatement `parser:" 'create' ('or' 'replace')? @@ (!(';'))* ';'? "`
 }
 
 func (create *CreateStatement) Down() string {
@@ -274,7 +274,7 @@ var (
 		participle.CaseInsensitive("SqlId"),
 		participle.Elide("whiteSpace"),
 		participle.Union[AlterTableDownerStmt](&AlterTableEnableRlsStmt{}, &AlterTableAddColumnStmt{}, &AlterTableAlterColumnSetDefaultStmt{}, &AlterTableAddConstraintStmt{}),
-		participle.Union[DownerStatement](&CreateFunctionStatement{}, &CreateIndexStatement{}, &SimpleCreateStatement{}, &CreatePolicyOrTriggerStmt{}, &CommentStatement{}),
+		participle.Union[CreateDownerStatement](&CreateFunctionStatement{}, &CreateIndexStatement{}, &SimpleCreateStatement{}, &CreatePolicyOrTriggerStmt{}, &CommentStatement{}),
 		participle.Union[TopLevelStatement](&AlterTableStmt{}, &CreateStatement{}, &GrantStatement{}, &CommentStatement{}, &GrantToUserStatement{}),
 	)
 )
