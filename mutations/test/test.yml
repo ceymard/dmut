@@ -58,25 +58,9 @@ auth.passwords:
 
     # install the trigger
     - |
-      create trigger update_password before insert or update on api.users
+      create trigger update_password before insert or update on auth.passwords
         for each row
         execute procedure auth.update_password();
-    # login with a traditional password
-    - |
-      create function auth.login(username text, password text) returns ?? as $$
-      begin
-
-      end $$ language plpgsql security definer;
-
-    # password_update gives a way to the current user to change their password
-    - |
-      create function auth.password_update(
-        username text,
-        current_password text,
-        new_password text
-      ) returns boolean as $$ begin
-
-      end $$ language plpgsql;
 
 # Our main schema
 api:
@@ -87,7 +71,7 @@ api:
   meta:
     # No one should be able to execute anything on this schema without explicit grants.
     - up: |
-        ALTER DEFAULT PRIVILEGES IN SCHEMA auth
+        ALTER DEFAULT PRIVILEGES IN SCHEMA api
         REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
     - |
       grant usage on schema api to "@active";

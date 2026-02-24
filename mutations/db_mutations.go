@@ -4,17 +4,18 @@ import (
 	"fmt"
 
 	mapset "github.com/deckarep/golang-set/v2"
+	au "github.com/logrusorgru/aurora"
 )
 
 type DbMutation struct {
-	Hash     string   `json:"hash"`
-	Name     string   `json:"name"` // name is just for show
-	File     string   `json:"file"`
-	Meta     bool     `json:"meta"`
-	Up       []string `json:"up"`
-	Down     []string `json:"down"`
-	Children []string `json:"children"` // hashes of the children that depend upon this mutation
-	Parents  []string `json:"parents"`  // hashes of the parents that this mutation depends upon
+	Hash     string   `db:"hash"`
+	Name     string   `db:"name"` // name is just for show
+	File     string   `db:"file"`
+	Meta     bool     `db:"meta"`
+	Up       []string `db:"up"`
+	Down     []string `db:"down"`
+	Children []string `db:"children"` // hashes of the children that depend upon this mutation
+	Parents  []string `db:"parents"`  // hashes of the parents that this mutation depends upon
 }
 
 func (mut *DbMutation) ComputeHash() {
@@ -23,6 +24,14 @@ func (mut *DbMutation) ComputeHash() {
 	digest.AddStatements(mut.Up...)
 	digest.AddStatements(mut.Down...)
 	mut.Hash = digest.Digest()
+}
+
+func (mut *DbMutation) DisplayName() string {
+	meta := au.BrightMagenta("sql").String()
+	if mut.Meta {
+		meta = au.BrightBlue("meta").String()
+	}
+	return mut.Name + " " + meta
 }
 
 type DbMutationMap map[string]*DbMutation
@@ -67,12 +76,14 @@ func (m DbMutationMap) GetMutationsInOrder(parents_first bool, hashes ...string)
 		}
 		seen.Add(mut.Hash)
 		if parents_first {
+			for _, parent := range mut.Parents {
+				add(m[parent])
+			}
 			res = append(res, mut)
-		}
-		for _, child := range mut.Children {
-			add(m[child])
-		}
-		if !parents_first {
+		} else {
+			for _, child := range mut.Children {
+				add(m[child])
+			}
 			res = append(res, mut)
 		}
 	}

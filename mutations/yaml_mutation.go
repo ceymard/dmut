@@ -10,7 +10,6 @@ import (
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
-	"github.com/k0kubun/pp"
 )
 
 type YamlMigrationFile map[string]*YamlMigration
@@ -34,23 +33,40 @@ func (ymf YamlMigrationFile) ToDbMutationMap() DbMutationMap {
 	return res
 }
 
+func (mut *YamlMigration) AddParent(parent *YamlMigration) {
+	if mut.parents.Contains(parent) {
+		return
+	}
+	mut.parents.Add(parent)
+	mut.db_sql.Parents = append(mut.db_sql.Parents, parent.db_sql.Hash)
+	mut.db_meta.Parents = append(mut.db_meta.Parents, parent.db_meta.Hash)
+	parent.children.Add(mut)
+	parent.db_sql.Children = append(parent.db_sql.Children, mut.db_sql.Hash)
+	parent.db_meta.Children = append(parent.db_meta.Children, mut.db_meta.Hash)
+}
+
 func (ymf YamlMigrationFile) ResolveDependencies() error {
 	for _, mut := range ymf {
+		// For dotted names, find if there are parents and add them automatically.
+		split_name := strings.Split(mut.Name, ".")
+		for i := 0; i < len(split_name)-1; i++ {
+			parent_name := strings.Join(split_name[:i+1], ".")
+			if parent, ok := ymf[parent_name]; ok {
+				mut.AddParent(parent)
+			}
+		}
+
+		// Explicit dependencies in needs
 		for _, parent_name := range mut.Needs {
-			parent, ok := ymf[parent_name]
-			if !ok {
+			if parent, ok := ymf[parent_name]; ok {
+				mut.AddParent(parent)
+			} else {
 				return fmt.Errorf("dependency %s not found", parent_name)
 			}
 
-			mut.parents.Add(parent)
-			mut.db_sql.Parents = append(mut.db_sql.Parents, parent.db_sql.Hash)
-			mut.db_meta.Parents = append(mut.db_meta.Parents, parent.db_meta.Hash)
-			parent.children.Add(mut)
-			parent.db_sql.Children = append(parent.db_sql.Children, mut.db_sql.Hash)
-			parent.db_meta.Children = append(parent.db_meta.Children, mut.db_meta.Hash)
 		}
 	}
-	pp.Println(ymf)
+	// pp.Println(ymf)
 	return nil
 }
 
@@ -87,6 +103,7 @@ func (ymf YamlMigrationFile) AddMutation(name string, mut *YamlMigration) error 
 	}
 	meta_mut.ComputeHash()
 	mut.db_meta = meta_mut
+
 	mut.db_meta.Parents = append(mut.db_meta.Parents, mut.db_sql.Hash)
 	mut.db_sql.Children = append(mut.db_sql.Children, mut.db_meta.Hash)
 
@@ -139,9 +156,9 @@ func (stm *YamlStatement) UnmarshalYAML(node ast.Node) error {
 				continue
 			}
 			if value.Key.String() == "up" {
-				stm.Up = value.Value.String()
+				yaml.NodeToValue(value.Value, &stm.Up)
 			} else if value.Key.String() == "down" {
-				stm.Down = value.Value.String()
+				yaml.NodeToValue(value.Value, &stm.Down)
 			}
 		}
 		return nil

@@ -2,13 +2,13 @@ package mutations
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
+	"log"
 
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
+	au "github.com/logrusorgru/aurora"
 )
 
 var _ Runner = &PgRunner{}
@@ -18,16 +18,26 @@ type PgRunner struct {
 	conn      *pgx.Conn
 }
 
+func (r *PgRunner) Close() error {
+	return r.conn.Close(context.Background())
+}
+
 func (r *PgRunner) IsTesting() bool {
 	return r.isTesting
 }
 
 func NewPgRunner(url string, isTesting bool) (*PgRunner, error) {
+	log.Println("connecting to", url)
 	conn, err := pgx.Connect(context.Background(), url)
 	if err != nil {
 		return nil, err
 	}
-	return &PgRunner{conn: conn}, nil
+
+	res := &PgRunner{conn: conn, isTesting: isTesting}
+	if err := res.InstallDmut(); err != nil {
+		return nil, wrapPgError(err)
+	}
+	return res, nil
 }
 
 func wrapPgError(err error) error {
@@ -49,6 +59,8 @@ func (r *PgRunner) execStatements(stmts []string) error {
 
 func (r *PgRunner) ApplyMutation(m *DbMutation) error {
 
+	log.Println(au.BrightGreen("✓"), m.DisplayName())
+
 	if err := r.execStatements(m.Up); err != nil {
 		return err
 	}
@@ -57,6 +69,8 @@ func (r *PgRunner) ApplyMutation(m *DbMutation) error {
 }
 
 func (r *PgRunner) UndoMutation(m *DbMutation) error {
+
+	log.Println(au.BrightRed("🗑"), m.DisplayName())
 	if err := r.execStatements(m.Down); err != nil {
 		return err
 	}
@@ -69,9 +83,7 @@ func (r *PgRunner) deleteMutation(m *DbMutation) error {
 }
 
 func (r *PgRunner) saveMutation(m *DbMutation) error {
-	_, err := r.conn.Exec(context.Background(), `
-	  INSERT INTO dmut.mutations
-		VALUES (jsonb_populate_record(null::dmut.mutation), $1::jsonb).*)`, m)
+	_, err := r.conn.Exec(context.Background(), `INSERT INTO dmut.mutations(hash, name, meta, up, down, children, parents) VALUES ($1, $2, $3, $4, $5, $6, $7)`, m.Hash, m.Name, m.Meta, m.Up, m.Down, m.Children, m.Parents)
 	return wrapPgError(err)
 }
 
@@ -100,6 +112,9 @@ func (r *PgRunner) RollbackToSavepoint(name string) error {
 
 func (r *PgRunner) exec(sql string) error {
 	_, err := r.conn.Exec(context.Background(), sql)
+	if err != nil {
+		log.Println(au.BrightRed("error in statement"), au.BrightBlue(sql))
+	}
 	return wrapPgError(err)
 }
 
@@ -145,14 +160,21 @@ func (r *PgRunner) ReconcileRoles(roles mapset.Set[string]) error {
 			}
 		}
 
-		if err := r.exec(`DROP ROLE ` + strings.Join(leftover_roles.ToSlice(), (`, `))); err != nil {
-			return err
+		for _, role := range leftover_roles.ToSlice() {
+			role := `"` + role + `"`
+			log.Println(au.BrightRed("💀"), "dropping role", role)
+			if err := r.exec(`DROP ROLE ` + role); err != nil {
+				return err
+			}
 		}
 	}
 
 	if missing_roles.Cardinality() > 0 {
-		if err := r.exec(`CREATE ROLE ` + strings.Join(missing_roles.ToSlice(), (`, `))); err != nil {
-			return err
+		for _, role := range missing_roles.ToSlice() {
+			log.Println(au.BrightGreen("🗣"), "creating role", role)
+			if err := r.exec(`CREATE ROLE "` + role + `"`); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -165,44 +187,43 @@ func (r *PgRunner) GetDBMutationsFromDb() (DbMutationMap, error) {
 		db      = r.conn
 		res_map = make(DbMutationMap)
 		rows    pgx.Rows
-		exists  bool
 		err     error
 	)
 
-	row := db.QueryRow(context.Background(), `SELECT EXISTS (
-		SELECT FROM information_schema.tables
-		WHERE  table_schema = 'dmut'
-		AND    table_name   = 'mutations'
-		);
- `)
-
-	if err = row.Scan(&exists); err != nil {
-		return nil, wrapPgError(err)
-	}
-
-	// Return an empty list if the mutations table doesn't exist yet.
-	if !exists {
-		return res_map, nil
-	}
-
 	// First, extract a list of already active mutations and check if they have to be downed because they're
 	// either inexistant or their hash changed.
-	if rows, err = db.Query(context.Background(), `select row_to_json(m)::text from dmut.mutations m order by date_applied`); err != nil {
+	if rows, err = db.Query(context.Background(), `select hash, name, meta, up, down, children, parents from dmut.mutations m`); err != nil {
 		return nil, wrapPgError(err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var dbmut_json string
-		if err = rows.Scan(&dbmut_json); err != nil {
-			return nil, wrapPgError(err)
-		}
 		var dbmut DbMutation
-		if err = json.Unmarshal([]byte(dbmut_json), &dbmut); err != nil {
-			return nil, err
+		if err = rows.Scan(&dbmut.Hash, &dbmut.Name, &dbmut.Meta, &dbmut.Up, &dbmut.Down, &dbmut.Children, &dbmut.Parents); err != nil {
+			return nil, wrapPgError(err)
 		}
 		res_map.AddMutation(&dbmut)
 	}
 
 	return res_map, nil
+}
+
+func (r *PgRunner) InstallDmut() error {
+	_, err := r.conn.Exec(context.Background(), `
+	CREATE SCHEMA IF NOT EXISTS dmut;
+	CREATE TABLE IF NOT EXISTS dmut.mutations (
+		hash TEXT PRIMARY KEY,
+		name TEXT,
+		meta BOOLEAN,
+		up TEXT[],
+		down TEXT[],
+		children TEXT[],
+		parents TEXT[],
+		ts TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+	);
+	CREATE TABLE IF NOT EXISTS dmut.roles (
+		rolname TEXT PRIMARY KEY
+	);
+`)
+	return wrapPgError(err)
 }

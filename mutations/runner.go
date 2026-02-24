@@ -1,10 +1,7 @@
 package mutations
 
 import (
-	"log"
-
 	mapset "github.com/deckarep/golang-set/v2"
-	au "github.com/logrusorgru/aurora"
 )
 
 type Runner interface {
@@ -21,9 +18,13 @@ type Runner interface {
 
 	ApplyMutation(mut *DbMutation) error
 	UndoMutation(mut *DbMutation) error
+	Close() error
+
+	// InstallDmut() error
 }
 
 func ApplyMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset.Set[string]) error {
+
 	if err := runner.ReconcileRoles(disk_roles); err != nil {
 		return err
 	}
@@ -50,10 +51,6 @@ func ApplyMutationsFromCurrent(runner Runner, disk_mutations DbMutationMap, curr
 		}
 
 		current.Remove(mut)
-
-		if !runner.IsTesting() {
-			log.Println(au.Green("▼"), mut.Name)
-		}
 	}
 
 	// Check what new hashes are in the local mutations after the removed database ones are gone.
@@ -62,10 +59,6 @@ func ApplyMutationsFromCurrent(runner Runner, disk_mutations DbMutationMap, curr
 	for _, mut := range disk_mutations.GetMutationsInOrder(true, new_local_hashes.ToSlice()...) {
 		if err := runner.ApplyMutation(mut); err != nil {
 			return err
-		}
-
-		if !runner.IsTesting() {
-			log.Println(au.Green("▲"), mut.Name)
 		}
 	}
 
