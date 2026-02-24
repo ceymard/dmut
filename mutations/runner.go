@@ -42,6 +42,7 @@ func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
 	for _, other := range others {
 		o.TestBefore = o.TestBefore || other.TestBefore
 		o.Commit = o.Commit || other.Commit
+		o.Override = o.Override || other.Override
 	}
 }
 
@@ -84,20 +85,20 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 	}
 
 	if options.Override {
-		if err := test_runner.ClearMutations(); err != nil {
+		if err := runner.ClearMutations(); err != nil {
 			return err
 		}
 
 		for _, mut := range disk_mutations.GetMutationsInOrder(true) {
-			if err := test_runner.SaveMutation(mut); err != nil {
+			if err := runner.SaveMutation(mut); err != nil {
 				return err
 			}
 			runner.Logger().Println(au.BrightGreen("✓"), mut.DisplayName())
 		}
-	}
-
-	if err := ApplyMutations(runner, disk_mutations); err != nil {
-		return err
+	} else {
+		if err := ApplyMutations(runner, disk_mutations); err != nil {
+			return err
+		}
 	}
 
 	if options.TestBefore {

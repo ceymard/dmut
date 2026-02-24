@@ -219,6 +219,9 @@ func LoadYamlMutations(paths ...string) (YamlMigrationFile, error) {
 				if strings.HasPrefix(file.Name(), "_") {
 					continue
 				}
+				if !strings.HasSuffix(file.Name(), ".yaml") && !strings.HasSuffix(file.Name(), ".yml") {
+					continue
+				}
 				err = readYamlFile(res, filepath.Join(path, file.Name()))
 				if err != nil {
 					return nil, err
