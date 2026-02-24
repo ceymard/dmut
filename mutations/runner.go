@@ -82,6 +82,10 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 		if err := test_runner.Rollback(); err != nil {
 			return err
 		}
+
+		if err := test_runner.Close(); err != nil {
+			return err
+		}
 	}
 
 	if options.Override {
