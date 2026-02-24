@@ -264,6 +264,7 @@ var (
 		},
 
 		"MultiComment": {
+			{Name: "multiCommentStart", Pattern: `/\*`, Action: lexer.Push("MultiComment")},
 			{Name: "multiCommentStop", Pattern: `\*/`, Action: lexer.Pop()},
 			{Name: "char", Pattern: `.|\n`},
 		},
