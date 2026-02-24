@@ -127,8 +127,26 @@ type CreateFunctionStatement struct {
 
 func (fun *CreateFunctionStatement) Down() string {
 	var args = ""
+	var in_default = false
+
 	if fun.Args != nil {
-		args = strings.Join(*fun.Args, " ")
+		for _, arg := range *fun.Args {
+			if arg == "default" {
+				in_default = true
+			} else if in_default && (arg == ")" || arg == ",") {
+				in_default = false
+				args += arg
+			} else {
+				if strings.ToLower(arg) == "default" {
+					in_default = true
+				} else {
+					if args != "" {
+						args = args + " "
+					}
+					args += arg
+				}
+			}
+		}
 	}
 	return fmt.Sprintf(`DROP FUNCTION %s (%s);`, *fun.Name, args)
 }

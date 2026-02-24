@@ -10,7 +10,10 @@ import (
 type Runner interface {
 	// ReconcileRoles reconciles the roles in the database with the roles in the mutations.
 	// Removing a role from the database will result in dropping all meta mutations before reconciling them.
-	ReconcileRoles(roles mapset.Set[string], override bool) error
+	GetDBRoles() (mapset.Set[string], error)
+	AddRole(role string) error
+	RemoveRole(role string) error
+	OverwriteRoles(roles mapset.Set[string]) error
 	GetTestRunner() (Runner, error)
 
 	Logger() *log.Logger
@@ -63,12 +66,56 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 		defer test_runner.Close()
 	}
 
+	db_roles, err := runner.GetDBRoles()
+	if err != nil {
+		return err
+	}
+
+	var new_roles = disk_roles.Difference(db_roles)
+	var removed_roles = db_roles.Difference(disk_roles)
+
+	if !options.Override {
+		// Unfortunately, we have to create missing roles outside of the BEGIN transaction, because the test runner will be in another database and thus cannot access the new roles as transactions cannot span databases.
+		for _, role := range new_roles.ToSlice() {
+			if err := runner.AddRole(role); err != nil {
+				return err
+			}
+		}
+
+		defer func() {
+			if err != nil {
+				if err := runner.Rollback(); err != nil {
+					runner.Logger().Println(au.BrightRed("💥"), "error rolling back in defer", err)
+				}
+				for _, role := range new_roles.ToSlice() {
+					if err := runner.RemoveRole(role); err != nil {
+						runner.Logger().Println(au.BrightRed("💥"), "error removing role in defer", role, err)
+					}
+				}
+			}
+		}()
+	} else {
+		if err := runner.OverwriteRoles(disk_roles); err != nil {
+			return err
+		}
+	}
+
 	if err := runner.Begin(); err != nil {
 		return err
 	}
 
-	if err := runner.ReconcileRoles(disk_roles, options.Override); err != nil {
-		return err
+	// Now, we're inside a transaction, so we can remove the roles without fear of having to undo stuff manually
+	if removed_roles.Cardinality() > 0 {
+		// Undo all meta mutations
+		if err := UndoAllMetaMutations(runner); err != nil {
+			return err
+		}
+
+		for _, role := range removed_roles.ToSlice() {
+			if err := runner.RemoveRole(role); err != nil {
+				return err
+			}
+		}
 	}
 
 	if options.TestBefore {
@@ -129,6 +176,21 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 		}
 	}
 
+	return nil
+}
+
+func UndoAllMetaMutations(runner Runner) error {
+	mutations, err := runner.GetDBMutationsFromDb()
+	if err != nil {
+		return err
+	}
+	for _, mut := range mutations.GetMutationsInOrder(false) {
+		if mut.Meta {
+			if err := runner.UndoMutation(mut); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

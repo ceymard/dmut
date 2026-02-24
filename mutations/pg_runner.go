@@ -200,53 +200,33 @@ func (r *PgRunner) getDbRoles() (mapset.Set[string], error) {
 	return res, nil
 }
 
-func (r *PgRunner) ReconcileRoles(roles mapset.Set[string], override bool) error {
-	if override {
-		if err := r.exec(`DELETE FROM dmut.roles`); err != nil {
-			return err
+func (r *PgRunner) AddRole(role string) error {
+	if err := r.exec(`CREATE ROLE ` + pgx.Identifier{role}.Sanitize()); err != nil {
+		return wrapPgError(err)
+	}
+	return r.exec(`INSERT INTO dmut.roles(rolname) VALUES ($1)`, role)
+}
+
+func (r *PgRunner) RemoveRole(role string) error {
+	if err := r.exec(`DROP ROLE ` + pgx.Identifier{role}.Sanitize()); err != nil {
+		return wrapPgError(err)
+	}
+	return r.exec(`DELETE FROM dmut.roles WHERE rolname = $1`, role)
+}
+
+func (r *PgRunner) GetDBRoles() (mapset.Set[string], error) {
+	return r.getDbRoles()
+}
+
+func (r *PgRunner) OverwriteRoles(roles mapset.Set[string]) error {
+	if err := r.exec(`DELETE FROM dmut.roles`); err != nil {
+		return wrapPgError(err)
+	}
+	for _, role := range roles.ToSlice() {
+		if err := r.exec(`INSERT INTO dmut.roles(rolname) VALUES ($1)`, role); err != nil {
+			return wrapPgError(err)
 		}
 	}
-
-	db_roles, err := r.getDbRoles()
-	if err != nil {
-		return err
-	}
-	missing_roles := roles.Difference(db_roles)
-	leftover_roles := db_roles.Difference(roles)
-
-	if leftover_roles.Cardinality() > 0 {
-
-		// Drop all meta mutations before dropping the roles
-		muts, err := r.GetDBMutationsFromDb()
-		if err != nil {
-			return err
-		}
-		for _, mut := range muts {
-			if mut.Meta {
-				if err := r.UndoMutation(mut); err != nil {
-					return err
-				}
-			}
-		}
-
-		for _, role := range leftover_roles.ToSlice() {
-			role := `"` + role + `"`
-			r.logger.Println(au.BrightRed("💀"), "dropping role", role)
-			if err := r.exec(`DROP ROLE ` + role); err != nil {
-				return err
-			}
-		}
-	}
-
-	if missing_roles.Cardinality() > 0 {
-		for _, role := range missing_roles.ToSlice() {
-			r.logger.Println(au.BrightGreen("🗣"), "creating role", role)
-			if err := r.exec(`CREATE ROLE "` + role + `"`); err != nil {
-				return err
-			}
-		}
-	}
-
 	return nil
 }
 
