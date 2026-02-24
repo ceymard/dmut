@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	au "github.com/logrusorgru/aurora"
+	"github.com/pkg/errors"
 )
 
 var _ Runner = &PgRunner{}
@@ -62,7 +63,7 @@ func (r *PgRunner) ApplyMutation(m *DbMutation) error {
 	log.Println(au.BrightGreen("✓"), m.DisplayName())
 
 	if err := r.execStatements(m.Up); err != nil {
-		return err
+		return errors.Wrap(err, "error applying mutation "+m.DisplayName())
 	}
 
 	return r.saveMutation(m)
@@ -113,7 +114,7 @@ func (r *PgRunner) RollbackToSavepoint(name string) error {
 func (r *PgRunner) exec(sql string) error {
 	_, err := r.conn.Exec(context.Background(), sql)
 	if err != nil {
-		log.Println(au.BrightRed("error in statement"), au.BrightBlue(sql))
+		err = errors.Wrap(err, au.BrightRed("error in statement").String()+" "+au.BrightBlue(sql).String())
 	}
 	return wrapPgError(err)
 }

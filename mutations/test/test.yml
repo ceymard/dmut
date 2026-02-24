@@ -83,6 +83,7 @@ api.users:
     - |
       CREATE TABLE api.users (
         id uuid PRIMARY KEY,
+        username text not null unique,
         roles TEXT[],
         first_name TEXT,
         last_name TEXT,
@@ -104,7 +105,7 @@ api.users:
     - grant select on table api.users to "@active";
     - alter table api.users enable row level security;
     - |
-      create policy api.users_only_see_my_rows on api.users to "@active"
+      create policy users_only_see_my_rows on api.users to "@active"
         using (pg_has_role(username, 'member'))
         with check (username = current_user or pg_has_role(current_user, '@admin', 'member'))
       ;
