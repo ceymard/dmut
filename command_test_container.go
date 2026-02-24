@@ -13,9 +13,19 @@ import (
 )
 
 type TestCmd struct {
-	Image   string   `short:"i" help:"Postgres image name to test on."`
-	Verbose bool     `short:"v" help:"Verbose output."`
-	Paths   []string `arg:"" help:"Paths to test."`
+	Verbose  bool     `short:"v" help:"Verbose output."`
+	Remote   string   `short:"r" name:"remote" help:"Remote database to test on. All --test-* options will be ignored."`
+	Image    string   `short:"i" name:"test-image" help:"Postgres image name to test on."`
+	Database string   `short:"d" name:"test-database" help:"Database name to test on."`
+	Username string   `short:"u" name:"test-username" help:"Username to test on."`
+	Password string   `short:"p" name:"test-password" help:"Password to test on."`
+	Paths    []string `arg:"" help:"Paths to test."`
+}
+
+func (t TestCmd) Help() string {
+	return `
+	Test the mutations either on a temporary database started with docker, or on an existing, --remote database that will not be modified.
+	`
 }
 
 type Printer struct{}
@@ -29,6 +39,15 @@ func (t TestCmd) Run() error {
 	if t.Image != "" {
 		image = t.Image
 	}
+	if t.Database == "" {
+		t.Database = "test"
+	}
+	if t.Username == "" {
+		t.Username = "test"
+	}
+	if t.Password == "" {
+		t.Password = "test"
+	}
 	log.Println("testing mutations on", image)
 
 	muts, err := mutations.LoadYamlMutations(t.Paths...)
@@ -39,9 +58,9 @@ func (t TestCmd) Run() error {
 	ctx := context.Background()
 	container, err := postgres.Run(ctx,
 		image,
-		postgres.WithDatabase("testdb"),
-		postgres.WithUsername("testuser"),
-		postgres.WithPassword("testpass"),
+		postgres.WithDatabase(t.Database),
+		postgres.WithUsername(t.Username),
+		postgres.WithPassword(t.Password),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(5*time.Second),
 		),

@@ -46,6 +46,8 @@ func NewPgRunner(url string) (*PgRunner, error) {
 
 func (r *PgRunner) GetTestRunner() (Runner, error) {
 
+	log.Println(au.BrightGreen("🖥"), "creating test database")
+
 	if err := r.exec(`DROP DATABASE IF EXISTS __dmut_test__`); err != nil {
 		return nil, err
 	}
