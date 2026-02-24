@@ -128,6 +128,10 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 		}
 	}
 
+	if err := runner.Close(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
