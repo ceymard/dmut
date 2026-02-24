@@ -14,18 +14,11 @@ import (
 
 type TestCmd struct {
 	Verbose  bool     `short:"v" help:"Verbose output."`
-	Remote   string   `short:"r" name:"remote" help:"Remote database to test on. All --test-* options will be ignored."`
 	Image    string   `short:"i" name:"test-image" help:"Postgres image name to test on."`
 	Database string   `short:"d" name:"test-database" help:"Database name to test on."`
 	Username string   `short:"u" name:"test-username" help:"Username to test on."`
 	Password string   `short:"p" name:"test-password" help:"Password to test on."`
 	Paths    []string `arg:"" help:"Paths to test."`
-}
-
-func (t TestCmd) Help() string {
-	return `
-	Test the mutations either on a temporary database started with docker, or on an existing, --remote database that will not be modified.
-	`
 }
 
 type Printer struct{}
@@ -84,7 +77,7 @@ func (t TestCmd) Run() error {
 	}
 	log.Println("test container URI:", uri)
 
-	runner, err := mutations.NewPgRunner(uri)
+	runner, err := mutations.NewPgRunner(uri, t.Verbose)
 	if err != nil {
 		return err
 	}
@@ -93,7 +86,9 @@ func (t TestCmd) Run() error {
 	db_mutations := muts.ToDbMutationMap()
 	roles := muts.Roles()
 
-	if err := mutations.ApplyMutations(runner, db_mutations, roles); err != nil {
+	if err := mutations.RunMutations(runner, db_mutations, roles, &mutations.MutationRunnerOptions{
+		TestBefore: true,
+	}); err != nil {
 		return err
 	}
 

@@ -17,10 +17,13 @@ var VERSION = "1.0.0"
 
 type CLI struct {
 	Collect CollectCmd `cmd:"" help:"Collect all paths into a single yaml file."`
-	Test    TestCmd    `cmd:"" help:"Test the mutations on an empty test database that will be created in docker."`
+	Dry     DryCmd     `cmd:"" help:"Apply the mutations but don't commit them."`
 	Apply   ApplyCmd   `cmd:"" help:"Apply the mutations to the database."`
+
 	Version VersionCmd `cmd:"" help:"Show the version."`
-	Legacy  LegacyCmd  `cmd:"" help:"Extract a yaml from a legacy dmut system"`
+
+	Test   TestCmd   `cmd:"" help:"Test the mutations on an empty test database that will be created on the fly."`
+	Legacy LegacyCmd `cmd:"" help:"Extract a yaml from a legacy dmut system"`
 	// Extract ExtractCmd `cmd:"" help:""`
 }
 
@@ -38,6 +41,10 @@ func (c CollectCmd) Run() error {
 type ApplyCmd struct {
 	Host  string   `arg:"" help:"Database host."`
 	Paths []string `arg:"" help:"Paths to apply."`
+}
+
+type DryCmd struct {
+	ApplyCmd
 }
 
 func (a ApplyCmd) Run() error {

@@ -1,14 +1,18 @@
 package mutations
 
 import (
+	"log"
+
 	mapset "github.com/deckarep/golang-set/v2"
 )
 
 type Runner interface {
 	// ReconcileRoles reconciles the roles in the database with the roles in the mutations.
 	// Removing a role from the database will result in dropping all meta mutations before reconciling them.
-	ReconcileRoles(roles mapset.Set[string]) error
+	ReconcileRoles(roles mapset.Set[string], override bool) error
 	GetTestRunner() (Runner, error)
+
+	Logger() *log.Logger
 
 	Begin() error
 	Rollback() error
@@ -18,6 +22,8 @@ type Runner interface {
 
 	GetDBMutationsFromDb() (DbMutationMap, error)
 
+	ClearMutations() error
+	SaveMutation(mut *DbMutation) error
 	ApplyMutation(mut *DbMutation) error
 	UndoMutation(mut *DbMutation) error
 	Close() error
@@ -25,36 +31,91 @@ type Runner interface {
 	// InstallDmut() error
 }
 
-func ApplyMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset.Set[string]) error {
+type MutationRunnerOptions struct {
+	TestBefore bool
+	Commit     bool
+	Override   bool
+}
 
-	// Create the test runner before BEGIN, so that we have the test database ready before modifying the roles.
-	test_runner, err := runner.GetTestRunner()
-	if err != nil {
-		return err
+func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
+	for _, other := range others {
+		o.TestBefore = o.TestBefore || other.TestBefore
+		o.Commit = o.Commit || other.Commit
+	}
+}
+
+func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset.Set[string], opts ...*MutationRunnerOptions) error {
+
+	var options = MutationRunnerOptions{}
+	options.Merge(opts...)
+
+	var err error
+	var test_runner Runner
+
+	if options.TestBefore {
+		// Create the test runner before BEGIN, so that we have the test database ready before modifying the roles.
+		test_runner, err = runner.GetTestRunner()
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := runner.Begin(); err != nil {
 		return err
 	}
 
-	if err := runner.ReconcileRoles(disk_roles); err != nil {
+	if err := runner.ReconcileRoles(disk_roles, options.Override); err != nil {
 		return err
 	}
 
-	if err := TestMutationsFromOriginal(test_runner, runner, disk_mutations); err != nil {
+	if options.TestBefore {
+		if err := test_runner.Begin(); err != nil {
+			return err
+		}
+
+		if err := TestLeafMutations(test_runner, disk_mutations); err != nil {
+			return err
+		}
+	}
+
+	if options.Override {
+		if err := test_runner.ClearMutations(); err != nil {
+			return err
+		}
+
+		for _, mut := range disk_mutations.GetMutationsInOrder(true) {
+			if err := test_runner.SaveMutation(mut); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := ApplyMutations(runner, disk_mutations); err != nil {
 		return err
 	}
 
-	if err := ApplyMutationsFromCurrent(runner, disk_mutations); err != nil {
-		return err
+	if options.TestBefore {
+
+		if err := TestDowningMutations(runner); err != nil {
+			return err
+		}
+
+		if err := test_runner.Rollback(); err != nil {
+			return err
+		}
 	}
 
-	// Commit ?
+	if options.Commit {
+		if err := runner.Commit(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 // Apply the mutations on the disk to the database.
-func ApplyMutationsFromCurrent(runner Runner, disk_mutations DbMutationMap) error {
+func ApplyMutations(runner Runner, disk_mutations DbMutationMap) error {
 
 	// Get the currently defined mutations so that we send them to the test runner
 	current, err := runner.GetDBMutationsFromDb()

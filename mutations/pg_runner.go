@@ -19,7 +19,13 @@ var _ Runner = &PgRunner{}
 type PgRunner struct {
 	isTesting bool
 	uri       string
+	logger    *log.Logger
 	conn      *pgx.Conn
+	verbose   bool
+}
+
+func (r *PgRunner) Logger() *log.Logger {
+	return r.logger
 }
 
 func (r *PgRunner) Close() error {
@@ -30,23 +36,29 @@ func (r *PgRunner) IsTesting() bool {
 	return r.isTesting
 }
 
-func NewPgRunner(url string) (*PgRunner, error) {
-	log.Println("connecting to", url)
+func NewPgRunner(url string, verbose bool) (*PgRunner, error) {
+
+	res := &PgRunner{isTesting: false, uri: url, verbose: verbose}
+
+	res.logger = log.New(os.Stdout, "", log.Lshortfile|log.LstdFlags)
+	res.logger.SetPrefix(au.BrightGreen("pg ").String())
+
+	res.logger.Println("connecting to", url)
 	conn, err := pgx.Connect(context.Background(), url)
 	if err != nil {
 		return nil, err
 	}
-
-	res := &PgRunner{conn: conn, isTesting: false, uri: url}
+	res.conn = conn
 	if err := res.InstallDmut(); err != nil {
 		return nil, wrapPgError(err)
 	}
+
 	return res, nil
 }
 
 func (r *PgRunner) GetTestRunner() (Runner, error) {
 
-	log.Println(au.BrightGreen("🖥"), "creating test database")
+	r.logger.Println(au.BrightGreen("🖥"), "creating test database")
 
 	if err := r.exec(`DROP DATABASE IF EXISTS __dmut_test__`); err != nil {
 		return nil, err
@@ -69,7 +81,8 @@ func (r *PgRunner) GetTestRunner() (Runner, error) {
 		return nil, err
 	}
 
-	res := &PgRunner{conn: conn, isTesting: true}
+	res := &PgRunner{conn: conn, isTesting: true, uri: new_url, logger: log.New(os.Stdout, "", log.Lshortfile|log.LstdFlags), verbose: r.verbose}
+	res.logger.SetPrefix(au.BrightMagenta("test ").String())
 
 	return res, res.InstallDmut()
 }
@@ -94,20 +107,20 @@ func (r *PgRunner) execStatements(stmts []string) error {
 func (r *PgRunner) ApplyMutation(m *DbMutation) error {
 
 	if !r.isTesting {
-		log.Println(au.BrightGreen("✓"), m.DisplayName())
+		r.logger.Println(au.BrightGreen("✓"), m.DisplayName())
 	}
 
 	if err := r.execStatements(m.Up); err != nil {
 		return errors.Wrap(err, "error applying mutation "+m.DisplayName())
 	}
 
-	return r.saveMutation(m)
+	return r.SaveMutation(m)
 }
 
 func (r *PgRunner) UndoMutation(m *DbMutation) error {
 
 	if !r.isTesting {
-		log.Println(au.BrightRed("🗑"), m.DisplayName())
+		r.logger.Println(au.BrightRed("🗑"), m.DisplayName(), "!!")
 	}
 
 	if err := r.execStatements(m.Down); err != nil {
@@ -121,23 +134,28 @@ func (r *PgRunner) deleteMutation(m *DbMutation) error {
 	return wrapPgError(err)
 }
 
-func (r *PgRunner) saveMutation(m *DbMutation) error {
+func (r *PgRunner) ClearMutations() error {
+	err := r.exec(`DELETE FROM dmut.mutations`)
+	return wrapPgError(err)
+}
+
+func (r *PgRunner) SaveMutation(m *DbMutation) error {
 	err := r.exec(`INSERT INTO dmut.mutations(hash, name, meta, up, down, children, parents) VALUES ($1, $2, $3, $4, $5, $6, $7)`, m.Hash, m.Name, m.Meta, m.Up, m.Down, m.Children, m.Parents)
 	return wrapPgError(err)
 }
 
 func (r *PgRunner) Commit() error {
-	log.Println(au.BrightGreen("💾"), "committing")
+	r.logger.Println(au.BrightGreen("💾"), "committing")
 	return r.exec(`COMMIT`)
 }
 
 func (r *PgRunner) Begin() error {
-	log.Println(au.BrightGreen("💾"), "BEGIN")
+	r.logger.Println(au.BrightGreen("💾"), "BEGIN")
 	return r.exec("BEGIN")
 }
 
 func (r *PgRunner) Rollback() error {
-	log.Println(au.BrightRed("💾"), "rolling back")
+	r.logger.Println(au.BrightRed("💾"), "rolling back")
 	return r.exec("ROLLBACK")
 }
 
@@ -148,7 +166,7 @@ func (r *PgRunner) SavePoint(name string) error {
 		}
 		return nil
 	}
-	log.Println(au.BrightGreen("💾"), "saving point", name)
+	r.logger.Println(au.BrightGreen("💾"), "saving point", name)
 	return r.exec(`SAVEPOINT ` + name)
 }
 
@@ -157,13 +175,13 @@ func (r *PgRunner) RollbackToSavepoint(name string) error {
 	if name != "" {
 		cmd += ` TO SAVEPOINT ` + name
 	}
-	log.Println(au.BrightRed("💾"), "rolling back to point", name)
+	r.logger.Println(au.BrightRed("💾"), "rolling back to point", name)
 	return r.exec(cmd)
 }
 
 func (r *PgRunner) exec(sql string, args ...interface{}) error {
-	if os.Getenv("DMUT_VERBOSE") != "" {
-		log.Println(au.BrightBlue(sql))
+	if r.verbose {
+		r.logger.Println(au.BrightBlue(sql))
 	}
 	_, err := r.conn.Exec(context.Background(), sql, args...)
 	if err != nil {
@@ -191,7 +209,13 @@ func (r *PgRunner) getDbRoles() (mapset.Set[string], error) {
 	return res, nil
 }
 
-func (r *PgRunner) ReconcileRoles(roles mapset.Set[string]) error {
+func (r *PgRunner) ReconcileRoles(roles mapset.Set[string], override bool) error {
+	if override {
+		if err := r.exec(`DELETE FROM dmut.roles`); err != nil {
+			return err
+		}
+	}
+
 	db_roles, err := r.getDbRoles()
 	if err != nil {
 		return err
@@ -216,7 +240,7 @@ func (r *PgRunner) ReconcileRoles(roles mapset.Set[string]) error {
 
 		for _, role := range leftover_roles.ToSlice() {
 			role := `"` + role + `"`
-			log.Println(au.BrightRed("💀"), "dropping role", role)
+			r.logger.Println(au.BrightRed("💀"), "dropping role", role)
 			if err := r.exec(`DROP ROLE ` + role); err != nil {
 				return err
 			}
@@ -225,7 +249,7 @@ func (r *PgRunner) ReconcileRoles(roles mapset.Set[string]) error {
 
 	if missing_roles.Cardinality() > 0 {
 		for _, role := range missing_roles.ToSlice() {
-			log.Println(au.BrightGreen("🗣"), "creating role", role)
+			r.logger.Println(au.BrightGreen("🗣"), "creating role", role)
 			if err := r.exec(`CREATE ROLE "` + role + `"`); err != nil {
 				return err
 			}
