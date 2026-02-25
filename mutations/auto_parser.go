@@ -308,7 +308,7 @@ func either(s ...any) *combinator {
 ////////////////////////////
 
 type zero_or_moreCombinator struct {
-	combinator *combinator
+	combinators []*combinator
 }
 
 func (z *zero_or_moreCombinator) Parse(st state) state {
@@ -316,18 +316,21 @@ func (z *zero_or_moreCombinator) Parse(st state) state {
 		if st.isEOF() {
 			return st
 		}
-		newst := z.combinator.ParseState(st)
-		if newst.isNoMatch() {
-			return st
+		orig := st
+		for _, comb := range z.combinators {
+			st = comb.ParseState(st)
+			if st.isNoMatch() || st.isEOF() {
+				return orig
+			}
 		}
-		st = newst
+		orig = st
 	}
 }
 
-func zero_or_more(s *combinator) *combinator {
+func zero_or_more(s ...any) *combinator {
 	return &combinator{
 		parser: &zero_or_moreCombinator{
-			combinator: s,
+			combinators: getCombinatorSlice(s...),
 		},
 	}
 }
@@ -335,21 +338,24 @@ func zero_or_more(s *combinator) *combinator {
 ////////////////////////////
 
 type optCombinator struct {
-	combinator *combinator
+	combinators []*combinator
 }
 
-func (o *optCombinator) Parse(st state) state {
-	newst := o.combinator.ParseState(st)
-	if newst.isNoMatch() {
-		return st
+func (o *optCombinator) Parse(orig state) state {
+	st := orig
+	for _, comb := range o.combinators {
+		st = comb.ParseState(st)
+		if !st.isMatch() {
+			return orig
+		}
 	}
-	return newst
+	return st
 }
 
-func opt(s any) *combinator {
+func opt(s ...any) *combinator {
 	return &combinator{
 		parser: &optCombinator{
-			combinator: getCombinator(s),
+			combinators: getCombinatorSlice(s...),
 		},
 	}
 }

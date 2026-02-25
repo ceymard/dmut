@@ -93,7 +93,7 @@ func TestSplit(t *testing.T) {
 		},
 		{
 			upSQL:    "GRANT SELECT, INSERT, UPDATE ON table t TO u;",
-			wantDown: "REVOKE SELECT , INSERT , UPDATE ON table t FROM u;",
+			wantDown: "REVOKE SELECT, INSERT, UPDATE ON table t FROM u;",
 		},
 		{
 			upSQL:    "GRANT USAGE ON schema s TO u;",
@@ -142,7 +142,7 @@ func TestSplit(t *testing.T) {
 		t.Run(tt.upSQL, func(t *testing.T) {
 			got, err := AutoDowner.ParseAndGetDefault(tt.upSQL)
 			if err != nil {
-				t.Errorf("parse error: %v", err)
+				t.Fatalf("parse error: %v", err)
 			}
 			want := strings.ToLower(tt.wantDown)
 			down := strings.ToLower(got)

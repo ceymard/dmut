@@ -17,7 +17,18 @@ var auto_create = seq("create",
 		a("extension", id),
 		a("domain", id),
 		a("event", "trigger", id),
-		a("trigger", id),
+		seq(
+			opt("constraint"),
+			a("trigger", id),
+			either("before", "after", seq("instead", "of")),
+			either(
+				"insert",
+				seq("update", opt("of", id, zero_or_more(",", a(id)))),
+				"delete",
+				"truncate",
+			),
+			a("on", id),
+		),
 		a("foreign", "data", "wrapper", id),
 		a("foreign", "table", id),
 		a(opt("trusted"), opt("procedural"), "language", id),
@@ -34,6 +45,7 @@ var auto_create = seq("create",
 			)),
 			a(")"),
 		),
+		a("policy", id, "on", id),
 	),
 	// Get everything until a terminating ;
 	until_opt(";"),
@@ -52,10 +64,10 @@ var auto_alter_table = seq("alter", "table", id,
 var auto_grant = seq(
 	"grant",
 	either(
-		seq(id, "to", id2), // .Produce(id2, "from", id),
+		seq(a(id), "to", asIs("to", id2, zero_or_more(",", id))), // .Produce(id2, "from", id),
 		seq(
 			a(until("on")),
-			"on",
+			a("on"),
 			a(either(
 				"table",
 				seq(opt("materialized"), "view"),
@@ -67,11 +79,11 @@ var auto_grant = seq(
 				"sequence",
 				"function",
 			)),
-			id,
-			a("to"), //.Produce("from"),
-			id,
+			a(id),
+			"to",
+			asIs("to", id, zero_or_more(",", id)),
 		),
 	),
-) //.Produce("revoke", acc)
+).Produce("revoke", acc, " from", groupInclude("to"), ";")
 
 var AutoDowner = either(auto_create, auto_alter_table, auto_grant)
