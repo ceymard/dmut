@@ -25,9 +25,9 @@ var auto_create = seq("create",
 		seq(
 			a("function", id, "("),
 			zero_or_more(seq(
-				either("in", "inout", "out", "variadic"),
-				id,
-				opt(seq(not("default"), id)),
+				opt(either("in", "inout", "out", "variadic")),
+				a(id),
+				opt(seq(not("default"), a(id))),
 				opt(either("=", "default")),
 				until(either(",", ")")),
 				a(opt(",")),
@@ -37,7 +37,7 @@ var auto_create = seq("create",
 	),
 	// Get everything until a terminating ;
 	until_opt(";"),
-).Produce("DROP ", acc, ";")
+).Produce("DROP", acc, ";")
 
 var auto_alter_table = seq("alter", "table", id,
 	either(

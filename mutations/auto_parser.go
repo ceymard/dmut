@@ -3,6 +3,7 @@ package mutations
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	lexer "github.com/alecthomas/participle/v2/lexer"
 )
@@ -91,6 +92,7 @@ func (c *combinator) Parse(s string) (state, error) {
 		return state{}, nil
 	}
 	return c.ParseState(state{
+		file:    s,
 		tokens:  tokens,
 		results: []result{},
 		pos:     0,
@@ -107,7 +109,11 @@ func (c *combinator) ParseAndGetDefault(s string) (string, error) {
 	}
 	var acc = ""
 	for _, result := range res.results {
-		acc += result.value
+		token := result.value
+		if token.Pos.Offset > 0 && unicode.IsSpace(rune(res.file[token.Pos.Offset-1])) {
+			acc += " "
+		}
+		acc += token.Value
 	}
 	return acc, nil
 }
@@ -163,7 +169,7 @@ type stringProducer struct {
 func (s *stringProducer) act(st state, old_results []result) state {
 	st.results = append(st.results, result{
 		group: s.group,
-		value: s.value,
+		value: lexer.Token{Value: s.value, Pos: lexer.Position{Offset: -1}},
 	})
 	return st
 }
@@ -177,10 +183,11 @@ func newStringProducer(group string, s string) producer {
 
 type result struct {
 	group string
-	value string
+	value lexer.Token
 }
 
 type state struct {
+	file    string
 	tokens  []lexer.Token
 	results []result
 	pos     int
@@ -227,15 +234,9 @@ func (a *asisCombinator) Parse(orig state) state {
 		}
 	}
 	for i := orig.pos; i < st.pos; i++ {
-		if i > orig.pos {
-			st.results = append(st.results, result{
-				group: a.group,
-				value: " ",
-			})
-		}
 		st.results = append(st.results, result{
 			group: a.group,
-			value: orig.tokens[i].Value,
+			value: orig.tokens[i],
 		})
 	}
 	return st
@@ -316,7 +317,7 @@ func (z *zero_or_moreCombinator) Parse(st state) state {
 			return st
 		}
 		newst := z.combinator.ParseState(st)
-		if st.isNoMatch() {
+		if newst.isNoMatch() {
 			return st
 		}
 		st = newst
