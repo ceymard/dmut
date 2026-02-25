@@ -182,11 +182,11 @@ func (stm *YamlStatement) UnmarshalYAML(node ast.Node) error {
 }
 
 func yamlStatementFromString(str string) (YamlStatement, error) {
-	res, err := Parser.ParseString("", str)
+	res, err := AutoDowner.ParseAndGetDefault(str)
 	if err != nil {
 		return YamlStatement{}, fmt.Errorf("can't generate undo statement from %s: %w", str, err)
 	}
-	return YamlStatement{Up: str, Down: (*res).Down()}, nil
+	return YamlStatement{Up: str, Down: res}, nil
 }
 
 func readYamlFile(file YamlMigrationFile, filename string) error {

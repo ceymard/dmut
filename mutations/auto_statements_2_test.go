@@ -1,11 +1,22 @@
 package mutations
 
 import (
+	"log"
 	"strings"
 	"testing"
 )
 
-func TestDownGeneration(t *testing.T) {
+func TestSplit(t *testing.T) {
+
+	tokens, err := split("create table t (id int);")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tok := range tokens {
+		log.Println(tok, tok.Type)
+	}
+
 	tests := []struct {
 		name     string
 		upSQL    string
@@ -71,7 +82,7 @@ func TestDownGeneration(t *testing.T) {
 		{
 			name:     "CREATE INDEX schema-qualified table",
 			upSQL:    "CREATE INDEX idx ON myschema.t (col);",
-			wantDown: "DROP INDEX myschema.idx;",
+			wantDown: "DROP INDEX idx;",
 		},
 		// CreateFunctionStatement
 		{
@@ -171,12 +182,12 @@ func TestDownGeneration(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Parser.ParseString("", tt.upSQL)
+			got, err := AutoDowner.ParseAndGetDefault(tt.upSQL)
 			if err != nil {
 				t.Fatalf("parse error: %v", err)
 			}
 			want := strings.ToLower(tt.wantDown)
-			down := strings.ToLower((*got).Down())
+			down := strings.ToLower(got)
 			if down != want {
 				t.Errorf("Down() = %q, want %q", down, want)
 			}

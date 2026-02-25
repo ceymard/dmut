@@ -92,7 +92,7 @@ func (c LegacyCmd) Run() error {
 				up = replaceLineComments(up)
 				down := replaceLineComments(mut.Down[len(mut.Down)-i-1])
 
-				if _, err := mutations.Parser.ParseString("", up); err == nil {
+				if _, err := mutations.AutoDowner.ParseAndGetDefault(up); err == nil {
 					// if we can undo it, just put the string
 					// os.Stdout.WriteString(up + "\n")
 					statements = append(statements, up)
