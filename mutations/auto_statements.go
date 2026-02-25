@@ -169,7 +169,7 @@ func (ind *CreateIndexStatement) Down() string {
 
 // CREATE TABLE/VIEW/EXTENSION/SCHEMA/TYPE/ROLE <name> ... ;
 type SimpleCreateStatement struct {
-	Kind *[]string `parser:"  @('table' | ('materialized')? 'view' | 'extension' | 'schema' | 'type' | 'role')"`
+	Kind *[]string `parser:"  @('table' | 'domain' | ('materialized')? 'view' | 'extension' | 'schema' | 'type' | 'role')"`
 	Id   *string   `parser:"  @SqlId (!';')*   "`
 }
 
