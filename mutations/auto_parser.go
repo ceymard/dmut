@@ -555,3 +555,8 @@ func token(group string, tok lexer.TokenType) *combinator {
 		},
 	}
 }
+
+func separated_by(separator any, s ...any) *combinator {
+	var sequence = seq(s...)
+	return seq(sequence, zero_or_more(separator, sequence))
+}

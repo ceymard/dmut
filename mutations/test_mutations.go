@@ -11,9 +11,9 @@ func TestLeafMutations(runner Runner, mutations DbMutationMap) error {
 		return err
 	}
 	// Test all leaf mutations independently
-	for _, leaf := range mutations.GetLeafMutations() {
-		runner.Logger().Println("testing leaf mutation", leaf.DisplayName())
-		mut_slice := mutations.GetMutationsInOrder(true, leaf.Hash)
+	for _, mutation := range mutations {
+		runner.Logger().Println("testing mutation", mutation.DisplayName())
+		mut_slice := mutations.GetMutationsInOrder(true, mutation.Hash)
 		for _, mut := range mut_slice {
 			if err := runner.ApplyMutation(mut); err != nil {
 				return err

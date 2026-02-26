@@ -18,7 +18,6 @@ var auto_create_operator = seq(
 		until(either(",", ")")),
 	), opt(",")),
 	")",
-	until_opt(";"),
 ).Produce("drop", acc, "(", groupDef("left", "none"), ",", group("right"), ")", ";")
 
 var auto_create = seq("create",
@@ -150,17 +149,17 @@ var auto_create = seq("create",
 		seq(opt("constraint"),
 			a("trigger", id),
 			either("before", "after", seq("instead", "of")),
-			either(
+			separated_by("or", either(
 				"insert",
 				seq("update", opt("of", id, zero_or_more(",", a(id)))),
 				"delete",
 				"truncate",
-			),
+			)),
 			a("on", id),
 		),
 	),
 	// Get everything until a terminating ;
-	until_opt(";"),
+
 ).Produce("DROP", acc, ";")
 
 var auto_comment = seq("comment", "on", until_opt(";")).Produce("")
@@ -173,7 +172,6 @@ var auto_alter_table = seq(a("alter", "table", id),
 		seq("add", "constraint", id),
 		seq("rename", "constraint", id, "to", id),
 	),
-	until_opt(";"),
 ).Produce(acc, ";")
 
 var auto_grant = seq(
@@ -181,9 +179,8 @@ var auto_grant = seq(
 	either(
 		seq(a(id), "to", asIs("to", id2, zero_or_more(",", id))),
 		seq(
-			a(until("on")),
-			a("on"),
-			a(either(
+			a(until("on"), "on"),
+			opt(a(either(
 				"table",
 				seq(opt("materialized"), "view"),
 				"schema",
@@ -198,7 +195,7 @@ var auto_grant = seq(
 				seq("large", "object"),
 				"type",
 				"tablespace",
-			)),
+			))),
 			a(id),
 			"to",
 			asIs("to", id, zero_or_more(",", id)),
@@ -206,4 +203,4 @@ var auto_grant = seq(
 	),
 ).Produce("revoke", acc, " from", group("to"), ";")
 
-var AutoDowner = either(auto_create_operator, auto_create, auto_alter_table, auto_grant, auto_comment)
+var AutoDowner = seq(either(auto_create_operator, auto_create, auto_alter_table, auto_grant, auto_comment), until_opt(";"))
