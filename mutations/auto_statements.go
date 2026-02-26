@@ -1,8 +1,8 @@
 package mutations
 
-var id = token("", SqlLexer.Symbols()["Id"])
-var id2 = token("", SqlLexer.Symbols()["Id"])
-var operator = token("", SqlLexer.Symbols()["Operator"])
+var id = token(SqlLexer.Symbols()["Id"])
+var id2 = token(SqlLexer.Symbols()["Id"])
+var operator = token(SqlLexer.Symbols()["Operator"])
 var acc = group("")
 var balanced_expr = a("balanced_expr")
 
@@ -167,9 +167,9 @@ var auto_comment = seq("comment", "on", until_opt(";")).Produce("")
 var auto_alter_table = seq(a("alter", "table", id),
 	either(
 		seq("enable", a("row", "level", "security")).Produce("disable", acc),
-		seq("add", "column", id),
-		seq("alter", "column", id, "set", "default"),
-		seq("add", "constraint", id),
+		seq("add", a("column", id)).Produce("drop", acc),
+		seq(a("alter", "column", id), str("set").Produce("drop"), a("default")),
+		seq("add", a("constraint", id)).Produce("drop", acc),
 		seq("rename", "constraint", id, "to", id),
 	),
 ).Produce(acc, ";")

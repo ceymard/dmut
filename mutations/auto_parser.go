@@ -77,13 +77,13 @@ func getCombinatorSlice(s ...any) []*combinator {
 }
 
 type combinator struct {
-	parser   simpleParser
-	producer []producer
+	parser    simpleParser
+	producers []producer
 }
 
 func (c *combinator) ParseState(s state) state {
 	var new_state = c.parser.Parse(s)
-	if len(c.producer) > 0 && new_state.isMatch() {
+	if len(c.producers) > 0 && new_state.isMatch() {
 		var old_r []result
 		var new_results []result
 		for _, result := range new_state.results {
@@ -95,11 +95,28 @@ func (c *combinator) ParseState(s state) state {
 		}
 		// var old_results = new_state.results
 		new_state.results = old_r
-		for _, producer := range c.producer {
+		for _, producer := range c.producers {
 			new_state = producer.act(new_state, new_results)
 		}
 	}
 	return new_state
+}
+
+func (c *combinator) Produce(producers ...any) *combinator {
+	for _, prod := range producers {
+		if prod, ok := prod.(producer); ok {
+			c.producers = append(c.producers, prod)
+			continue
+		}
+
+		if str, ok := prod.(string); ok {
+			c.producers = append(c.producers, newStringProducer("", str))
+			continue
+		}
+
+		panic(fmt.Errorf("unknown producer type: %T", prod))
+	}
+	return c
 }
 
 func (c *combinator) Parse(s string) (state, error) {
@@ -132,23 +149,6 @@ func (c *combinator) ParseAndGetDefault(s string) (string, error) {
 		acc += token.Value
 	}
 	return acc, nil
-}
-
-func (c *combinator) Produce(producers ...any) *combinator {
-	for _, prod := range producers {
-		if prod, ok := prod.(producer); ok {
-			c.producer = append(c.producer, prod)
-			continue
-		}
-
-		if str, ok := prod.(string); ok {
-			c.producer = append(c.producer, newStringProducer("", str))
-			continue
-		}
-
-		panic(fmt.Errorf("unknown producer type: %T", prod))
-	}
-	return c
 }
 
 // ///////////////////////////////////////////////
@@ -197,7 +197,7 @@ type stringProducer struct {
 
 func (s *stringProducer) act(st state, old_results []result) state {
 	var space = ""
-	if len(old_results) > 0 && old_results[0].hasSpaceBefore(&st) {
+	if len(old_results) > 0 && old_results[0].hasSpaceBefore(&st) || len(st.results) > 0 && st.results[len(st.results)-1].hasSpaceAfter(&st) {
 		space = " "
 	}
 	st.addResult(s.group, lexer.Token{Value: space + s.value, Pos: lexer.Position{Offset: -1}})
@@ -219,6 +219,10 @@ type result struct {
 
 func (r *result) hasSpaceBefore(st *state) bool {
 	return r.value.Pos.Offset > 0 && unicode.IsSpace(rune(st.file[r.value.Pos.Offset-1])) || unicode.IsSpace(rune(r.value.Value[0]))
+}
+
+func (r *result) hasSpaceAfter(st *state) bool {
+	return len(st.results) > 0 && r.value.Pos.Offset > 0 && r.value.Pos.Offset < len(st.file)-1 && unicode.IsSpace(rune(st.file[r.value.Pos.Offset+len(r.value.Value)]))
 }
 
 type state struct {
@@ -548,7 +552,7 @@ func (t *tokenCombinator) Parse(st state) state {
 	return st.noMatch()
 }
 
-func token(group string, tok lexer.TokenType) *combinator {
+func token(tok lexer.TokenType) *combinator {
 	return &combinator{
 		parser: &tokenCombinator{
 			tok: tok,
