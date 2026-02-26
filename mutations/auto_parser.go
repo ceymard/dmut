@@ -287,7 +287,7 @@ func (a *asisCombinator) Parse(orig state) state {
 	return st
 }
 
-func asIs(group string, s ...any) *combinator {
+func accumulate(group string, s ...any) *combinator {
 	comb := getCombinatorSlice(s...)
 	return &combinator{
 		parser: &asisCombinator{
@@ -299,7 +299,7 @@ func asIs(group string, s ...any) *combinator {
 
 // add a sequence "as-is"
 func a(s ...any) *combinator {
-	return asIs("", s...)
+	return accumulate("", s...)
 }
 
 //////////
