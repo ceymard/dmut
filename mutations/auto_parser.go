@@ -43,7 +43,14 @@ func split(s string) ([]lexer.Token, error) {
 	}
 
 	var tokens []lexer.Token
-	for tok, _ := lx.Next(); !tok.EOF(); tok, _ = lx.Next() {
+	for {
+		tok, err := lx.Next()
+		if err != nil {
+			return nil, err
+		}
+		if tok.EOF() {
+			break
+		}
 		tokens = append(tokens, tok)
 	}
 	return tokens, nil
@@ -224,7 +231,8 @@ func (s state) noMatch() state {
 }
 
 func (s *state) isEOF() bool {
-	return s.pos > len(s.tokens) || s.pos > -1 && s.tokens[s.pos].Type == lexer.EOF
+
+	return len(s.tokens) == 0 || s.pos > len(s.tokens)-1 || s.pos > -1 && s.tokens[s.pos].Type == lexer.EOF
 }
 
 type Producer interface {

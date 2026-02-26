@@ -56,6 +56,14 @@ var auto_create = seq("create",
 			a("using", id),
 		),
 
+		// OPERATOR FAMILY
+		// https://www.postgresql.org/docs/18/sql-createopfamily.html
+		// https://www.postgresql.org/docs/18/sql-dropopfamily.html
+		seq(
+			a("operator", "family", id),
+			a("using", id),
+		),
+
 		// FOREIGN DATA WRAPPER
 		// https://www.postgresql.org/docs/18/sql-createforeigndatawrapper.html
 		// https://www.postgresql.org/docs/18/sql-dropforeigndatawrapper.html
