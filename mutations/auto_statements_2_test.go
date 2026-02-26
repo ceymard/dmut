@@ -3,7 +3,48 @@ package mutations
 import (
 	"strings"
 	"testing"
+
+	lexer "github.com/alecthomas/participle/v2/lexer"
+	"github.com/k0kubun/pp"
 )
+
+func compareIdToken(cmp lexer.Token, got lexer.Token) bool {
+	if len(cmp.Value) > 0 && cmp.Value[0] == '"' || len(got.Value) > 0 && got.Value[0] == '"' {
+		return cmp.Value == got.Value
+	}
+	return strings.EqualFold(cmp.Value, got.Value)
+}
+
+func compareTokens(t *testing.T, id_token lexer.TokenType, cmp string, got string) bool {
+	cmpTokens, err := split(cmp)
+	if err != nil {
+		return false
+	}
+	gotTokens, err := split(got)
+	if err != nil {
+		return false
+	}
+	if len(cmpTokens) != len(gotTokens) {
+		pp.Println("token count mismatch", len(cmpTokens), len(gotTokens))
+		return false
+	}
+	for i := range cmpTokens {
+
+		if cmpTokens[i].Type == id_token {
+			// ids are case insensitive
+			if !compareIdToken(cmpTokens[i], gotTokens[i]) {
+
+				return false
+			}
+		} else {
+			if cmpTokens[i].Value != gotTokens[i].Value {
+
+				return false
+			}
+		}
+	}
+	return true
+}
 
 func TestSplit(t *testing.T) {
 
@@ -137,17 +178,34 @@ func TestSplit(t *testing.T) {
 			upSQL:    "ALTER TABLE t ADD CONSTRAINT t_pkey PRIMARY KEY (id);",
 			wantDown: "ALTER TABLE t DROP CONSTRAINT t_pkey;",
 		},
+		// CREATE OPERATOR / DROP OPERATOR (https://www.postgresql.org/docs/18/sql-createoperator.html)
+		{
+			upSQL:    "CREATE OPERATOR === (LEFTARG = box, RIGHTARG = box, FUNCTION = area_equal_function);",
+			wantDown: "DROP OPERATOR === (box, box);",
+		},
+		{
+			upSQL:    "CREATE OPERATOR + (LEFTARG = int4, RIGHTARG = int4, FUNCTION = int4pl);",
+			wantDown: "DROP OPERATOR + (int4, int4);",
+		},
+		{
+			upSQL:    "CREATE OPERATOR @ (RIGHTARG = mytype, FUNCTION = mytype_negate);",
+			wantDown: "DROP OPERATOR @ (NONE, mytype);",
+		},
+		{
+			upSQL:    "CREATE OPERATOR myschema.=== (LEFTARG = box, RIGHTARG = box, FUNCTION = area_equal_function, COMMUTATOR = ===, NEGATOR = !==);",
+			wantDown: "DROP OPERATOR myschema.=== (box, box);",
+		},
 	}
+
+	id_token := SqlLexer.Symbols()["Id"]
 	for _, tt := range tests {
 		t.Run(tt.upSQL, func(t *testing.T) {
 			got, err := AutoDowner.ParseAndGetDefault(tt.upSQL)
 			if err != nil {
 				t.Fatalf("parse error: %v", err)
 			}
-			want := strings.ToLower(tt.wantDown)
-			down := strings.ToLower(got)
-			if down != want {
-				t.Errorf("Down() = %q, want %q", down, want)
+			if !compareTokens(t, id_token, got, tt.wantDown) {
+				t.Errorf("Down() = %q, want %q", got, tt.wantDown)
 			}
 		})
 	}

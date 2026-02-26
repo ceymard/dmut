@@ -19,6 +19,7 @@ var (
 			{Name: "Semicolon", Pattern: `;`},
 			{Name: "Id", Pattern: `(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\])(?:\.(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\]))*`},
 			{Name: "String", Pattern: `'(?:''|[^'])*'`},
+			{Name: "Operator", Pattern: "[+\\-*/<>=~!@#%^&|`?$]{1,63}"},
 			{Name: "Rest", Pattern: RestPattern},
 		},
 
@@ -144,20 +145,36 @@ type producer interface {
 
 type groupIncludeProducer struct {
 	group string
+	def   string
 }
 
 func (g *groupIncludeProducer) act(st state, old_results []result) state {
+	found := false
 	for _, result := range old_results {
 		if result.group == g.group {
+			found = true
 			st.results = append(st.results, result)
 		}
+	}
+	if !found && g.def != "" {
+		st.results = append(st.results, result{
+			group: g.group,
+			value: lexer.Token{Value: g.def, Pos: lexer.Position{Offset: -1}},
+		})
 	}
 	return st
 }
 
-func groupInclude(group string) producer {
+func group(group string) producer {
 	return &groupIncludeProducer{
 		group: group,
+	}
+}
+
+func groupDef(group string, def string) producer {
+	return &groupIncludeProducer{
+		group: group,
+		def:   def,
 	}
 }
 
@@ -312,6 +329,7 @@ type zero_or_moreCombinator struct {
 }
 
 func (z *zero_or_moreCombinator) Parse(st state) state {
+
 	for {
 		if st.isEOF() {
 			return st
@@ -319,11 +337,14 @@ func (z *zero_or_moreCombinator) Parse(st state) state {
 		orig := st
 		for _, comb := range z.combinators {
 			st = comb.ParseState(st)
-			if st.isNoMatch() || st.isEOF() {
+			if st.isNoMatch() {
 				return orig
 			}
 		}
-		orig = st
+		if orig.pos == st.pos {
+			// no progress was made, should this be an error?
+			return orig
+		}
 	}
 }
 
