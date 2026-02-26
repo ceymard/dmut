@@ -18,7 +18,7 @@ var auto_create_operator = seq(
 	), opt(",")),
 	")",
 	until_opt(";"),
-).Produce("drop", acc, "(", groupDef("left", "none"), ",", group("right"), ")")
+).Produce("drop", acc, "(", groupDef("left", "none"), ",", group("right"), ")", ";")
 
 var auto_create = seq("create",
 	either(
