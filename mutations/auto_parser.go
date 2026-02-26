@@ -83,12 +83,20 @@ type combinator struct {
 
 func (c *combinator) ParseState(s state) state {
 	var new_state = c.parser.Parse(s)
-	if len(c.producer) > 0 {
+	if len(c.producer) > 0 && new_state.isMatch() {
+		var old_r []result
 		var new_results []result
-		var old_results = new_state.results
-		new_state.results = new_results
+		for _, result := range new_state.results {
+			if result.pos <= s.pos {
+				old_r = append(old_r, result)
+			} else {
+				new_results = append(new_results, result)
+			}
+		}
+		// var old_results = new_state.results
+		new_state.results = old_r
 		for _, producer := range c.producer {
-			new_state = producer.act(new_state, old_results)
+			new_state = producer.act(new_state, new_results)
 		}
 	}
 	return new_state
@@ -160,14 +168,11 @@ func (g *groupIncludeProducer) act(st state, old_results []result) state {
 	for _, result := range old_results {
 		if result.group == g.group {
 			found = true
-			st.results = append(st.results, result)
+			st.addResult(g.group, result.value)
 		}
 	}
 	if !found && g.def != "" {
-		st.results = append(st.results, result{
-			group: g.group,
-			value: lexer.Token{Value: g.def, Pos: lexer.Position{Offset: -1}},
-		})
+		st.addResult(g.group, lexer.Token{Value: g.def, Pos: lexer.Position{Offset: -1}})
 	}
 	return st
 }
@@ -191,10 +196,11 @@ type stringProducer struct {
 }
 
 func (s *stringProducer) act(st state, old_results []result) state {
-	st.results = append(st.results, result{
-		group: s.group,
-		value: lexer.Token{Value: s.value, Pos: lexer.Position{Offset: -1}},
-	})
+	var space = ""
+	if len(old_results) > 0 && old_results[0].hasSpaceBefore(&st) {
+		space = " "
+	}
+	st.addResult(s.group, lexer.Token{Value: space + s.value, Pos: lexer.Position{Offset: -1}})
 	return st
 }
 
@@ -206,8 +212,13 @@ func newStringProducer(group string, s string) producer {
 }
 
 type result struct {
+	pos   int
 	group string
 	value lexer.Token
+}
+
+func (r *result) hasSpaceBefore(st *state) bool {
+	return r.value.Pos.Offset > 0 && unicode.IsSpace(rune(st.file[r.value.Pos.Offset-1])) || unicode.IsSpace(rune(r.value.Value[0]))
 }
 
 type state struct {
@@ -217,11 +228,19 @@ type state struct {
 	pos     int
 }
 
-func (s state) isNoMatch() bool {
+func (s *state) addResult(group string, value lexer.Token) {
+	s.results = append(s.results, result{
+		pos:   s.pos,
+		group: group,
+		value: value,
+	})
+}
+
+func (s *state) isNoMatch() bool {
 	return s.pos == -1
 }
 
-func (s state) isMatch() bool {
+func (s *state) isMatch() bool {
 	return s.pos > -1
 }
 
@@ -259,10 +278,7 @@ func (a *asisCombinator) Parse(orig state) state {
 		}
 	}
 	for i := orig.pos; i < st.pos; i++ {
-		st.results = append(st.results, result{
-			group: a.group,
-			value: orig.tokens[i],
-		})
+		st.addResult(a.group, orig.tokens[i])
 	}
 	return st
 }

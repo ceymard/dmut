@@ -163,15 +163,18 @@ var auto_create = seq("create",
 	until_opt(";"),
 ).Produce("DROP", acc, ";")
 
-var auto_alter_table = seq("alter", "table", id,
+var auto_comment = seq("comment", "on", until_opt(";")).Produce("")
+
+var auto_alter_table = seq(a("alter", "table", id),
 	either(
+		seq("enable", a("row", "level", "security")).Produce("disable", acc),
 		seq("add", "column", id),
 		seq("alter", "column", id, "set", "default"),
 		seq("add", "constraint", id),
 		seq("rename", "constraint", id, "to", id),
 	),
 	until_opt(";"),
-)
+).Produce(acc, ";")
 
 var auto_grant = seq(
 	"grant",
@@ -203,4 +206,4 @@ var auto_grant = seq(
 	),
 ).Produce("revoke", acc, " from", group("to"), ";")
 
-var AutoDowner = either(auto_create_operator, auto_create, auto_alter_table, auto_grant)
+var AutoDowner = either(auto_create_operator, auto_create, auto_alter_table, auto_grant, auto_comment)
