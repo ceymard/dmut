@@ -17,9 +17,9 @@ var (
 			{Name: "MultiStart", Pattern: `(\$[a-zA-Z_0-9]*\$)`, Action: lexer.Push("MultilineString")},
 			{Name: "whiteSpace", Pattern: `( |\s|\n)+|--[^\n]*\n?|/\*(.|\n)*?\*/`},
 			{Name: "Semicolon", Pattern: `;`},
-			{Name: "Id", Pattern: `(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\])(?:\.(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\]))*`},
-			{Name: "String", Pattern: `'(?:''|[^'])*'`},
+			{Name: "Id", Pattern: `(?:"(""|[^"])*"|[$a-zA-Z_][\w$]*|\[[^\]]+\])(?:\.(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\]))*`},
 			{Name: "Operator", Pattern: "[+\\-*/<>=~!@#%^&|`?$]{1,63}"},
+			{Name: "String", Pattern: `'(?:''|[^'])*'`},
 			{Name: "Rest", Pattern: RestPattern},
 		},
 

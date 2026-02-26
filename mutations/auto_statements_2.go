@@ -9,6 +9,7 @@ var balanced_expr = a("balanced_expr")
 var auto_create_operator = seq(
 	"create",
 	a("operator"),
+	a(opt(id, ".")),
 	a(operator),
 	"(",
 	zero_or_more(not(")"), either(
@@ -43,6 +44,16 @@ var auto_create = seq("create",
 				a(opt(",")),
 			)),
 			a(")"),
+		),
+
+		// OPERATOR CLASS
+		// https://www.postgresql.org/docs/18/sql-createopclass.html
+		// https://www.postgresql.org/docs/18/sql-dropopclass.html
+		seq(
+			a("operator", "class", id),
+			opt("default"),
+			"for", "type", id,
+			a("using", id),
 		),
 
 		// FOREIGN DATA WRAPPER
