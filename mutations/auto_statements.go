@@ -249,6 +249,7 @@ var auto_comment = seq("comment", "on", until_opt(";")).Produce("")
 
 var auto_alter_table = seq(a("alter", "table", id),
 	either(
+		seq(str("inherit").Produce("no inherit"), a(id)),
 		seq("enable", a("row", "level", "security")).Produce("disable", accumulated),
 		seq("add", a("column", id)).Produce("drop", accumulated),
 		seq(a("alter", "column", id), str("set").Produce("drop"), a("default")),

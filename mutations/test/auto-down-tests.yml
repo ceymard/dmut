@@ -74,6 +74,8 @@
   down: ALTER TABLE t RENAME COLUMN ck_new TO ck;
 - up: ALTER TABLE t RENAME COLUMN c TO c_new;
   down: ALTER TABLE t RENAME COLUMN c_new TO c;
+- up: ALTER TABLE t INHERIT t2;
+  down: ALTER TABLE t NO INHERIT t2;
 # CREATE OPERATOR / DROP OPERATOR
 - up: CREATE OPERATOR CLASS myclass FOR TYPE mytype USING myindex AS OPERATOR 1 myoperator;
   down: DROP OPERATOR CLASS myclass USING myindex;
