@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	lexer "github.com/alecthomas/participle/v2/lexer"
-	"github.com/k0kubun/pp"
+	au "github.com/logrusorgru/aurora"
 )
 
 func compareIdToken(cmp lexer.Token, got lexer.Token) bool {
@@ -13,6 +13,76 @@ func compareIdToken(cmp lexer.Token, got lexer.Token) bool {
 		return cmp.Value == got.Value
 	}
 	return strings.EqualFold(cmp.Value, got.Value)
+}
+
+func green(s string) string {
+	return au.BrightGreen(s).String()
+}
+
+func red(s string) string {
+	return au.BrightRed(s).String()
+}
+
+// lcsAlignment returns which runes in wants and got belong to a longest common subsequence.
+// wantInLCS[i] is true if wants[i] is matched in the LCS; gotInLCS[j] is true if got[j] is matched.
+func lcsAlignment(wants, got string) (wantInLCS []bool, gotInLCS []bool) {
+	m, n := len(wants), len(got)
+	// dp[i][j] = length of LCS of wants[:i] and got[:j]
+	dp := make([][]int, m+1)
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+	}
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			if wants[i-1] == got[j-1] {
+				dp[i][j] = dp[i-1][j-1] + 1
+			} else {
+				if dp[i-1][j] > dp[i][j-1] {
+					dp[i][j] = dp[i-1][j]
+				} else {
+					dp[i][j] = dp[i][j-1]
+				}
+			}
+		}
+	}
+	wantInLCS = make([]bool, m)
+	gotInLCS = make([]bool, n)
+	i, j := m, n
+	for i > 0 && j > 0 {
+		if wants[i-1] == got[j-1] {
+			wantInLCS[i-1] = true
+			gotInLCS[j-1] = true
+			i--
+			j--
+		} else if dp[i-1][j] >= dp[i][j-1] {
+			i--
+		} else {
+			j--
+		}
+	}
+	return wantInLCS, gotInLCS
+}
+
+// With the green(string) string and red(string) string functions, display the mismatch in a pretty way
+func displayMismatch(t *testing.T, wants string, got string) {
+	wantInLCS, gotInLCS := lcsAlignment(wants, got)
+	var wantOut, gotOut strings.Builder
+	for i, r := range wants {
+		if wantInLCS[i] {
+			wantOut.WriteString(string(r))
+		} else {
+			wantOut.WriteString(green(string(r)))
+		}
+	}
+	for j, r := range got {
+		if gotInLCS[j] {
+			gotOut.WriteString(string(r))
+		} else {
+			gotOut.WriteString(red(string(r)))
+		}
+	}
+	t.Errorf("want: %s", wantOut.String())
+	t.Errorf("got:  %s", gotOut.String())
 }
 
 func compareTokens(t *testing.T, id_token lexer.TokenType, cmp string, got string) bool {
@@ -25,7 +95,6 @@ func compareTokens(t *testing.T, id_token lexer.TokenType, cmp string, got strin
 		return false
 	}
 	if len(cmpTokens) != len(gotTokens) {
-		pp.Println("token count mismatch", len(cmpTokens), len(gotTokens))
 		return false
 	}
 	for i := range cmpTokens {
@@ -202,10 +271,10 @@ func TestSplit(t *testing.T) {
 		t.Run(tt.upSQL, func(t *testing.T) {
 			got, err := AutoDowner.ParseAndGetDefault(tt.upSQL)
 			if err != nil {
-				t.Fatalf("parse error: %v", err)
+				t.Fatalf("parse error: %v - %s", red(err.Error()), tt.upSQL)
 			}
 			if !compareTokens(t, id_token, got, tt.wantDown) {
-				t.Errorf("Down() = %q, want %q", got, tt.wantDown)
+				displayMismatch(t, strings.ToLower(tt.wantDown), strings.ToLower(got))
 			}
 		})
 	}
