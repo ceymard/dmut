@@ -170,7 +170,7 @@ var auto_alter_table = seq(a("alter", "table", id),
 		seq("add", a("column", id)).Produce("drop", acc),
 		seq(a("alter", "column", id), str("set").Produce("drop"), a("default")),
 		seq("add", a("constraint", id)).Produce("drop", acc),
-		seq("rename", "constraint", id, "to", id),
+		seq(a("rename", either("constraint", "column")), asIs("from", id), "to", asIs("to", id)).Produce(acc, group("to"), "to", group("from")),
 	),
 ).Produce(acc, ";")
 

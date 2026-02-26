@@ -168,11 +168,11 @@ func (g *groupIncludeProducer) act(st state, old_results []result) state {
 	for _, result := range old_results {
 		if result.group == g.group {
 			found = true
-			st.addResult(g.group, result.value)
+			st.addResult("", result.value)
 		}
 	}
 	if !found && g.def != "" {
-		st.addResult(g.group, lexer.Token{Value: g.def, Pos: lexer.Position{Offset: -1}})
+		st.addResult("", lexer.Token{Value: g.def, Pos: lexer.Position{Offset: -1}})
 	}
 	return st
 }
