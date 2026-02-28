@@ -19,10 +19,11 @@ type YamlMigration struct {
 	Name string   `yaml:"-"`
 	File string   `yaml:"file,omitempty"`
 
-	Needs []string        `yaml:"needs,omitempty,flow"`
-	Sql   []YamlStatement `yaml:"sql,omitempty"`
-	Meta  []YamlStatement `yaml:"meta,omitempty"`
-	Roles []string        `yaml:"roles,omitempty"`
+	Needs     []string        `yaml:"needs,omitempty,flow"`
+	MetaNeeds []string        `yaml:"meta_needs,omitempty,flow"`
+	Sql       []YamlStatement `yaml:"sql,omitempty"`
+	Meta      []YamlStatement `yaml:"meta,omitempty"`
+	Roles     []string        `yaml:"roles,omitempty"`
 
 	children mapset.Set[*YamlMigration]
 	parents  mapset.Set[*YamlMigration]
@@ -59,48 +60,50 @@ func (ymf YamlMigrationFile) ToDbMutationMap() DbMutationMap {
 	return res
 }
 
-func (mut *YamlMigration) AddParent(parent *YamlMigration) {
-	if mut.parents.Contains(parent) {
-		return
-	}
-	mut.parents.Add(parent)
-	if mut.db_sql.HasStatements() && parent.db_sql.HasStatements() {
-		mut.db_sql.Parents = append(mut.db_sql.Parents, parent.db_sql.Hash)
-	}
-	if mut.db_meta.HasStatements() && parent.db_meta.HasStatements() {
-		mut.db_meta.Parents = append(mut.db_meta.Parents, parent.db_meta.Hash)
-	}
-	parent.children.Add(mut)
-	if parent.db_sql.HasStatements() && mut.db_sql.HasStatements() {
-		parent.db_sql.Children = append(parent.db_sql.Children, mut.db_sql.Hash)
-	}
-	if parent.db_meta.HasStatements() && mut.db_meta.HasStatements() {
-		parent.db_meta.Children = append(parent.db_meta.Children, mut.db_meta.Hash)
-	}
-}
-
 func (ymf YamlMigrationFile) ResolveDependencies() error {
+	sql_mutations := make([]*DbMutation, 0)
 	for _, mut := range ymf {
+		if mut.db_sql.HasStatements() {
+			sql_mutations = append(sql_mutations, mut.db_sql)
+		}
+	}
+
+	for _, mut := range ymf {
+
 		// For dotted names, find if there are parents and add them automatically.
 		split_name := strings.Split(mut.Name, ".")
 		for i := 0; i < len(split_name)-1; i++ {
 			parent_name := strings.Join(split_name[:i+1], ".")
 			if parent, ok := ymf[parent_name]; ok {
-				mut.AddParent(parent)
+				mut.db_sql.AddParent(parent.db_sql)
+				mut.db_meta.AddParent(parent.db_meta)
 			}
 		}
 
 		// Explicit dependencies in needs
 		for _, parent_name := range mut.Needs {
 			if parent, ok := ymf[parent_name]; ok {
-				mut.AddParent(parent)
+				mut.db_sql.AddParent(parent.db_sql)
 			} else {
-				return fmt.Errorf("dependency %s not found", parent_name)
+				return fmt.Errorf("%s asks for dependency %s which was not found", mut.Name, parent_name)
 			}
-
 		}
+
+		// meta mutations depend on all sql mutations
+		for _, sql_mutation := range sql_mutations {
+			mut.db_meta.AddParent(sql_mutation)
+		}
+
+		for _, meta_parent_name := range mut.MetaNeeds {
+
+			if meta_parent, ok := ymf[meta_parent_name]; ok {
+				mut.db_meta.AddParent(meta_parent.db_meta)
+			} else {
+				return fmt.Errorf("%s asks for meta dependency of %s which was not found", mut.Name, meta_parent_name)
+			}
+		}
+
 	}
-	// pp.Println(ymf)
 	return nil
 }
 
@@ -137,11 +140,6 @@ func (ymf YamlMigrationFile) AddMutation(name string, mut *YamlMigration) error 
 	}
 	meta_mut.ComputeHash()
 	mut.db_meta = meta_mut
-
-	if mut.db_meta.HasStatements() && mut.db_sql.HasStatements() {
-		mut.db_meta.Parents = append(mut.db_meta.Parents, mut.db_sql.Hash)
-		mut.db_sql.Children = append(mut.db_sql.Children, mut.db_meta.Hash)
-	}
 
 	return nil
 }

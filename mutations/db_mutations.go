@@ -38,6 +38,14 @@ func (mut *DbMutation) DisplayName() string {
 	return mut.Name + " " + meta
 }
 
+// Add a relationship between this mutation and the given parent mutation only if both have statements.
+func (mut *DbMutation) AddParent(parent *DbMutation) {
+	if parent.HasStatements() && mut.HasStatements() {
+		mut.Parents = append(mut.Parents, parent.Hash)
+		parent.Children = append(parent.Children, mut.Hash)
+	}
+}
+
 type DbMutationMap map[string]*DbMutation
 
 func NewDbMutationMap(mutations []*DbMutation) DbMutationMap {
