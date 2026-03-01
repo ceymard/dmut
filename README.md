@@ -1,6 +1,14 @@
-# Dmut, a tool for postgres schema migrations
+# Dmut, a tool for database schema migrations
 
 Dmut is a database migration tool that takes an approach based on dependencies rather than sequential changes.
+
+As of now, dmut only handles postgres, but other databases may be supported if the demand exists.
+
+It provides its user with a few boons :
+
+- Revisions : a way to rewrite a mutation set
+- Namespaces to have different sets of mutations on a same database so that team can function independently
+- A distinction between "heavy" and "lightweight" statements
 
 Whenever a mutation changes, its dependents are recursively undone first before undoing it, then it is redone and its dependents are re-run as well.
 
@@ -17,6 +25,7 @@ As everything is ran inside a transaction, failure at any given step halts the p
 # Considerations
 
 - Do not use create "if not exists" or drop "if exists".
+- Never put CASCADE in DROP statement in your custom mutations : dmut relies on every object being created in their mutations and declaring dependencies explicitely and is supposed to break during its tests phases if they were not.
 - Put data-altering statements whose down incurs loss of data in `sql` blocks:
   - CREATE TABLE
   - CREATE INDEX (data is not lost, but indexes can be slow to create)
@@ -41,15 +50,43 @@ As everything is ran inside a transaction, failure at any given step halts the p
   - `CREATE TRIGGER <name> ...`
   - `GRANT ...`
 
-# Handling table modifications during their lifetime
+# Revisions : Evolving your mutations over time
 
-Over the lifetime of your database, your data model will change. Since you do not want to lose already existing data, you will make incremental changes in `children` mutations, for instance to add columns non destructively.
+Over the lifetime of your database, your data model will change. Since you do not want to lose already existing data, you will make incremental changes in `children` mutations to avoid changing parent mutations so they don't get de-applied.
 
 After a while however, having definitions scattered across several mutations becomes untidy. When mutating an empty database, why have a table created and then immediately altered to add or remove their columns ?
 
-You have two options:
+You have two options to rewrite your mutations to re-integrate new columns into the original table definition:
 
-- Either change your mutations so that the CREATE TABLE ... has all your columns, backup your data, reapply the mutations and then
+- Either change your mutations so that the CREATE TABLE ... has all your columns, backup your data, reapply the mutations and then reintegrate your data. While it is not a big deal in dev, it quickly becomes problematic if you have several databases in production that need that treatment or if the volume of data is too big.
+
+- Use `__revision` in your mutations to apply transitional states
+
+## How revisions work
+
+When applying mutations on a database, dmut does the following regarding revisions :
+
+1. Get the current revision number for the current namespace.
+2. For all supplied revisions >= the current revision, apply them in order
+3. Set the current revision at last revision + 1
+4. Overwrite the mutations with the supplied ones that are revisionless
+5. Try downing all the mutations one by one to ensure the new mutations still make sense with the current database.
+
+An empty database that had no prior revision will be applied the current revisionless ones, and its revision number will be set at last revision + 1. No revisioned mutation file will be executed.
+
+Dmut always considers the currently unrevisioned mutations to be at last `__revision` + 1, which is why you should always keep at least the _last_ one to make sure that the new revision on an empty database will be the correct one.
+
+You may remove obsolete revisions from your code ; it is not needed for them all to exist, since new/empty databases get seeded with the unrevisioned code. As a rule of thumb, keep at least the last one, or an empty file with just the `__revision` attribute to make sure the database is seeded with the latest number, or keep the lowest one that is still in production.
+
+Use the `dmut collect` command on an existing database to get a single .yml file with all the currently applied mutations with their revision number, or on paths to collect all unrevisioned mutations into a single file.
+
+Try to keep revisioned file names explicit, such as `<namespace>-r<revision>.yml, or `r<revision>.yml` when using the default namespace.
+
+# Namespaces
+
+By default, and unless supplied in `__namespace`, dmut puts the mutations in the namespace of the parent directly that was supplied in the `dmut` command.
+
+**BEWARE**: roles must be unique across namespaces.
 
 # Mutation structure
 
@@ -58,6 +95,11 @@ Mutations are defined in yaml files that are read recursively from the directori
 Yaml files starting with an `_` will be ignored.
 
 ```yaml
+# optional, indicate that all mutations in this file are part of a revision
+__revision: 1
+# optional, make all mutations in this file part of a namespace
+__namespace: some-name
+
 mutation_name:
   # optional, names the mutations whose `sql` must run before this mutation
   needs: [optional, parent, mutation, names]
@@ -92,9 +134,9 @@ Meta could be separate mutations (as in earlier dmut versions), but that approac
 
 ## Changes
 
-A mutation is considered to be different when content differs in `sql` (more than just whitespace or comments), or `name`.
+A mutation is considered to be different when content differs in `sql` or `meta`, or `name`. Comments are ignored when computing the hash of a mutation, so that comment changes don't trigger de-apply.
 
-When a mutation changes, its children and itself will be downed before being re-applied. _BEWARE_ loss of data can happen then, as `CREATE TABLE` mutations that change get `DROP`ped. This is mostly useful in dev where you can change whatever you want and don't mind destoying stuff.
+When a mutation changes, its children and itself will be downed before being re-applied. _BEWARE_: loss of data can happen then, as `CREATE TABLE` mutations that change get `DROP`ped. This is mostly useful in dev where you can change whatever you want and don't mind destoying stuff.
 
 ## Naming rules
 
