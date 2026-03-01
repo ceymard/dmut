@@ -21,12 +21,25 @@ As everything is ran inside a transaction, failure at any given step halts the p
   - CREATE TABLE
   - CREATE INDEX (data is not lost, but indexes can be slow to create)
   - CREATE TYPE
+  - `CREATE SCHEMA ...`
+  - `CREATE EXTENSION ...`
+  - `ALTER TABLE <table> ADD CONSTRAINT <name> <def> ...`
+  - `ALTER TABLE <table> ADD COLUMN <name> <def> ...`
+
   - ...
+
 - Only put "lightweight" statements in meta blocks : grants, functions, policies and the like.
   - GRANT ...
   - CREATE POLICY
   - CREATE FUNCTION
   - ALTER TABLE ... ENABLE ROW LEVEL SECURITY
+  - `CREATE FUNCTION <name>`
+  - `CREATE [MATERIALIZED] VIEW <name>`
+  - `ALTER TABLE <table> ALTER COLUMN <name> SET DEFAULT`
+  - `ALTER TABLE <table> ENABLE ROW LEVEL SECURITY`
+  - `CREATE POLICY <name> ...`
+  - `CREATE TRIGGER <name> ...`
+  - `GRANT ...`
 
 # Handling table modifications during their lifetime
 
@@ -45,20 +58,31 @@ Mutations are defined in yaml files that are read recursively from the directori
 Yaml files starting with an `_` will be ignored.
 
 ```yaml
-name: the mutation name
-needs: [optional, parent, mutation, names] # optional
-roles: [a, list, of, roles] # optional
-children: # optional
-  child_name: the child mutation name, will be renamed as `parent.child`
-    sql: # ...
-sql: a single sql statement or :
-  - automatic sql statements or
-  - up: the sql that brings this mutation up
-    down: the sql that undoes it
-meta: just like sql, but with lightweight statements
-```
+mutation_name:
+  # optional, names the mutations whose `sql` must run before this mutation
+  needs: [optional, parent, mutation, names]
 
-Dmut supports and encourages defining several mutations in the same file with yaml's multi-document `---` separator. In fact, the recommended method of distributing mutations in your docker containers is by `dmut collect`ing them all in a single yaml file.
+  # optional, list of roles that should exist
+  # multiple mutations can declare roles
+  roles: [a, list, of, roles]
+
+  # optional, mutations that directly related to this mutation
+  children: # optional
+    child_name: will be renamed as `mutation_name.child_name`
+      sql: # A list of statements, usually alter table ... add ...
+
+  sql:
+    - automatic sql statements or
+    - up: the sql that brings this mutation up
+      down: the sql that undoes it
+
+  # optional, names of the mutations whose meta must run before
+  # there is no need to indicate mutations whose sql must run before, because _all_ sql runs before meta, always.
+  meta_needs: [mutation, names]
+
+  # Statements of the meta mutation
+  meta: just like sql, but with lightweight statements
+```
 
 ## Why the distinction between sql and meta
 
@@ -66,25 +90,11 @@ Dmut supports and encourages defining several mutations in the same file with ya
 
 Meta could be separate mutations (as in earlier dmut versions), but that approach gets messy: dependency graphs and naming conventions are hard to agree on. Keeping meta next to the objects it manages is simpler, and all `sql` runs before any meta, so objects and roles are guaranteed to exist when meta references them. The split also encourages thinking in terms of heavy (sql) vs light (meta) changes.
 
-## Roles
-
-Roles are collected from _all_ mutations.
-
-## Meta
-
-Permissions, row-level security statements, grants, policies, even triggers and their related functions can be defined in perms blocks.
-
-It is also a fairly safe space to define column expressions, views, and generally any thing that is purely run-time and does not affect the data structure.
-
-As a rule of thumb, try to keep everything related to role to the meta section.
-
 ## Changes
 
 A mutation is considered to be different when content differs in `sql` (more than just whitespace or comments), or `name`.
 
-`depends` does not change the mutation, for those cases where you forgot a dependency and for some reason dmut's test did not detect it to be a problem because the order of mutations was fine for a while and don't want to be stuck with something that doesn't work.
-
-`roles` and `perms` are also checked for changes, but do not trigger de-apply or re-apply mechanics, as they have their own life-cycle.
+When a mutation changes, its children and itself will be downed before being re-applied. _BEWARE_ loss of data can happen then, as `CREATE TABLE` mutations that change get `DROP`ped. This is mostly useful in dev where you can change whatever you want and don't mind destoying stuff.
 
 ## Naming rules
 
@@ -98,17 +108,5 @@ It is recommended to use these statements in `sql` blocks :
 
 - `CREATE TABLE ...`
 - `CREATE INDEX ...`
-- `CREATE SCHEMA ...`
-- `CREATE EXTENSION ...`
-- `ALTER TABLE <table> ADD CONSTRAINT <name> <def> ...`
-- `ALTER TABLE <table> ADD COLUMN <name> <def> ...` -- (there is no DROP, you must do these with `up` and `down`)
 
 And these in `meta` blocks, as they are not so much about data than behaviour :
-
-- `CREATE FUNCTION <name>`
-- `CREATE [MATERIALIZED] VIEW <name>`
-- `ALTER TABLE <table> ALTER COLUMN <name> SET DEFAULT`
-- `ALTER TABLE <table> ENABLE ROW LEVEL SECURITY`
-- `CREATE POLICY <name> ...`
-- `CREATE TRIGGER <name> ...`
-- `GRANT ...`

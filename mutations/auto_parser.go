@@ -183,7 +183,7 @@ func group(group string) producer {
 	}
 }
 
-func groupDef(group string, def string) producer {
+func groupOrDefault(group string, def string) producer {
 	return &groupIncludeProducer{
 		group: group,
 		def:   def,
@@ -287,7 +287,7 @@ func (a *asisCombinator) Parse(orig state) state {
 	return st
 }
 
-func accumulate(group string, s ...any) *combinator {
+func capture(group string, s ...any) *combinator {
 	comb := getCombinatorSlice(s...)
 	return &combinator{
 		parser: &asisCombinator{
@@ -297,9 +297,9 @@ func accumulate(group string, s ...any) *combinator {
 	}
 }
 
-// add a sequence "as-is"
-func a(s ...any) *combinator {
-	return accumulate("", s...)
+// add c sequence "as-is"
+func c(s ...any) *combinator {
+	return capture("", s...)
 }
 
 //////////
