@@ -6,15 +6,37 @@ Whenever a mutation changes, its dependents are recursively undone first before 
 
 When running, dmut performs the following operations :
 
-- Fetch currently applied mutations from the database and compute which need to be de-applied.
-- If mutations or meta/roles changed: undo all meta blocks and sync roles (remove obsolete, add missing).
-- Optionally run a test in a temporary database (when any change occurred): exercise all mutation down/up combinations, or only meta if sql was unchanged.
-- If mutations changed: de-apply and re-apply according to the new `needs` clauses.
-- Re-apply meta statements.
+- Fetch currently applied mutations from the database and compute which need to be de-applied
+- If roles changed: undo all meta blocks and sync roles (remove obsolete, add missing).
+- In a temporary test database (on the same server), try to run all mutations indepentently.
+- If mutations changed: de-apply and re-apply according to the new `needs` clauses. This is where the mutations really are applied.
+- Try to down all mutations one by one (this is done using savepoints and does not lose data). The operation is aborted if one of them fails.
 
 As everything is ran inside a transaction, failure at any given step halts the process and mutations are not applied.
 
-# Permissions considerations
+# Considerations
+
+- Do not use create "if not exists" or drop "if exists".
+- Put data-altering statements whose down incurs loss of data in `sql` blocks:
+  - CREATE TABLE
+  - CREATE INDEX (data is not lost, but indexes can be slow to create)
+  - CREATE TYPE
+  - ...
+- Only put "lightweight" statements in meta blocks : grants, functions, policies and the like.
+  - GRANT ...
+  - CREATE POLICY
+  - CREATE FUNCTION
+  - ALTER TABLE ... ENABLE ROW LEVEL SECURITY
+
+# Handling table modifications during their lifetime
+
+Over the lifetime of your database, your data model will change. Since you do not want to lose already existing data, you will make incremental changes in `children` mutations, for instance to add columns non destructively.
+
+After a while however, having definitions scattered across several mutations becomes untidy. When mutating an empty database, why have a table created and then immediately altered to add or remove their columns ?
+
+You have two options:
+
+- Either change your mutations so that the CREATE TABLE ... has all your columns, backup your data, reapply the mutations and then
 
 # Mutation structure
 
@@ -26,6 +48,9 @@ Yaml files starting with an `_` will be ignored.
 name: the mutation name
 needs: [optional, parent, mutation, names] # optional
 roles: [a, list, of, roles] # optional
+children: # optional
+  child_name: the child mutation name, will be renamed as `parent.child`
+    sql: # ...
 sql: a single sql statement or :
   - automatic sql statements or
   - up: the sql that brings this mutation up

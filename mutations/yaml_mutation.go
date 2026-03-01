@@ -25,6 +25,8 @@ type YamlMigration struct {
 	Meta      []YamlStatement `yaml:"meta,omitempty"`
 	Roles     []string        `yaml:"roles,omitempty"`
 
+	ChildrenMutations YamlMigrationFile `yaml:"children,omitempty"`
+
 	children mapset.Set[*YamlMigration]
 	parents  mapset.Set[*YamlMigration]
 	db_sql   *DbMutation
@@ -107,12 +109,11 @@ func (ymf YamlMigrationFile) ResolveDependencies() error {
 	return nil
 }
 
-func (ymf YamlMigrationFile) AddMutation(name string, mut *YamlMigration) error {
-	if _, ok := ymf[name]; ok {
-		return fmt.Errorf("duplicate migration name: %s", name)
+func (ymf YamlMigrationFile) AddMutation(mut *YamlMigration) error {
+	if _, ok := ymf[mut.Name]; ok {
+		return fmt.Errorf("duplicate migration name: %s", mut.Name)
 	}
-	ymf[name] = mut
-	mut.Name = name
+	ymf[mut.Name] = mut
 	mut.children = mapset.NewSet[*YamlMigration]()
 	mut.parents = mapset.NewSet[*YamlMigration]()
 
@@ -187,7 +188,29 @@ func yamlStatementFromString(str string) (YamlStatement, error) {
 	return YamlStatement{Up: str, Down: res}, nil
 }
 
-func readYamlFile(file YamlMigrationFile, filename string) error {
+func readMutations(all_mutations YamlMigrationFile, mutations YamlMigrationFile, parent *YamlMigration) error {
+	for name, mut := range mutations {
+		if parent != nil {
+			mut.Name = parent.Name + "." + name
+		} else {
+			mut.Name = name
+		}
+		if err := all_mutations.AddMutation(mut); err != nil {
+			return err
+		}
+
+		if len(mut.ChildrenMutations) > 0 {
+			if err := readMutations(all_mutations, mut.ChildrenMutations, mut); err != nil {
+				return err
+			}
+		}
+
+	}
+
+	return nil
+}
+
+func readYamlFile(all_mutations YamlMigrationFile, filename string) error {
 	f, err := os.Open(filename)
 	if err != nil {
 		return fmt.Errorf("error reading file %s: %w", filename, err)
@@ -205,10 +228,9 @@ func readYamlFile(file YamlMigrationFile, filename string) error {
 		if err != nil {
 			return fmt.Errorf("error decoding yaml: %w", err)
 		}
-		for name, mut := range ym {
-			if err := file.AddMutation(name, mut); err != nil {
-				return err
-			}
+
+		if err := readMutations(all_mutations, ym, nil); err != nil {
+			return err
 		}
 	}
 	return nil

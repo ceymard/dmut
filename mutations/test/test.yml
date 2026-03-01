@@ -1,12 +1,10 @@
 # yaml-embedded-languages: sql
 
 pgcrypto:
-
   sql:
     - create extension pgcrypto;
 
 auth:
-
   roles:
     - "@admin"
     - "@active"
@@ -76,9 +74,7 @@ api:
     - |
       grant usage on schema api to "@active";
 
-
 api.users:
-
   sql:
     - |
       CREATE TABLE api.users (
@@ -93,6 +89,13 @@ api.users:
         created_at timestamp with time zone default now(),
         updated_at timestamp with time zone default now()
       );
+
+  children:
+    # We want to add a column to the users table, because the mutations are already live in another database.
+    region:
+      sql:
+        - |
+          alter table api.users add column region text not null default 'us-east-1';
 
   meta:
     - |
