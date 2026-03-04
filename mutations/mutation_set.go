@@ -1,10 +1,10 @@
 package mutations
 
 import (
-	"fmt"
 	"iter"
 	"strings"
 
+	"github.com/samber/oops"
 	"github.com/ugurcsen/gods-generic/maps/hashmap"
 	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
@@ -62,7 +62,7 @@ func (ms *MutationSet) HasMutation(name string) bool {
 
 func (ms *MutationSet) DeleteMutation(mut *Mutation) error {
 	if !ms.HasMutation(mut.Name) {
-		return fmt.Errorf("mutation %s not found", mut.Name)
+		return oops.In("mutations").With("mutation", mut.Name).Errorf("mutation %s not found", mut.Name)
 	}
 	ms.Map.Remove(mut.Name)
 	return nil
@@ -70,7 +70,7 @@ func (ms *MutationSet) DeleteMutation(mut *Mutation) error {
 
 func (ms *MutationSet) AddMutation(mut *Mutation) error {
 	if ms.HasMutation(mut.Name) {
-		return fmt.Errorf("duplicate migration name: %s", mut.Name)
+		return oops.In("mutations").With("mutation", mut.Name).Errorf("duplicate migration name: %s", mut.Name)
 	}
 
 	mut.set = ms
@@ -79,7 +79,6 @@ func (ms *MutationSet) AddMutation(mut *Mutation) error {
 	}
 	mut.Namespace = ms.Namespace
 	ms.Map.Put(mut.Name, mut)
-	mut.Normalize()
 
 	return nil
 }
@@ -92,6 +91,7 @@ func (ms *MutationSet) ResolveDependencies() error {
 		for i := 0; i < len(split_name)-1; i++ {
 			parent_name := strings.Join(split_name[:i+1], ".")
 			if parent, ok := ms.Map.Get(parent_name); ok {
+
 				mut.Needs = append(mut.Needs, parent.Name)
 				mut.MetaNeeds = append(mut.MetaNeeds, parent.Name)
 				mut.SqlParents.Add(parent)
@@ -101,7 +101,7 @@ func (ms *MutationSet) ResolveDependencies() error {
 
 		for _, parent_name := range mut.Needs {
 			if parent, ok := ms.Map.Get(parent_name); !ok {
-				return fmt.Errorf("%s asks for dependency %s which was not found", mut.Name, parent_name)
+				return oops.In("mutations").With("mutation", mut.Name).With("dependency", parent_name).Errorf("%s asks for dependency %s which was not found", mut.Name, parent_name)
 			} else {
 				mut.SqlParents.Add(parent)
 				parent.SqlChildren.Add(mut)
@@ -110,7 +110,7 @@ func (ms *MutationSet) ResolveDependencies() error {
 
 		for _, parent_name := range mut.MetaNeeds {
 			if parent, ok := ms.Map.Get(parent_name); !ok {
-				return fmt.Errorf("%s asks for meta dependency %s which was not found", mut.Name, parent_name)
+				return oops.In("mutations").With("mutation", mut.Name).With("meta_dependency", parent_name).Errorf("%s asks for meta dependency %s which was not found", mut.Name, parent_name)
 			} else {
 				mut.MetaParents.Add(parent)
 				parent.MetaChildren.Add(mut)

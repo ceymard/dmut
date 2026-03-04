@@ -1,11 +1,11 @@
 package mutations
 
 import (
-	"fmt"
 	"strings"
 	"unicode"
 
 	lexer "github.com/alecthomas/participle/v2/lexer"
+	"github.com/samber/oops"
 )
 
 var (
@@ -65,7 +65,7 @@ func getCombinator(s any) *combinator {
 	if s, ok := s.(string); ok {
 		return str(s)
 	}
-	panic(fmt.Errorf("unknown type: %T", s))
+	panic(oops.Errorf("unknown type: %T", s))
 }
 
 func getCombinatorSlice(s ...any) []*combinator {
@@ -114,7 +114,7 @@ func (c *combinator) Produce(producers ...any) *combinator {
 			continue
 		}
 
-		panic(fmt.Errorf("unknown producer type: %T", prod))
+		panic(oops.Errorf("unknown producer type: %T", prod))
 	}
 	return c
 }
@@ -138,7 +138,7 @@ func (c *combinator) ParseAndGetDefault(s string) (string, error) {
 		return "", err
 	}
 	if res.isNoMatch() {
-		return "", fmt.Errorf("no match")
+		return "", oops.In("auto_parser").Errorf("no match")
 	}
 	var acc = ""
 	for _, result := range res.results {

@@ -7,10 +7,10 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/alecthomas/kong"
+	"github.com/samber/oops"
 )
 
 var VERSION = "1.0.0"
@@ -68,7 +68,14 @@ func main() {
 		kong.UsageOnError(),
 	)
 	if err := ctx.Run(); err != nil {
-		log.Println(err)
+		if oops_err, ok := err.(oops.OopsError); ok {
+			fmt.Printf("%+v\n", oops_err)
+
+			// fmt.Println(oops_err.Error())
+			// fmt.Println(oops_err.Stacktrace())
+		} else {
+			fmt.Println(err)
+		}
 		os.Exit(1)
 	}
 }

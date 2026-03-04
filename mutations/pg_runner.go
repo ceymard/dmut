@@ -2,7 +2,6 @@ package mutations
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -10,7 +9,7 @@ import (
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	au "github.com/logrusorgru/aurora"
-	"github.com/pkg/errors"
+	"github.com/samber/oops"
 	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
 
@@ -57,11 +56,11 @@ func (r *PgRunner) GetTestExecutor() (Executor, error) {
 
 	r.logger.Println(au.BrightGreen("🖥"), "creating test database")
 
-	if err := r.exec(`DROP DATABASE IF EXISTS __dmut_test__`); err != nil {
+	if err := r.exec(nil, `DROP DATABASE IF EXISTS __dmut_test__`); err != nil {
 		return nil, err
 	}
 
-	if err := r.exec(`CREATE DATABASE __dmut_test__`); err != nil {
+	if err := r.exec(nil, `CREATE DATABASE __dmut_test__`); err != nil {
 		return nil, err
 	}
 
@@ -85,61 +84,75 @@ func (r *PgRunner) GetTestExecutor() (Executor, error) {
 }
 
 func wrapPgError(err error) error {
+	if err == nil {
+		return nil
+	}
 	if pgerr, ok := err.(*pgconn.PgError); ok {
-		var details = pgerr.Detail
-		return fmt.Errorf("%s (original error: %w)", details, err)
+		oo := oops.In("pg").Code("pg_error")
+		if details := pgerr.Detail; details != "" {
+			oo = oo.With("detail", details)
+		}
+		if hint := pgerr.Hint; hint != "" {
+			oo = oo.With("hint", hint)
+		}
+		return oo.Wrap(err)
 	}
 	return err
 }
 
 func (r *PgRunner) Run(runnable *Runnable) error {
+	meta_or_not := au.BrightGreen("sql").String()
+	if runnable.Direction.Meta {
+		meta_or_not = au.BrightRed("meta").String()
+	}
+	r.logger.Println(au.BrightGreen("🔄"), "running", runnable.Mutation.Name, " ["+meta_or_not+"]")
 	for stmt := range runnable.Statements() {
-		if err := r.exec(stmt); err != nil {
-			return wrapPgError(err)
+		if err := r.exec(runnable.Mutation, stmt); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 func (r *PgRunner) DeleteMutation(m *Mutation) error {
-	err := r.exec(`DELETE FROM dmut.mutations WHERE namespace = $1 AND name = $2`, m.set.Namespace, m.Name)
+	err := r.exec(m, `DELETE FROM __dmut__.mutations WHERE namespace = $1 AND name = $2`, m.set.Namespace, m.Name)
 	return wrapPgError(err)
 }
 
 func (r *PgRunner) ClearMutations(namespace string) error {
-	err := r.exec(`DELETE FROM dmut.mutations WHERE namespace = $1`, namespace)
+	err := r.exec(nil, `DELETE FROM __dmut__.mutations WHERE namespace = $1`, namespace)
 	return wrapPgError(err)
 }
 
 func (r *PgRunner) SaveMutation(m *Mutation) error {
-	err := r.exec(`INSERT INTO dmut.mutations(namespace, file, name, needs, meta, sql, meta) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (namespace, name) DO UPDATE SET file = $2, needs = $4, meta = $5, sql = $6, meta = $7`, m.set.Namespace, m.File, m.Name, m.Needs, m.Meta, m.Sql, m.Meta)
+	err := r.exec(m, `INSERT INTO __dmut__.mutations(namespace, file, name, needs, meta, sql, meta) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (namespace, name) DO UPDATE SET file = $2, needs = $4, meta = $5, sql = $6, meta = $7`, m.set.Namespace, m.File, m.Name, m.Needs, m.Meta, m.Sql, m.Meta)
 	return wrapPgError(err)
 }
 
 func (r *PgRunner) Commit() error {
 	r.logger.Println(au.BrightGreen("💾"), "committing")
-	return r.exec(`COMMIT`)
+	return r.exec(nil, `COMMIT`)
 }
 
 func (r *PgRunner) Begin() error {
 	// r.logger.Println(au.BrightGreen("💾"), "BEGIN")
-	return r.exec("BEGIN")
+	return r.exec(nil, "BEGIN")
 }
 
 func (r *PgRunner) Rollback() error {
 	// r.logger.Println(au.BrightRed("💾"), "rolling back")
-	return r.exec("ROLLBACK")
+	return r.exec(nil, "ROLLBACK")
 }
 
 func (r *PgRunner) SavePoint(name string) error {
 	if name == "" {
-		if err := r.exec("BEGIN"); err != nil {
+		if err := r.exec(nil, "BEGIN"); err != nil {
 			return wrapPgError(err)
 		}
 		return nil
 	}
 	// r.logger.Println(au.BrightGreen("💾"), "saving point", name)
-	return r.exec(`SAVEPOINT ` + name)
+	return r.exec(nil, `SAVEPOINT `+name)
 }
 
 func (r *PgRunner) RollbackToSavepoint(name string) error {
@@ -148,27 +161,33 @@ func (r *PgRunner) RollbackToSavepoint(name string) error {
 		cmd += ` TO SAVEPOINT ` + name
 	}
 	// r.logger.Println(au.BrightRed("💾"), "rolling back to point", name)
-	return r.exec(cmd)
+	return r.exec(nil, cmd)
 }
 
 func (r *PgRunner) Exec(sql string, args ...interface{}) error {
-	return r.exec(sql, args...)
+	return r.exec(nil, sql, args...)
 }
 
-func (r *PgRunner) exec(sql string, args ...interface{}) error {
+func (r *PgRunner) exec(mutation *Mutation, sql string, args ...interface{}) error {
 	if r.verbose {
 		r.logger.Println(au.BrightBlue(sql))
 	}
 	_, err := r.conn.Exec(context.Background(), sql, args...)
 	if err != nil {
-		err = errors.Wrap(err, au.BrightRed("error in statement").String()+" "+au.BrightBlue(sql).String())
+		oo := oops.In("pg").With("sql", au.BrightBlue(sql).String())
+		if mutation != nil {
+			oo = oo.With("mutation", mutation.Name).With("file", mutation.File).With("namespace", mutation.Namespace).With("needs", mutation.Needs).With("meta_needs", mutation.MetaNeeds)
+
+		}
+		err = oo.Wrap(err)
+		// err = oops.In("pg").With("sql", sql).Wrapf(err, "%s %s", au.BrightRed("error in statement").String(), au.BrightBlue(sql).String())
 	}
-	return wrapPgError(err)
+	return err
 }
 
 func (r *PgRunner) getDbRoles(namespace string) (*hashset.Set[string], error) {
 	var res = hashset.New[string]()
-	rows, err := r.conn.Query(context.Background(), `SELECT rolname FROM dmut.roles WHERE namespace = $1`, namespace)
+	rows, err := r.conn.Query(context.Background(), `SELECT name FROM __dmut__.roles WHERE namespace = $1`, namespace)
 	if err != nil {
 		return nil, wrapPgError(err)
 	}
@@ -186,17 +205,17 @@ func (r *PgRunner) getDbRoles(namespace string) (*hashset.Set[string], error) {
 }
 
 func (r *PgRunner) AddRole(namespace string, role string) error {
-	if err := r.exec(`CREATE ROLE ` + pgx.Identifier{role}.Sanitize()); err != nil {
+	if err := r.exec(nil, `CREATE ROLE `+pgx.Identifier{role}.Sanitize()); err != nil {
 		return wrapPgError(err)
 	}
-	return r.exec(`INSERT INTO dmut.roles(namespace, rolname) VALUES ($1, $2)`, namespace, role)
+	return r.exec(nil, `INSERT INTO __dmut__.roles(namespace, name) VALUES ($1, $2)`, namespace, role)
 }
 
-func (r *PgRunner) RemoveRole(namespace string, role string) error {
-	if err := r.exec(`DROP ROLE ` + pgx.Identifier{role}.Sanitize()); err != nil {
+func (r *PgRunner) RemoveRole(namespace string, name string) error {
+	if err := r.exec(nil, `DROP ROLE `+pgx.Identifier{name}.Sanitize()); err != nil {
 		return wrapPgError(err)
 	}
-	return r.exec(`DELETE FROM dmut.roles WHERE namespace = $1 AND rolname = $2`, namespace, role)
+	return r.exec(nil, `DELETE FROM __dmut__.roles WHERE namespace = $1 AND name = $2`, namespace, name)
 }
 
 func (r *PgRunner) GetDBRoles(namespace string) (*hashset.Set[string], error) {
@@ -204,11 +223,11 @@ func (r *PgRunner) GetDBRoles(namespace string) (*hashset.Set[string], error) {
 }
 
 func (r *PgRunner) OverwriteRoles(namespace string, roles *hashset.Set[string]) error {
-	if err := r.exec(`DELETE FROM dmut.roles WHERE namespace = $1`, namespace); err != nil {
+	if err := r.exec(nil, `DELETE FROM __dmut__.roles WHERE namespace = $1`, namespace); err != nil {
 		return wrapPgError(err)
 	}
 	for _, role := range roles.Values() {
-		if err := r.exec(`INSERT INTO dmut.roles(namespace, rolname) VALUES ($1, $2)`, namespace, role); err != nil {
+		if err := r.exec(nil, `INSERT INTO __dmut__.roles(namespace, rolname) VALUES ($1, $2)`, namespace, role); err != nil {
 			return wrapPgError(err)
 		}
 	}
@@ -245,7 +264,7 @@ func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) 
 
 	// First, extract a list of already active mutations and check if they have to be downed because they're
 	// either inexistant or their hash changed.
-	if rows, err = db.Query(context.Background(), `select name, file, needs, meta_needs, meta, sql, meta from dmut.mutations WHERE namespace = $1`, namespace); err != nil {
+	if rows, err = db.Query(context.Background(), `select name, file, needs, meta_needs, meta, sql, meta from __dmut__.mutations WHERE namespace = $1`, namespace); err != nil {
 		return nil, wrapPgError(err)
 	}
 	defer rows.Close()

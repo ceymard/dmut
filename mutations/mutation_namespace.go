@@ -1,8 +1,7 @@
 package mutations
 
 import (
-	"fmt"
-
+	"github.com/samber/oops"
 	"github.com/ugurcsen/gods-generic/maps/linkedhashmap"
 )
 
@@ -54,12 +53,12 @@ func (ns MutationNamespace) EnsureContinuousRevisions() error {
 	for namespace_name, revision_sequence := range ns.Values() {
 
 		if len(revision_sequence.Revisions) == 0 || revision_sequence.Revisions[0].Revision != 0 {
-			return fmt.Errorf("there is not default mutation set for namespace %s", namespace_name)
+			return oops.In("mutations").With("namespace", namespace_name).Errorf("there is no default mutation set for namespace %s", namespace_name)
 		}
 
 		for i := 1; i < len(revision_sequence.Revisions)-1; i++ {
 			if revision_sequence.Revisions[i].Revision != revision_sequence.Revisions[i-1].Revision+1 {
-				return fmt.Errorf("revision %d is not continuous", revision_sequence.Revisions[i].Revision)
+				return oops.In("mutations").With("revision", revision_sequence.Revisions[i].Revision).Errorf("revision %d is not continuous", revision_sequence.Revisions[i].Revision)
 			}
 		}
 

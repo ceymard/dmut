@@ -54,18 +54,18 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	options.Merge(opts...)
 
 	var err error
-	var test_runner Executor
+	// var test_runner Executor
 	var namespace = local.Namespace
 	var distant *MutationSet
 
-	if options.TestBefore {
-		// Create the test runner before BEGIN, so that we have the test database ready before modifying the roles.
-		test_runner, err = runner.GetTestExecutor()
-		if err != nil {
-			return err
-		}
-		defer test_runner.Close()
-	}
+	// if options.TestBefore {
+	// 	// Create the test runner before BEGIN, so that we have the test database ready before modifying the roles.
+	// 	test_runner, err = runner.GetTestExecutor()
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	defer test_runner.Close()
+	// }
 
 	if distant, err = runner.GetDBMutationsFromDb(namespace); err != nil {
 		return err

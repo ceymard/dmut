@@ -1,7 +1,7 @@
 package mutations
 
 import (
-	"fmt"
+	"github.com/samber/oops"
 )
 
 type MutationStatement struct {
@@ -39,27 +39,27 @@ func parseSingleStatement(value interface{}) (stmt MutationStatement, err error)
 				if v, ok := value.(string); ok {
 					stmt.Up = v
 				} else {
-					return stmt, fmt.Errorf("up must be a string")
+					return stmt, oops.In("mutations").Errorf("up must be a string")
 				}
 			case "down":
 				if v, ok := value.(string); ok {
 					stmt.Down = v
 				} else {
-					return stmt, fmt.Errorf("down must be a string")
+					return stmt, oops.In("mutations").Errorf("down must be a string")
 				}
 			default:
-				return stmt, fmt.Errorf("unknown key %s", key)
+				return stmt, oops.In("mutations").Errorf("unknown key %s", key)
 			}
 		}
 		return stmt, nil
 	}
-	return stmt, fmt.Errorf("expected string or mapping, got %T", value)
+	return stmt, oops.In("mutations").Errorf("expected string or mapping, got %T", value)
 }
 
 func mutationStatementFromString(str string) (MutationStatement, error) {
 	res, err := AutoDowner.ParseAndGetDefault(str)
 	if err != nil {
-		return MutationStatement{}, fmt.Errorf("can't generate undo statement from %s: %w", str, err)
+		return MutationStatement{}, oops.In("mutations").With("statement", str).Wrapf(err, "can't generate undo statement from %s", str)
 	}
 	return MutationStatement{Up: str, Down: res}, nil
 }

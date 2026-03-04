@@ -2,7 +2,6 @@ package mutations
 
 import (
 	"embed"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -10,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
+	"github.com/samber/oops"
 )
 
 //go:embed dmut-mutations/*
@@ -21,7 +21,7 @@ func (ms *MutationSet) readFile(system fs.FS, filename string) error {
 	ms.File = filename
 	f, err := system.Open(filename)
 	if err != nil {
-		return fmt.Errorf("error reading file %s: %w", filename, err)
+		return oops.In("mutations").With("filename", filename).Wrapf(err, "error reading file %s", filename)
 	}
 	defer f.Close()
 
@@ -35,7 +35,7 @@ func (ms *MutationSet) readFile(system fs.FS, filename string) error {
 		}
 
 		if err != nil {
-			return fmt.Errorf("error decoding yaml: %w", err)
+			return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding yaml")
 		}
 
 		for key, value := range mp {
@@ -44,19 +44,17 @@ func (ms *MutationSet) readFile(system fs.FS, filename string) error {
 				if v, ok := value.(string); ok {
 					ms.Namespace = v
 				} else {
-					return fmt.Errorf("__namespace must be a string")
+					return oops.In("mutations").With("filename", filename).Errorf("__namespace must be a string")
 				}
 			case "__revision":
 				if v, ok := value.(int); ok {
 					ms.Revision = v
 				} else {
-					return fmt.Errorf("__revision must be an integer")
+					return oops.In("mutations").With("filename", filename).Errorf("__revision must be an integer")
 				}
 			default:
-				if mut, err := parseMutation(ms, value); err != nil {
+				if _, err := parseMutation(key, ms, value); err != nil {
 					return err
-				} else {
-					ms.AddMutation(mut)
 				}
 			}
 		}

@@ -1,10 +1,10 @@
 package mutations
 
 import (
-	"fmt"
 	"iter"
 
 	au "github.com/logrusorgru/aurora"
+	"github.com/samber/oops"
 	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
 
@@ -52,21 +52,27 @@ func parseStringList(value interface{}) (list []string, err error) {
 			if v, ok := value.(string); ok {
 				list = append(list, v)
 			} else {
-				return nil, fmt.Errorf("expected string, got %T", value)
+				return nil, oops.In("mutations").Errorf("expected string, got %T", value)
 			}
 		}
 		return list, nil
 	} else {
-		return nil, fmt.Errorf("expected list, got %T", value)
+		return nil, oops.In("mutations").Errorf("expected list, got %T", value)
 	}
 }
 
-func parseMutation(ms *MutationSet, value interface{}) (mut *Mutation, err error) {
+func parseMutation(name string, ms *MutationSet, value interface{}) (mut *Mutation, err error) {
 	mutation_def, ok := value.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("expected map, got %T", value)
+		return nil, oops.In("mutations").Errorf("expected map, got %T", value)
 	}
-	mut = &Mutation{set: ms}
+	mut = &Mutation{set: ms, Name: name}
+	mut.SqlParents = hashset.New[*Mutation]()
+	mut.SqlChildren = hashset.New[*Mutation]()
+	mut.MetaParents = hashset.New[*Mutation]()
+	mut.MetaChildren = hashset.New[*Mutation]()
+	ms.AddMutation(mut)
+
 	for key, value := range mutation_def {
 		switch key {
 		case "needs":
@@ -101,11 +107,11 @@ func parseMutation(ms *MutationSet, value interface{}) (mut *Mutation, err error
 			}
 		case "children":
 			if children, ok := value.(map[string]interface{}); !ok {
-				return nil, fmt.Errorf("children must be a map of mutations, got %T", value)
+				return nil, oops.In("mutations").Errorf("children must be a map of mutations, got %T", value)
 			} else {
 				mut.ChildrenMutations = make(MutationMap)
 				for child_name, child_value := range children {
-					if child, err := parseMutation(mut.set, child_value); err != nil {
+					if child, err := parseMutation(mut.Name+"."+child_name, mut.set, child_value); err != nil {
 						return nil, err
 					} else {
 						mut.ChildrenMutations[child_name] = child
@@ -114,7 +120,6 @@ func parseMutation(ms *MutationSet, value interface{}) (mut *Mutation, err error
 			}
 		}
 	}
-	mut.Normalize()
 	return mut, nil
 }
 
@@ -140,21 +145,6 @@ func (yml *Mutation) AddRoles(roles []string) {
 	for _, role := range roles {
 		yml.Roles = append(yml.Roles, role)
 	}
-}
-
-// Normalize the children
-func (mut *Mutation) Normalize() error {
-	mut.SqlParents = hashset.New[*Mutation]()
-	mut.SqlChildren = hashset.New[*Mutation]()
-	mut.MetaParents = hashset.New[*Mutation]()
-	mut.MetaChildren = hashset.New[*Mutation]()
-
-	for _, child := range mut.ChildrenMutations {
-		child.File = mut.File
-		child.Name = mut.Name + "." + child.Name
-		mut.set.AddMutation(child)
-	}
-	return nil
 }
 
 func (mut *Mutation) Hash(dir IterationDirection) string {

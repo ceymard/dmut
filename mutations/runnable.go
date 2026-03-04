@@ -13,18 +13,22 @@ type Runnable struct {
 
 func (r *Runnable) Statements() iter.Seq[string] {
 	var stmts []MutationStatement
-	if r.Direction.Down {
-		stmts = r.Mutation.Sql
-	} else {
+	if r.Direction.Meta {
 		stmts = r.Mutation.Meta
+	} else {
+		stmts = r.Mutation.Sql
 	}
+
 	return func(yield func(string) bool) {
-		for _, stmt := range stmts {
-			if r.Direction.Down {
-				if !yield(stmt.Down) {
+		if r.Direction.Down {
+			// yield them in reverse order
+			for i := len(stmts) - 1; i >= 0; i-- {
+				if !yield(stmts[i].Down) {
 					return
 				}
-			} else {
+			}
+		} else {
+			for _, stmt := range stmts {
 				if !yield(stmt.Up) {
 					return
 				}
