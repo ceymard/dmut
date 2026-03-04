@@ -14,8 +14,9 @@ type MutationChildrenMap map[string][]*Mutation
 type MutationSet struct {
 	*hashmap.Map[string, *Mutation]
 	Namespace string
-	Revision  int `yaml:"__revision"`
+	Revision  int
 	File      string
+	Override  bool
 
 	Roles *hashset.Set[string]
 }
@@ -57,6 +58,7 @@ func NewMutationSet(namespace string, revision int, file string) *MutationSet {
 		Namespace: namespace,
 		Revision:  revision,
 		File:      file,
+		Override:  false,
 		Roles:     hashset.New[string](),
 	}
 }
@@ -126,8 +128,40 @@ func (ms *MutationSet) ResolveDependencies() error {
 				parent.MetaChildren.Add(mut)
 			}
 		}
-
 	}
+
+	for mut := range ms.AllMutations() {
+		var cycle []string
+		seen := hashset.New[*Mutation]()
+		has_cycle := false
+		var iterate func(mut *Mutation)
+		iterate = func(inner_mut *Mutation) {
+			if seen.Contains(inner_mut) {
+				return
+			}
+			seen.Add(inner_mut)
+			cycle = append(cycle, inner_mut.Name)
+			for _, dep := range inner_mut.SqlParents.Values() {
+				if dep == mut {
+					has_cycle = true
+					return
+				}
+				iterate(dep)
+			}
+			for _, dep := range inner_mut.MetaParents.Values() {
+				if dep == mut {
+					has_cycle = true
+					return
+				}
+				iterate(dep)
+			}
+		}
+		iterate(mut)
+		if has_cycle {
+			return oops.In("mutations").With("cycle", cycle).Errorf("%s causes a dependency cycle", mut.Name)
+		}
+	}
+
 	return nil
 }
 

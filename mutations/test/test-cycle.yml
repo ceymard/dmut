@@ -1,0 +1,118 @@
+# yaml-embedded-languages: sql
+
+pgcrypto:
+  needs: [auth.passwords]
+  sql:
+    - create extension pgcrypto;
+
+auth:
+  roles:
+    - "@admin"
+    - "@active"
+
+  sql:
+    - create schema auth;
+
+  meta:
+    # @admins are always active
+    - |
+      grant "@active" to "@admin";
+
+    # No one should be able to execute anything on this schema without explicit grants.
+    # There is no down. We just don't want that for new schemas.
+    - up: |
+        ALTER DEFAULT PRIVILEGES IN SCHEMA auth
+        REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+
+# The auth.passwords table is a way to store
+auth.passwords:
+  needs: [pgcrypto]
+  sql:
+    - |
+      create table auth.passwords (
+        username text not null primary key,
+        password text not null
+      );
+
+  meta:
+    # password triggers to make sure the password is always hashed
+    - |
+      create function auth.update_password() returns trigger as $$
+        declare
+          newpass text;
+        begin
+            if (NEW.password <> '')
+            then
+              -- update the password inside the password table
+              newpass := pgcrypto.crypt(NEW.password, pgcrypto.gen_salt('bf'));
+              -- and erase it from the old one
+              NEW.password = '';
+
+              insert into auth.passwords(username, password) values (NEW.username, newpass)
+                on conflict (username) do update set password = newpass;
+            end if;
+            return NEW;
+        end
+      $$ language plpgsql security definer;
+
+    # install the trigger
+    - |
+      create trigger update_password before insert or update on auth.passwords
+        for each row
+        execute procedure auth.update_password();
+
+    - |
+      grant usage on schema auth to "@active" ;
+
+# Our main schema
+api:
+  sql:
+    - |
+      create schema api;
+
+  meta:
+    # No one should be able to execute anything on this schema without explicit grants.
+    - up: |
+        ALTER DEFAULT PRIVILEGES IN SCHEMA api
+        REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+    - |
+      grant usage on schema api to "@active";
+
+api.users:
+  sql:
+    - |
+      CREATE TABLE api.users (
+        id uuid PRIMARY KEY,
+        username text not null unique,
+        roles TEXT[],
+        first_name TEXT,
+        last_name TEXT,
+        name text NOT NULL,
+        email text NOT NULL,
+        password text NOT NULL,
+        created_at timestamp with time zone default now(),
+        updated_at timestamp with time zone default now()
+      );
+
+  children:
+    # We want to add a column to the users table, because the mutations are already live in another database.
+    region:
+      sql:
+        - |
+          alter table api.users add column region text not null default 'us-east-1';
+
+  meta:
+    - |
+      alter table api.users
+        alter column id set default gen_random_uuid()
+        , alter column roles set not null
+        , alter column roles set default '{}'::text[]
+      ;
+    - grant all on table api.users to "@admin";
+    - grant select on table api.users to "@active";
+    - alter table api.users enable row level security;
+    - |
+      create policy users_only_see_my_rows on api.users to "@active"
+        using (pg_has_role(username, 'member'))
+        with check (username = current_user or pg_has_role(current_user, '@admin', 'member'))
+      ;

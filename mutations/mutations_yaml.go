@@ -52,6 +52,12 @@ func (ms *MutationSet) readFile(system fs.FS, filename string) error {
 				} else {
 					return oops.In("mutations").With("filename", filename).Errorf("__revision must be an integer")
 				}
+			case "__override":
+				if v, ok := value.(bool); ok {
+					ms.Override = v
+				} else {
+					return oops.In("mutations").With("filename", filename).Errorf("__override must be a boolean")
+				}
 			default:
 				if _, err := parseMutation(key, ms, value); err != nil {
 					return err
