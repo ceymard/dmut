@@ -21,6 +21,9 @@ type MutationSet struct {
 }
 
 func (ms *MutationSet) GetMutation(name string) (*Mutation, bool) {
+	if ms == nil || ms.Map == nil {
+		return nil, false
+	}
 	if mut, ok := ms.Map.Get(name); ok {
 		return mut, true
 	}
@@ -29,6 +32,9 @@ func (ms *MutationSet) GetMutation(name string) (*Mutation, bool) {
 
 func (ms *MutationSet) AllMutations() iter.Seq[*Mutation] {
 	return func(yield func(*Mutation) bool) {
+		if ms == nil || ms.Map == nil {
+			return
+		}
 		for _, mut := range ms.Map.Values() {
 			if !yield(mut) {
 				return
@@ -155,6 +161,7 @@ func (ms *MutationSet) GetMutationsDelta(other *MutationSet, dir IterationDirect
 		for dep := range mut.IterateDependencies(up_dir) {
 			_, was_downed := to_down.Get(dep.Name)
 			_, in_other := other.GetMutation(dep.Name)
+
 			if !in_other || was_downed {
 				to_up.Put(dep.Name, dep.Runnable(up_dir))
 			}

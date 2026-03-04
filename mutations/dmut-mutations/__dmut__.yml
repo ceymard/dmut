@@ -1,4 +1,3 @@
-
 # yaml-embedded-languages: sql
 
 __namespace: __dmut__
@@ -16,6 +15,7 @@ dmut.mutations:
         down text
       );
 
+    - |
       create table __dmut__.mutations (
         name text not null,
         namespace text not null,

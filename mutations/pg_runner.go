@@ -103,12 +103,16 @@ func wrapPgError(err error) error {
 func (r *PgRunner) Run(runnable *Runnable) error {
 	meta_or_not := au.BrightGreen("sql").String()
 	if runnable.Direction.Meta {
-		meta_or_not = au.BrightRed("meta").String()
+		meta_or_not = au.BrightCyan("meta").String()
 	}
-	r.logger.Println(au.BrightGreen("🔄"), au.BrightMagenta(runnable.Mutation.set.Namespace+"::").String(), runnable.Mutation.Name, "["+meta_or_not+"]")
+	up_or_down := au.BrightGreen("up").String()
+	if runnable.Direction.Down {
+		up_or_down = au.BrightRed("down").String()
+	}
+	r.logger.Println(up_or_down, au.BrightMagenta(runnable.Mutation.set.Namespace).String(), runnable.Mutation.Name, meta_or_not)
 	for i, stmt := range runnable.Statements() {
 		if err := r.exec(runnable.Mutation, stmt); err != nil {
-			return oops.With("statement index", i+1).Wrap(err)
+			return oops.With("statement index", i+1).With("statement", stmt).Wrap(err)
 		}
 	}
 	return nil
@@ -162,6 +166,10 @@ func (r *PgRunner) RollbackToSavepoint(name string) error {
 	}
 	// r.logger.Println(au.BrightRed("💾"), "rolling back to point", name)
 	return r.exec(nil, cmd)
+}
+
+func (r *PgRunner) ReleaseSavepoint(name string) error {
+	return r.exec(nil, `RELEASE SAVEPOINT `+name)
 }
 
 func (r *PgRunner) Exec(sql string, args ...interface{}) error {

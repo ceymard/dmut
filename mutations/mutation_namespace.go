@@ -52,11 +52,15 @@ func NewMutationNamespace() *MutationNamespace {
 func (ns MutationNamespace) EnsureContinuousRevisions() error {
 	for namespace_name, revision_sequence := range ns.Values() {
 
-		if len(revision_sequence.Revisions) == 0 || revision_sequence.Revisions[0].Revision != 0 {
+		if len(revision_sequence.Revisions) == 0 {
+			return oops.In("mutations").With("namespace", namespace_name).Errorf("there are no mutations for namespace '%s'", namespace_name)
+		}
+
+		if revision_sequence.Revisions[len(revision_sequence.Revisions)-1].Revision != 0 {
 			return oops.In("mutations").With("namespace", namespace_name).Errorf("there is no default mutation set for namespace %s", namespace_name)
 		}
 
-		for i := 1; i < len(revision_sequence.Revisions)-1; i++ {
+		for i := 1; i < len(revision_sequence.Revisions)-2; i++ {
 			if revision_sequence.Revisions[i].Revision != revision_sequence.Revisions[i-1].Revision+1 {
 				return oops.In("mutations").With("revision", revision_sequence.Revisions[i].Revision).Errorf("revision %d is not continuous", revision_sequence.Revisions[i].Revision)
 			}

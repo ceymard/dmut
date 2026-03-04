@@ -1,6 +1,7 @@
 package mutations
 
 import (
+	"fmt"
 	"iter"
 
 	au "github.com/logrusorgru/aurora"
@@ -11,6 +12,18 @@ import (
 type IterationDirection struct {
 	Down bool
 	Meta bool
+}
+
+func (dir IterationDirection) String() string {
+	up_or_down := au.BrightGreen("up").String()
+	if dir.Down {
+		up_or_down = au.BrightRed("down").String()
+	}
+	meta_or_sql := au.BrightGreen("sql").String()
+	if dir.Meta {
+		meta_or_sql = au.BrightCyan("meta").String()
+	}
+	return fmt.Sprintf("%s %s", up_or_down, meta_or_sql)
 }
 
 var (
@@ -127,7 +140,7 @@ func parseMutation(name string, ms *MutationSet, value interface{}) (mut *Mutati
 }
 
 func (mut *Mutation) DisplayName() string {
-	return au.BrightMagenta("["+mut.set.Namespace+"]").String() + " " + mut.Name
+	return au.BrightMagenta(mut.set.Namespace).String() + " " + mut.Name
 }
 
 func (mut *Mutation) SqlHash() string {
