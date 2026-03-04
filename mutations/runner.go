@@ -1,38 +1,41 @@
 package mutations
 
 import (
+	"embed"
 	"log"
 
-	mapset "github.com/deckarep/golang-set/v2"
 	au "github.com/logrusorgru/aurora"
+	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
 
+// go:embed dmut-mutations/*
+var dmut_mutations embed.FS
+
 type Runner interface {
+
 	// ReconcileRoles reconciles the roles in the database with the roles in the mutations.
 	// Removing a role from the database will result in dropping all meta mutations before reconciling them.
-	GetDBRoles() (mapset.Set[string], error)
-	AddRole(role string) error
-	RemoveRole(role string) error
-	OverwriteRoles(roles mapset.Set[string]) error
+	AddRole(namespace string, role string) error
+	RemoveRole(namespace string, role string) error
+	OverwriteRoles(namespace string, roles *hashset.Set[string]) error
 	GetTestRunner() (Runner, error)
 
 	Logger() *log.Logger
 
+	Exec(sql string, args ...interface{}) error
 	Begin() error
 	Rollback() error
 	Commit() error
 	SavePoint(name string) error
 	RollbackToSavepoint(name string) error
 
-	GetDBMutationsFromDb() (DbMutationMap, error)
+	GetDBMutationsFromDb(namespace string) (*MutationSet, error)
 
-	ClearMutations() error
-	SaveMutation(mut *DbMutation) error
-	ApplyMutation(mut *DbMutation) error
-	UndoMutation(mut *DbMutation) error
+	ClearMutations(namespace string) error
+	Run(runnable *Runnable) error
+	SaveMutation(mut *Mutation) error
+	DeleteMutation(mut *Mutation) error
 	Close() error
-
-	// InstallDmut() error
 }
 
 type MutationRunnerOptions struct {
@@ -49,13 +52,14 @@ func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
 	}
 }
 
-func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset.Set[string], opts ...*MutationRunnerOptions) error {
+func RunMutations(runner Runner, local *MutationSet, opts ...*MutationRunnerOptions) error {
 
 	var options = MutationRunnerOptions{}
 	options.Merge(opts...)
 
 	var err error
 	var test_runner Runner
+	var namespace = local.Namespace
 
 	if options.TestBefore {
 		// Create the test runner before BEGIN, so that we have the test database ready before modifying the roles.
@@ -66,18 +70,18 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 		defer test_runner.Close()
 	}
 
-	db_roles, err := runner.GetDBRoles()
+	db, err := runner.GetDBMutationsFromDb(namespace)
 	if err != nil {
 		return err
 	}
 
-	var new_roles = disk_roles.Difference(db_roles)
-	var removed_roles = db_roles.Difference(disk_roles)
+	var new_roles = local.Roles.Difference(db.Roles)
+	var removed_roles = db.Roles.Difference(local.Roles)
 
 	if !options.Override {
 		// Unfortunately, we have to create missing roles outside of the BEGIN transaction, because the test runner will be in another database and thus cannot access the new roles as transactions cannot span databases.
-		for _, role := range new_roles.ToSlice() {
-			if err := runner.AddRole(role); err != nil {
+		for _, role := range new_roles.Values() {
+			if err := runner.AddRole(namespace, role); err != nil {
 				return err
 			}
 		}
@@ -87,15 +91,15 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 				if err := runner.Rollback(); err != nil {
 					runner.Logger().Println(au.BrightRed("💥"), "error rolling back in defer", err)
 				}
-				for _, role := range new_roles.ToSlice() {
-					if err := runner.RemoveRole(role); err != nil {
+				for _, role := range new_roles.Values() {
+					if err := runner.RemoveRole(namespace, role); err != nil {
 						runner.Logger().Println(au.BrightRed("💥"), "error removing role in defer", role, err)
 					}
 				}
 			}
 		}()
 	} else {
-		if err := runner.OverwriteRoles(disk_roles); err != nil {
+		if err := runner.OverwriteRoles(namespace, local.Roles); err != nil {
 			return err
 		}
 	}
@@ -104,15 +108,17 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 		return err
 	}
 
-	// Now, we're inside a transaction, so we can remove the roles without fear of having to undo stuff manually
-	if removed_roles.Cardinality() > 0 {
-		// Undo all meta mutations
-		if err := UndoAllMetaMutations(runner); err != nil {
+	down_meta, _ := local.GetMutationsDelta(db, ITER_META)
+	for _, down_runnable := range down_meta.Values() {
+		if err := runner.Run(down_runnable); err != nil {
 			return err
 		}
+	}
 
-		for _, role := range removed_roles.ToSlice() {
-			if err := runner.RemoveRole(role); err != nil {
+	// Now, we're inside a transaction, so we can remove the roles without fear of having to undo stuff manually
+	if removed_roles.Size() > 0 {
+		for _, role := range removed_roles.Values() {
+			if err := runner.RemoveRole(namespace, role); err != nil {
 				return err
 			}
 		}
@@ -123,7 +129,7 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 			return err
 		}
 
-		if err := TestLeafMutations(test_runner, disk_mutations); err != nil {
+		if err := MutationTestSequence(test_runner, local, ITER_SQL); err != nil {
 			return err
 		}
 
@@ -137,18 +143,18 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 	}
 
 	if options.Override {
-		if err := runner.ClearMutations(); err != nil {
+		if err := runner.ClearMutations(namespace); err != nil {
 			return err
 		}
 
-		for _, mut := range disk_mutations.GetMutationsInOrder(true) {
+		for mut := range local.AllMutations() {
 			if err := runner.SaveMutation(mut); err != nil {
 				return err
 			}
 			runner.Logger().Println(au.BrightGreen("✓"), mut.DisplayName())
 		}
 	} else {
-		if err := ApplyMutations(runner, disk_mutations); err != nil {
+		if err := ApplyMutations(runner, local); err != nil {
 			return err
 		}
 	}
@@ -159,7 +165,7 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 			return err
 		}
 
-		if err := TestDowningMutations(runner); err != nil {
+		if err := TestDowningMutations(runner, local); err != nil {
 			return err
 		}
 
@@ -179,50 +185,41 @@ func RunMutations(runner Runner, disk_mutations DbMutationMap, disk_roles mapset
 	return nil
 }
 
-func UndoAllMetaMutations(runner Runner) error {
-	mutations, err := runner.GetDBMutationsFromDb()
-	if err != nil {
-		return err
-	}
-	for _, mut := range mutations.GetMutationsInOrder(false) {
-		if mut.Meta {
-			if err := runner.UndoMutation(mut); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // Apply the mutations on the disk to the database.
-func ApplyMutations(runner Runner, disk_mutations DbMutationMap) error {
+func ApplyMutations(runner Runner, local *MutationSet) error {
 
+	namespace := local.Namespace
 	// Get the currently defined mutations so that we send them to the test runner
-	current, err := runner.GetDBMutationsFromDb()
+	current, err := runner.GetDBMutationsFromDb(namespace)
 	if err != nil {
 		return err
 	}
 
-	var defunct_db_hashes = current.GetUniqueHashes(disk_mutations)
+	to_up_meta, to_down_meta := local.GetMutationsDelta(current, ITER_META)
+	to_up_sql, to_down_sql := local.GetMutationsDelta(current, ITER_SQL)
 
-	// Undo the defunct mutations in the database
-	for _, mut := range current.GetMutationsInOrder(false, defunct_db_hashes.ToSlice()...) {
-		if err := runner.UndoMutation(mut); err != nil {
+	for _, down_runnable := range to_down_meta.Values() {
+		if err := runner.Run(down_runnable); err != nil {
 			return err
 		}
-
-		runner.Logger().Println(au.BrightRed("🗑"), mut.DisplayName())
-		current.Remove(mut)
 	}
 
-	// Check what new hashes are in the local mutations after the removed database ones are gone.
-	var new_local_hashes = disk_mutations.GetUniqueHashes(current)
-
-	for _, mut := range disk_mutations.GetMutationsInOrder(true, new_local_hashes.ToSlice()...) {
-		if err := runner.ApplyMutation(mut); err != nil {
+	for _, down_runnable := range to_down_sql.Values() {
+		if err := runner.Run(down_runnable); err != nil {
 			return err
 		}
-		runner.Logger().Println(au.BrightGreen("✓"), mut.DisplayName())
+	}
+
+	for _, up_runnable := range to_up_sql.Values() {
+		if err := runner.Run(up_runnable); err != nil {
+			return err
+		}
+	}
+
+	for _, up_runnable := range to_up_meta.Values() {
+		if err := runner.Run(up_runnable); err != nil {
+			return err
+		}
 	}
 
 	return nil

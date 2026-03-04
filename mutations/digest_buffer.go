@@ -40,9 +40,12 @@ func (dg *DigestBuffer) AddStatement(stmt string) error {
 	return nil
 }
 
-func (dg *DigestBuffer) AddStatements(stmts ...string) error {
+func (dg *DigestBuffer) AddStatements(stmts ...MutationStatement) error {
 	for _, stmt := range stmts {
-		if err := dg.AddStatement(stmt); err != nil {
+		if err := dg.AddStatement(stmt.Up); err != nil {
+			return err
+		}
+		if err := dg.AddStatement(stmt.Down); err != nil {
 			return err
 		}
 	}

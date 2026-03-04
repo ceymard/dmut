@@ -1,0 +1,60 @@
+
+# yaml-embedded-languages: sql
+
+__namespace: __dmut__
+
+dmut:
+  sql:
+    - |
+      create schema {{ default "__dmut__" .Options.DmutSchema }};
+
+dmut.mutations:
+  sql:
+    - |
+      create type {{ default "__dmut__" .Options.DmutSchema }}.mutation_statement as (
+        up text,
+        down text
+      );
+
+      create table {{ default "__dmut__" .Options.DmutSchema }}.mutations (
+        name text not null,
+        namespace text not null,
+        file text not null,
+
+        needs text[] not null,
+        meta_needs text[] not null,
+        sql {{ default "__dmut__" .Options.DmutSchema }}.mutation_statement[] not null,
+        meta {{ default "__dmut__" .Options.DmutSchema }}.mutation_statement[] not null,
+        test {{ default "__dmut__" .Options.DmutSchema }}.mutation_statement[] not null,
+
+        ts timestamp with time zone not null default now(),
+        forced boolean not null default false,
+
+        primary key (namespace, name)
+      );
+
+dmut.roles:
+  sql:
+    - |
+      create table {{ default "__dmut__" .Options.DmutSchema }}.roles (
+        name text not null,
+        namespace text not null,
+
+        ts timestamp with time zone not null default now(),
+        forced boolean not null default false,
+
+        primary key (namespace, name)
+      );
+
+dmut.revisions:
+  sql:
+    - |
+      create table {{ default "__dmut__" .Options.DmutSchema }}.revisions (
+        sequence int not null,
+        namespace text not null,
+
+        ts timestamp with time zone not null default now(),
+        file_contents text not null default '',
+
+        primary key (namespace, sequence)
+      );

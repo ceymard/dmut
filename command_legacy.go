@@ -76,13 +76,13 @@ func (c LegacyCmd) Run() error {
 		if len(mut.Up) != len(mut.Down) {
 
 			for _, up := range mut.Up {
-				statements = append(statements, mutations.YamlStatement{
+				statements = append(statements, mutations.MutationStatement{
 					Up: replaceLineComments(up),
 					// Down: mut.Down[len(mut.Down)-i-1],
 				})
 			}
 			for _, down := range mut.Down {
-				statements = append(statements, mutations.YamlStatement{
+				statements = append(statements, mutations.MutationStatement{
 					Down: replaceLineComments(down),
 				})
 			}
@@ -97,7 +97,7 @@ func (c LegacyCmd) Run() error {
 					// os.Stdout.WriteString(up + "\n")
 					statements = append(statements, up)
 				} else {
-					statements = append(statements, mutations.YamlStatement{
+					statements = append(statements, mutations.MutationStatement{
 						Up:   up,
 						Down: down,
 					})

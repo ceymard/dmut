@@ -41,13 +41,13 @@ func (t TestCmd) Run() error {
 	if t.Password == "" {
 		t.Password = "test"
 	}
-	log.Println("testing mutations on", image)
 
 	muts, err := mutations.LoadYamlMutations(t.Paths...)
 	if err != nil {
 		return err
 	}
 
+	log.Println("testing mutations on", image)
 	ctx := context.Background()
 	container, err := postgres.Run(ctx,
 		image,
@@ -83,13 +83,13 @@ func (t TestCmd) Run() error {
 	}
 	defer runner.Close()
 
-	db_mutations := muts.ToDbMutationMap()
-	roles := muts.Roles()
-
-	if err := mutations.RunMutations(runner, db_mutations, roles, &mutations.MutationRunnerOptions{
-		TestBefore: true,
-	}); err != nil {
-		return err
+	if sequence, ok := muts[""]; ok {
+		set := sequence[0]
+		if err := mutations.RunMutations(runner, set, &mutations.MutationRunnerOptions{
+			TestBefore: true,
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -4,10 +4,12 @@ Dmut is a database migration tool that takes an approach based on dependencies r
 
 As of now, dmut only handles postgres, but other databases may be supported if the demand exists.
 
-It provides its user with a few boons :
+It features the following :
 
-- Revisions : a way to rewrite a mutation set
-- Namespaces to have different sets of mutations on a same database so that team can function independently
+- Testing :A fairly comprehensive testing system to ensure the mutations you write are reproducible and you don't end up in an unworkable state
+- Automatic reverse statements : most of the time, only specify the `create` statements, dmut will
+- Revisions :
+- Namespaces : to have different sets of mutations on a same database so that team can function independently
 - A distinction between "heavy" and "lightweight" statements
 
 Whenever a mutation changes, its dependents are recursively undone first before undoing it, then it is redone and its dependents are re-run as well.
@@ -15,17 +17,21 @@ Whenever a mutation changes, its dependents are recursively undone first before 
 When running, dmut performs the following operations :
 
 - Fetch currently applied mutations from the database and compute which need to be de-applied
-- If roles changed: undo all meta blocks and sync roles (remove obsolete, add missing).
+- If roles or sql changed (some sql statements have to be downed): undo all meta blocks and sync roles (remove obsolete, add missing).
 - In a temporary test database (on the same server), try to run all mutations indepentently.
 - If mutations changed: de-apply and re-apply according to the new `needs` clauses. This is where the mutations really are applied.
 - Try to down all mutations one by one (this is done using savepoints and does not lose data). The operation is aborted if one of them fails.
 
 As everything is ran inside a transaction, failure at any given step halts the process and mutations are not applied.
 
+# Role handling
+
+Roles are mostly meant to be group roles. If your users have roles in the database, they should be handled using triggers.
+
 # Considerations
 
 - Do not use create "if not exists" or drop "if exists".
-- Never put CASCADE in DROP statement in your custom mutations : dmut relies on every object being created in their mutations and declaring dependencies explicitely and is supposed to break during its tests phases if they were not.
+- Never put CASCADE in DROP statement in your custom mutations : dmut relies on every object being created in their mutations and declaring dependencies explicitely. For your safety, it must break during its tests phases if they were not.
 - Put data-altering statements whose down incurs loss of data in `sql` blocks:
   - CREATE TABLE
   - CREATE INDEX (data is not lost, but indexes can be slow to create)
@@ -37,7 +43,7 @@ As everything is ran inside a transaction, failure at any given step halts the p
 
   - ...
 
-- Only put "lightweight" statements in meta blocks : grants, functions, policies and the like.
+- Only put "lightweight" statements in meta blocks : grants, functions, policies and the like. These will be de-applied and re-applied often
   - GRANT ...
   - CREATE POLICY
   - CREATE FUNCTION

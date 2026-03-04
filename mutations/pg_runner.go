@@ -7,11 +7,11 @@ import (
 	"net/url"
 	"os"
 
-	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	au "github.com/logrusorgru/aurora"
 	"github.com/pkg/errors"
+	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
 
 var _ Runner = &PgRunner{}
@@ -49,9 +49,6 @@ func NewPgRunner(url string, verbose bool) (*PgRunner, error) {
 		return nil, err
 	}
 	res.conn = conn
-	if err := res.InstallDmut(); err != nil {
-		return nil, wrapPgError(err)
-	}
 
 	return res, nil
 }
@@ -84,7 +81,7 @@ func (r *PgRunner) GetTestRunner() (Runner, error) {
 	res := &PgRunner{conn: conn, isTesting: true, uri: new_url, logger: log.New(os.Stdout, "", log.Lshortfile|log.LstdFlags), verbose: r.verbose}
 	res.logger.SetPrefix(au.BrightMagenta("test ").String())
 
-	return res, res.InstallDmut()
+	return res, nil
 }
 
 func wrapPgError(err error) error {
@@ -95,8 +92,8 @@ func wrapPgError(err error) error {
 	return err
 }
 
-func (r *PgRunner) execStatements(stmts []string) error {
-	for _, stmt := range stmts {
+func (r *PgRunner) Run(runnable *Runnable) error {
+	for stmt := range runnable.Statements() {
 		if err := r.exec(stmt); err != nil {
 			return wrapPgError(err)
 		}
@@ -104,34 +101,18 @@ func (r *PgRunner) execStatements(stmts []string) error {
 	return nil
 }
 
-func (r *PgRunner) ApplyMutation(m *DbMutation) error {
-
-	if err := r.execStatements(m.Up); err != nil {
-		return errors.Wrap(err, "error applying mutation "+m.DisplayName())
-	}
-
-	return r.SaveMutation(m)
-}
-
-func (r *PgRunner) UndoMutation(m *DbMutation) error {
-	if err := r.execStatements(m.Down); err != nil {
-		return errors.Wrap(err, "error undoing mutation "+m.DisplayName())
-	}
-	return r.deleteMutation(m)
-}
-
-func (r *PgRunner) deleteMutation(m *DbMutation) error {
-	err := r.exec(`DELETE FROM dmut.mutations WHERE hash = $1`, m.Hash)
+func (r *PgRunner) DeleteMutation(m *Mutation) error {
+	err := r.exec(`DELETE FROM dmut.mutations WHERE namespace = $1 AND name = $2`, m.set.Namespace, m.Name)
 	return wrapPgError(err)
 }
 
-func (r *PgRunner) ClearMutations() error {
-	err := r.exec(`DELETE FROM dmut.mutations`)
+func (r *PgRunner) ClearMutations(namespace string) error {
+	err := r.exec(`DELETE FROM dmut.mutations WHERE namespace = $1`, namespace)
 	return wrapPgError(err)
 }
 
-func (r *PgRunner) SaveMutation(m *DbMutation) error {
-	err := r.exec(`INSERT INTO dmut.mutations(hash, name, meta, up, down, children, parents) VALUES ($1, $2, $3, $4, $5, $6, $7)`, m.Hash, m.Name, m.Meta, m.Up, m.Down, m.Children, m.Parents)
+func (r *PgRunner) SaveMutation(m *Mutation) error {
+	err := r.exec(`INSERT INTO dmut.mutations(namespace, file, name, needs, meta, sql, meta) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (namespace, name) DO UPDATE SET file = $2, needs = $4, meta = $5, sql = $6, meta = $7`, m.set.Namespace, m.File, m.Name, m.Needs, m.Meta, m.Sql, m.Meta)
 	return wrapPgError(err)
 }
 
@@ -170,6 +151,10 @@ func (r *PgRunner) RollbackToSavepoint(name string) error {
 	return r.exec(cmd)
 }
 
+func (r *PgRunner) Exec(sql string, args ...interface{}) error {
+	return r.exec(sql, args...)
+}
+
 func (r *PgRunner) exec(sql string, args ...interface{}) error {
 	if r.verbose {
 		r.logger.Println(au.BrightBlue(sql))
@@ -181,9 +166,9 @@ func (r *PgRunner) exec(sql string, args ...interface{}) error {
 	return wrapPgError(err)
 }
 
-func (r *PgRunner) getDbRoles() (mapset.Set[string], error) {
-	var res = mapset.NewSet[string]()
-	rows, err := r.conn.Query(context.Background(), `SELECT rolname FROM dmut.roles`)
+func (r *PgRunner) getDbRoles(namespace string) (*hashset.Set[string], error) {
+	var res = hashset.New[string]()
+	rows, err := r.conn.Query(context.Background(), `SELECT rolname FROM dmut.roles WHERE namespace = $1`, namespace)
 	if err != nil {
 		return nil, wrapPgError(err)
 	}
@@ -200,30 +185,30 @@ func (r *PgRunner) getDbRoles() (mapset.Set[string], error) {
 	return res, nil
 }
 
-func (r *PgRunner) AddRole(role string) error {
+func (r *PgRunner) AddRole(namespace string, role string) error {
 	if err := r.exec(`CREATE ROLE ` + pgx.Identifier{role}.Sanitize()); err != nil {
 		return wrapPgError(err)
 	}
-	return r.exec(`INSERT INTO dmut.roles(rolname) VALUES ($1)`, role)
+	return r.exec(`INSERT INTO dmut.roles(namespace, rolname) VALUES ($1, $2)`, namespace, role)
 }
 
-func (r *PgRunner) RemoveRole(role string) error {
+func (r *PgRunner) RemoveRole(namespace string, role string) error {
 	if err := r.exec(`DROP ROLE ` + pgx.Identifier{role}.Sanitize()); err != nil {
 		return wrapPgError(err)
 	}
-	return r.exec(`DELETE FROM dmut.roles WHERE rolname = $1`, role)
+	return r.exec(`DELETE FROM dmut.roles WHERE namespace = $1 AND rolname = $2`, namespace, role)
 }
 
-func (r *PgRunner) GetDBRoles() (mapset.Set[string], error) {
-	return r.getDbRoles()
+func (r *PgRunner) GetDBRoles(namespace string) (*hashset.Set[string], error) {
+	return r.getDbRoles(namespace)
 }
 
-func (r *PgRunner) OverwriteRoles(roles mapset.Set[string]) error {
-	if err := r.exec(`DELETE FROM dmut.roles`); err != nil {
+func (r *PgRunner) OverwriteRoles(namespace string, roles *hashset.Set[string]) error {
+	if err := r.exec(`DELETE FROM dmut.roles WHERE namespace = $1`, namespace); err != nil {
 		return wrapPgError(err)
 	}
-	for _, role := range roles.ToSlice() {
-		if err := r.exec(`INSERT INTO dmut.roles(rolname) VALUES ($1)`, role); err != nil {
+	for _, role := range roles.Values() {
+		if err := r.exec(`INSERT INTO dmut.roles(namespace, rolname) VALUES ($1, $2)`, namespace, role); err != nil {
 			return wrapPgError(err)
 		}
 	}
@@ -231,48 +216,38 @@ func (r *PgRunner) OverwriteRoles(roles mapset.Set[string]) error {
 }
 
 // get the mutations already in the database
-func (r *PgRunner) GetDBMutationsFromDb() (DbMutationMap, error) {
+func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) {
 	var (
-		db      = r.conn
-		res_map = make(DbMutationMap)
-		rows    pgx.Rows
-		err     error
+		db   = r.conn
+		rows pgx.Rows
+		err  error
 	)
+
+	res := NewMutationSet(namespace, 0, "")
+
+	res.Roles, err = r.getDbRoles(namespace)
+	if err != nil {
+		return nil, err
+	}
 
 	// First, extract a list of already active mutations and check if they have to be downed because they're
 	// either inexistant or their hash changed.
-	if rows, err = db.Query(context.Background(), `select hash, name, meta, up, down, children, parents from dmut.mutations m`); err != nil {
+	if rows, err = db.Query(context.Background(), `select name, file, needs, meta_needs, meta, sql, meta from dmut.mutations WHERE namespace = $1`, namespace); err != nil {
 		return nil, wrapPgError(err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
-		var dbmut DbMutation
-		if err = rows.Scan(&dbmut.Hash, &dbmut.Name, &dbmut.Meta, &dbmut.Up, &dbmut.Down, &dbmut.Children, &dbmut.Parents); err != nil {
+		var dbmut Mutation
+		if err = rows.Scan(&dbmut.Name, &dbmut.File, &dbmut.Needs, &dbmut.MetaNeeds, &dbmut.Meta, &dbmut.Sql, &dbmut.Meta); err != nil {
 			return nil, wrapPgError(err)
 		}
-		res_map.AddMutation(&dbmut)
+		res.AddMutation(&dbmut)
 	}
 
-	return res_map, nil
-}
+	if err := res.ResolveDependencies(); err != nil {
+		return nil, err
+	}
 
-func (r *PgRunner) InstallDmut() error {
-	err := r.exec(`
-	CREATE SCHEMA IF NOT EXISTS dmut;
-	CREATE TABLE IF NOT EXISTS dmut.mutations (
-		hash TEXT PRIMARY KEY,
-		name TEXT,
-		meta BOOLEAN,
-		up TEXT[],
-		down TEXT[],
-		children TEXT[],
-		parents TEXT[],
-		ts TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-	);
-	CREATE TABLE IF NOT EXISTS dmut.roles (
-		rolname TEXT PRIMARY KEY
-	);
-`)
-	return wrapPgError(err)
+	return res, nil
 }
