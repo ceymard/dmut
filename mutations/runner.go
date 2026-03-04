@@ -60,7 +60,6 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 
 	if options.TestBefore {
 		// Create the test runner before BEGIN, so that we have the test database ready before modifying the roles.
-		runner.Logger().Println(au.BrightGreen("🖥"), "creating test database")
 		test_runner, err = runner.GetTestExecutor()
 		if err != nil {
 			return err

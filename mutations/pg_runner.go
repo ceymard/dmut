@@ -218,10 +218,23 @@ func (r *PgRunner) OverwriteRoles(namespace string, roles *hashset.Set[string]) 
 // get the mutations already in the database
 func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) {
 	var (
-		db   = r.conn
-		rows pgx.Rows
-		err  error
+		db     = r.conn
+		rows   pgx.Rows
+		exists bool
+		err    error
 	)
+
+	// test for the presence of the __dmut__ schema by
+	if err := db.QueryRow(context.Background(), `SELECT EXISTS (
+		SELECT 1
+		FROM pg_catalog.pg_namespace
+		WHERE nspname = '__dmut__'
+	)`).Scan(&exists); err != nil {
+		return nil, wrapPgError(err)
+	}
+	if !exists {
+		return NewMutationSet(namespace, 0, ""), nil
+	}
 
 	res := NewMutationSet(namespace, 0, "")
 
