@@ -7,6 +7,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/alecthomas/kong"
@@ -62,6 +63,7 @@ func (VersionCmd) Run() error {
 
 func main() {
 	cli := CLI{}
+	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	ctx := kong.Parse(&cli,
 		kong.Name("dmut"),
 		kong.Description("Database mutation runner. Collect, test, and apply migrations."),

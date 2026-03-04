@@ -86,6 +86,9 @@ func parseMutation(name string, ms *MutationSet, value interface{}) (mut *Mutati
 				return nil, err
 			} else {
 				mut.Roles = list
+				for _, role := range list {
+					mut.set.Roles.Add(role)
+				}
 			}
 		case "sql":
 			if list, err := parseStatements(value); err != nil {

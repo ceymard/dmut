@@ -80,6 +80,10 @@ func (ms *MutationSet) AddMutation(mut *Mutation) error {
 	mut.Namespace = ms.Namespace
 	ms.Map.Put(mut.Name, mut)
 
+	for _, role := range mut.Roles {
+		ms.Roles.Add(role)
+	}
+
 	return nil
 }
 

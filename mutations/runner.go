@@ -86,6 +86,7 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 
 	// Unfortunately, we have to create missing roles outside of the BEGIN transaction, because the test runner will be in another database and thus cannot access the new roles as transactions cannot span databases.
 	for _, role := range new_roles.Values() {
+		runner.Logger().Println(au.BrightGreen("🔄"), "adding role", role)
 		if err := runner.AddRole(namespace, role); err != nil {
 			return err
 		}
