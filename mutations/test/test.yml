@@ -60,6 +60,9 @@ auth.passwords:
         for each row
         execute procedure auth.update_password();
 
+    - |
+      grant usage on schema auth to "@active" with some error in there;
+
 # Our main schema
 api:
   sql:

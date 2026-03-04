@@ -11,7 +11,7 @@ type Runnable struct {
 	Direction IterationDirection
 }
 
-func (r *Runnable) Statements() iter.Seq[string] {
+func (r *Runnable) Statements() iter.Seq2[int, string] {
 	var stmts []MutationStatement
 	if r.Direction.Meta {
 		stmts = r.Mutation.Meta
@@ -19,17 +19,17 @@ func (r *Runnable) Statements() iter.Seq[string] {
 		stmts = r.Mutation.Sql
 	}
 
-	return func(yield func(string) bool) {
+	return func(yield func(int, string) bool) {
 		if r.Direction.Down {
 			// yield them in reverse order
 			for i := len(stmts) - 1; i >= 0; i-- {
-				if !yield(stmts[i].Down) {
+				if !yield(i, stmts[i].Down) {
 					return
 				}
 			}
 		} else {
-			for _, stmt := range stmts {
-				if !yield(stmt.Up) {
+			for i, stmt := range stmts {
+				if !yield(i, stmt.Up) {
 					return
 				}
 			}

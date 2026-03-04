@@ -105,10 +105,10 @@ func (r *PgRunner) Run(runnable *Runnable) error {
 	if runnable.Direction.Meta {
 		meta_or_not = au.BrightRed("meta").String()
 	}
-	r.logger.Println(au.BrightGreen("🔄"), "running", runnable.Mutation.Name, " ["+meta_or_not+"]")
-	for stmt := range runnable.Statements() {
+	r.logger.Println(au.BrightGreen("🔄"), au.BrightMagenta(runnable.Mutation.set.Namespace+"::").String(), runnable.Mutation.Name, "["+meta_or_not+"]")
+	for i, stmt := range runnable.Statements() {
 		if err := r.exec(runnable.Mutation, stmt); err != nil {
-			return err
+			return oops.With("statement index", i+1).Wrap(err)
 		}
 	}
 	return nil
@@ -174,7 +174,15 @@ func (r *PgRunner) exec(mutation *Mutation, sql string, args ...interface{}) err
 	}
 	_, err := r.conn.Exec(context.Background(), sql, args...)
 	if err != nil {
-		oo := oops.In("pg").With("sql", au.BrightBlue(sql).String())
+		oo := oops.In("pg")
+		if pg_err, ok := err.(*pgconn.PgError); ok {
+			if pg_err.Position > 0 {
+				oo = oo.With("sql", au.BrightBlue(sql[0:pg_err.Position-1]).String()+au.BrightRed(sql[pg_err.Position-1:]).String())
+			}
+		} else {
+			oo = oo.With("sql", au.BrightBlue(sql).String())
+		}
+
 		if mutation != nil {
 			oo = oo.With("mutation", mutation.Name).With("file", mutation.File).With("namespace", mutation.Namespace).With("needs", mutation.Needs).With("meta_needs", mutation.MetaNeeds)
 
