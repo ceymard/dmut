@@ -32,4 +32,5 @@ type Executor interface {
 	SaveMutation(mut *Mutation) error
 	DeleteMutation(mut *Mutation) error
 	Close() error
+	GetTestOutput() string
 }

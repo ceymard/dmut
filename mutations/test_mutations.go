@@ -2,52 +2,59 @@ package mutations
 
 import (
 	"fmt"
+	"os"
 	"slices"
 
 	"github.com/jackc/pgx/v4"
 	au "github.com/logrusorgru/aurora"
 )
 
-func TestAllMutationsInTestDatabase(runner Executor, namespaces *MutationNamespace) error {
+func TestAllMutationsInTestDatabase(runner Executor, namespaces *MutationNamespace) (err error) {
 
 	// Create the test runner before BEGIN, so that we have the test database ready before modifying the roles.
-	test_runner, err := runner.GetTestExecutor()
+	var test_runner Executor
+	test_runner, err = runner.GetTestExecutor()
 	if err != nil {
 		return err
 	}
 	defer test_runner.Close()
+	defer func() {
+		if err != nil {
+			os.Stdout.WriteString(test_runner.GetTestOutput())
+		}
+	}()
 
-	if err := test_runner.Begin(); err != nil {
+	if err = test_runner.Begin(); err != nil {
 		return err
 	}
 	rollbacked := false
 	defer func() {
 		if !rollbacked {
-			if err := test_runner.Rollback(); err != nil {
-				runner.Logger().Println(au.BrightRed("error rolling back test database"), err)
+			if err2 := test_runner.Rollback(); err2 != nil {
+				test_runner.Logger().Println(au.BrightRed("error rolling back test database"), err2)
 			}
 		}
 	}()
 
 	for _, namespace := range namespaces.Values() {
 
-		if err := test_runner.SavePoint("test_mutations"); err != nil {
+		if err = test_runner.SavePoint("test_mutations"); err != nil {
 			return err
 		}
 
 		for _, revision := range namespace.Revisions {
-			if err := TestMutationsInTestDatabase(test_runner, revision); err != nil {
+			if err = TestMutationsInTestDatabase(test_runner, revision); err != nil {
 				return err
 			}
 
-			if err := test_runner.RollbackToSavepoint("test_mutations"); err != nil {
+			if err = test_runner.RollbackToSavepoint("test_mutations"); err != nil {
 				return err
 			}
 		}
 
 	}
 
-	if err := test_runner.Rollback(); err != nil {
+	if err = test_runner.Rollback(); err != nil {
 		return err
 	}
 	rollbacked = true
@@ -117,12 +124,12 @@ func MutationTestSequence(runner Executor, set *MutationSet, dir IterationDirect
 	for mutation := range set.AllMutations() {
 		runner.Logger().Println("testing", mutation.DisplayName(), dir.String())
 
-		var muts []*Mutation
+		var inner_mutations []*Mutation
 		for mut := range mutation.IterateDependencies(dir) {
-			muts = append(muts, mut)
+			inner_mutations = append(inner_mutations, mut)
 		}
 
-		for _, mut := range muts {
+		for _, mut := range inner_mutations {
 			if err := runner.Run(mut.Runnable(dir)); err != nil {
 				return err
 			}
@@ -130,8 +137,8 @@ func MutationTestSequence(runner Executor, set *MutationSet, dir IterationDirect
 
 		down_dir := dir
 		down_dir.Down = true
-		slices.Reverse(muts)
-		for _, mut := range muts {
+		slices.Reverse(inner_mutations)
+		for _, mut := range inner_mutations {
 			if err := runner.Run(mut.Runnable(down_dir)); err != nil {
 				return err
 			}

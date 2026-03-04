@@ -21,7 +21,7 @@ auth:
     # There is no down. We just don't want that for new schemas.
     - up: |
         ALTER DEFAULT PRIVILEGES IN SCHEMA auth
-        REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+        REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC sdfsdf;
 
 # The auth.passwords table is a way to store
 auth.passwords:
