@@ -31,11 +31,20 @@ func TestAllMutationsInTestDatabase(runner Executor, namespaces *MutationNamespa
 
 	for _, namespace := range namespaces.Values() {
 
+		if err := test_runner.SavePoint("test_mutations"); err != nil {
+			return err
+		}
+
 		for _, revision := range namespace.Revisions {
 			if err := TestMutationsInTestDatabase(test_runner, revision); err != nil {
 				return err
 			}
+
+			if err := test_runner.RollbackToSavepoint("test_mutations"); err != nil {
+				return err
+			}
 		}
+
 	}
 
 	if err := test_runner.Rollback(); err != nil {
@@ -47,11 +56,6 @@ func TestAllMutationsInTestDatabase(runner Executor, namespaces *MutationNamespa
 }
 
 func TestMutationsInTestDatabase(test_runner Executor, set *MutationSet) error {
-
-	if err := test_runner.SavePoint("test_mutations"); err != nil {
-		return err
-	}
-	defer test_runner.ReleaseSavepoint("test_mutations")
 
 	for _, role := range set.Roles.Values() {
 		// We cheat, because we don't want to compare the roles, but we need them to exist anyway for the purpose of the tests
@@ -96,9 +100,6 @@ func TestMutationsInTestDatabase(test_runner Executor, set *MutationSet) error {
 	// }
 
 	// Undo it all
-	if err := test_runner.RollbackToSavepoint("test_mutations"); err != nil {
-		return err
-	}
 
 	return nil
 

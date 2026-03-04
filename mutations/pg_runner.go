@@ -2,6 +2,7 @@ package mutations
 
 import (
 	"context"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -79,6 +80,7 @@ func (r *PgRunner) GetTestExecutor() (Executor, error) {
 
 	res := &PgRunner{conn: conn, isTesting: true, uri: new_url, logger: log.New(os.Stdout, "", log.Lshortfile|log.LstdFlags), verbose: r.verbose}
 	res.logger.SetPrefix(au.BrightMagenta("test ").String())
+	res.logger.SetOutput(io.Discard)
 
 	return res, nil
 }
