@@ -1,24 +1,20 @@
 package mutations
 
 import (
-	"embed"
 	"log"
 
 	au "github.com/logrusorgru/aurora"
 	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
 
-// go:embed dmut-mutations/*
-var dmut_mutations embed.FS
-
-type Runner interface {
+type Executor interface {
 
 	// ReconcileRoles reconciles the roles in the database with the roles in the mutations.
 	// Removing a role from the database will result in dropping all meta mutations before reconciling them.
 	AddRole(namespace string, role string) error
 	RemoveRole(namespace string, role string) error
 	OverwriteRoles(namespace string, roles *hashset.Set[string]) error
-	GetTestRunner() (Runner, error)
+	GetTestExecutor() (Executor, error)
 
 	Logger() *log.Logger
 
@@ -52,54 +48,46 @@ func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
 	}
 }
 
-func RunMutations(runner Runner, local *MutationSet, opts ...*MutationRunnerOptions) error {
+func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOptions) error {
 
 	var options = MutationRunnerOptions{}
 	options.Merge(opts...)
 
 	var err error
-	var test_runner Runner
+	var test_runner Executor
 	var namespace = local.Namespace
+	var distant *MutationSet
 
 	if options.TestBefore {
 		// Create the test runner before BEGIN, so that we have the test database ready before modifying the roles.
-		test_runner, err = runner.GetTestRunner()
+		runner.Logger().Println(au.BrightGreen("🖥"), "creating test database")
+		test_runner, err = runner.GetTestExecutor()
 		if err != nil {
 			return err
 		}
 		defer test_runner.Close()
 	}
 
-	db, err := runner.GetDBMutationsFromDb(namespace)
-	if err != nil {
+	if distant, err = runner.GetDBMutationsFromDb(namespace); err != nil {
 		return err
 	}
 
-	var new_roles = local.Roles.Difference(db.Roles)
-	var removed_roles = db.Roles.Difference(local.Roles)
+	sql_down, sql_up := local.GetMutationsDelta(distant, ITER_SQL)
+	meta_down, meta_up := local.GetMutationsDelta(distant, ITER_META)
 
-	if !options.Override {
-		// Unfortunately, we have to create missing roles outside of the BEGIN transaction, because the test runner will be in another database and thus cannot access the new roles as transactions cannot span databases.
-		for _, role := range new_roles.Values() {
-			if err := runner.AddRole(namespace, role); err != nil {
-				return err
-			}
-		}
+	var new_roles = local.Roles.Difference(distant.Roles)
+	var removed_roles = distant.Roles.Difference(local.Roles)
 
-		defer func() {
-			if err != nil {
-				if err := runner.Rollback(); err != nil {
-					runner.Logger().Println(au.BrightRed("💥"), "error rolling back in defer", err)
-				}
-				for _, role := range new_roles.Values() {
-					if err := runner.RemoveRole(namespace, role); err != nil {
-						runner.Logger().Println(au.BrightRed("💥"), "error removing role in defer", role, err)
-					}
-				}
-			}
-		}()
-	} else {
-		if err := runner.OverwriteRoles(namespace, local.Roles); err != nil {
+	if sql_down.Size() > 0 || removed_roles.Size() > 0 {
+		_, full_meta_up := local.GetMutationsDelta(nil, ITER_META)
+		full_meta_down, _ := distant.GetMutationsDelta(nil, ITER_META)
+		meta_down = full_meta_down
+		meta_up = full_meta_up
+	}
+
+	// Unfortunately, we have to create missing roles outside of the BEGIN transaction, because the test runner will be in another database and thus cannot access the new roles as transactions cannot span databases.
+	for _, role := range new_roles.Values() {
+		if err := runner.AddRole(namespace, role); err != nil {
 			return err
 		}
 	}
@@ -108,11 +96,9 @@ func RunMutations(runner Runner, local *MutationSet, opts ...*MutationRunnerOpti
 		return err
 	}
 
-	down_meta, _ := local.GetMutationsDelta(db, ITER_META)
-	for _, down_runnable := range down_meta.Values() {
-		if err := runner.Run(down_runnable); err != nil {
-			return err
-		}
+	// 1. Start by downing the meta
+	if err := meta_down.Run(runner); err != nil {
+		return err
 	}
 
 	// Now, we're inside a transaction, so we can remove the roles without fear of having to undo stuff manually
@@ -124,55 +110,50 @@ func RunMutations(runner Runner, local *MutationSet, opts ...*MutationRunnerOpti
 		}
 	}
 
-	if options.TestBefore {
-		if err := test_runner.Begin(); err != nil {
-			return err
-		}
-
-		if err := MutationTestSequence(test_runner, local, ITER_SQL); err != nil {
-			return err
-		}
-
-		if err := test_runner.Rollback(); err != nil {
-			return err
-		}
-
-		if err := test_runner.Close(); err != nil {
-			return err
-		}
+	if err := sql_down.Run(runner); err != nil {
+		return err
 	}
 
-	if options.Override {
-		if err := runner.ClearMutations(namespace); err != nil {
-			return err
-		}
-
-		for mut := range local.AllMutations() {
-			if err := runner.SaveMutation(mut); err != nil {
-				return err
-			}
-			runner.Logger().Println(au.BrightGreen("✓"), mut.DisplayName())
-		}
-	} else {
-		if err := ApplyMutations(runner, local); err != nil {
-			return err
-		}
+	if err := sql_up.Run(runner); err != nil {
+		return err
 	}
 
-	if options.TestBefore {
-
-		if err := runner.SavePoint("test_downing_mutations"); err != nil {
-			return err
-		}
-
-		if err := TestDowningMutations(runner, local); err != nil {
-			return err
-		}
-
-		if err := runner.RollbackToSavepoint("test_downing_mutations"); err != nil {
-			return err
-		}
+	if err := meta_up.Run(runner); err != nil {
+		return err
 	}
+
+	// if options.TestBefore {
+	// 	if err := test_runner.Begin(); err != nil {
+	// 		return err
+	// 	}
+
+	// 	if err := MutationTestSequence(test_runner, local, ITER_SQL); err != nil {
+	// 		return err
+	// 	}
+
+	// 	if err := test_runner.Rollback(); err != nil {
+	// 		return err
+	// 	}
+
+	// 	if err := test_runner.Close(); err != nil {
+	// 		return err
+	// 	}
+	// }
+
+	// if options.TestBefore {
+
+	// 	if err := runner.SavePoint("test_downing_mutations"); err != nil {
+	// 		return err
+	// 	}
+
+	// 	if err := TestDowningMutations(runner, local); err != nil {
+	// 		return err
+	// 	}
+
+	// 	if err := runner.RollbackToSavepoint("test_downing_mutations"); err != nil {
+	// 		return err
+	// 	}
+	// }
 
 	runner.Logger().Println(au.BrightGreen("🎉"), "no errors")
 	if options.Commit {
@@ -185,42 +166,42 @@ func RunMutations(runner Runner, local *MutationSet, opts ...*MutationRunnerOpti
 	return nil
 }
 
-// Apply the mutations on the disk to the database.
-func ApplyMutations(runner Runner, local *MutationSet) error {
+// // Apply the mutations on the disk to the database.
+// func ApplyMutations(runner Executor, local *MutationSet) error {
 
-	namespace := local.Namespace
-	// Get the currently defined mutations so that we send them to the test runner
-	current, err := runner.GetDBMutationsFromDb(namespace)
-	if err != nil {
-		return err
-	}
+// 	namespace := local.Namespace
+// 	// Get the currently defined mutations so that we send them to the test runner
+// 	current, err := runner.GetDBMutationsFromDb(namespace)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	to_up_meta, to_down_meta := local.GetMutationsDelta(current, ITER_META)
-	to_up_sql, to_down_sql := local.GetMutationsDelta(current, ITER_SQL)
+// 	to_up_meta, to_down_meta := local.GetMutationsDelta(current, ITER_META)
+// 	to_up_sql, to_down_sql := local.GetMutationsDelta(current, ITER_SQL)
 
-	for _, down_runnable := range to_down_meta.Values() {
-		if err := runner.Run(down_runnable); err != nil {
-			return err
-		}
-	}
+// 	for _, down_runnable := range to_down_meta.Values() {
+// 		if err := runner.Run(down_runnable); err != nil {
+// 			return err
+// 		}
+// 	}
 
-	for _, down_runnable := range to_down_sql.Values() {
-		if err := runner.Run(down_runnable); err != nil {
-			return err
-		}
-	}
+// 	for _, down_runnable := range to_down_sql.Values() {
+// 		if err := runner.Run(down_runnable); err != nil {
+// 			return err
+// 		}
+// 	}
 
-	for _, up_runnable := range to_up_sql.Values() {
-		if err := runner.Run(up_runnable); err != nil {
-			return err
-		}
-	}
+// 	for _, up_runnable := range to_up_sql.Values() {
+// 		if err := runner.Run(up_runnable); err != nil {
+// 			return err
+// 		}
+// 	}
 
-	for _, up_runnable := range to_up_meta.Values() {
-		if err := runner.Run(up_runnable); err != nil {
-			return err
-		}
-	}
+// 	for _, up_runnable := range to_up_meta.Values() {
+// 		if err := runner.Run(up_runnable); err != nil {
+// 			return err
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }

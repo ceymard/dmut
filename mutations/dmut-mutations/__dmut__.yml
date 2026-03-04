@@ -6,26 +6,26 @@ __namespace: __dmut__
 dmut:
   sql:
     - |
-      create schema {{ default "__dmut__" .Options.DmutSchema }};
+      create schema __dmut__;
 
 dmut.mutations:
   sql:
     - |
-      create type {{ default "__dmut__" .Options.DmutSchema }}.mutation_statement as (
+      create type __dmut__.mutation_statement as (
         up text,
         down text
       );
 
-      create table {{ default "__dmut__" .Options.DmutSchema }}.mutations (
+      create table __dmut__.mutations (
         name text not null,
         namespace text not null,
         file text not null,
 
         needs text[] not null,
         meta_needs text[] not null,
-        sql {{ default "__dmut__" .Options.DmutSchema }}.mutation_statement[] not null,
-        meta {{ default "__dmut__" .Options.DmutSchema }}.mutation_statement[] not null,
-        test {{ default "__dmut__" .Options.DmutSchema }}.mutation_statement[] not null,
+        sql __dmut__.mutation_statement[] not null,
+        meta __dmut__.mutation_statement[] not null,
+        test __dmut__.mutation_statement[] not null,
 
         ts timestamp with time zone not null default now(),
         forced boolean not null default false,
@@ -36,7 +36,7 @@ dmut.mutations:
 dmut.roles:
   sql:
     - |
-      create table {{ default "__dmut__" .Options.DmutSchema }}.roles (
+      create table __dmut__.roles (
         name text not null,
         namespace text not null,
 
@@ -49,7 +49,7 @@ dmut.roles:
 dmut.revisions:
   sql:
     - |
-      create table {{ default "__dmut__" .Options.DmutSchema }}.revisions (
+      create table __dmut__.revisions (
         sequence int not null,
         namespace text not null,
 

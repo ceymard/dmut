@@ -14,7 +14,7 @@ import (
 	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
 
-var _ Runner = &PgRunner{}
+var _ Executor = &PgRunner{}
 
 type PgRunner struct {
 	isTesting bool
@@ -53,7 +53,7 @@ func NewPgRunner(url string, verbose bool) (*PgRunner, error) {
 	return res, nil
 }
 
-func (r *PgRunner) GetTestRunner() (Runner, error) {
+func (r *PgRunner) GetTestExecutor() (Executor, error) {
 
 	r.logger.Println(au.BrightGreen("🖥"), "creating test database")
 

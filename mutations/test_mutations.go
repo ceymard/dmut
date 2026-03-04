@@ -1,6 +1,6 @@
 package mutations
 
-func TestMutationsInTestDatabase(test_runner Runner, set *MutationSet) error {
+func TestMutationsInTestDatabase(test_runner Executor, set *MutationSet) error {
 	if err := test_runner.SavePoint("test_mutations"); err != nil {
 		return err
 	}
@@ -32,7 +32,7 @@ func TestMutationsInTestDatabase(test_runner Runner, set *MutationSet) error {
 }
 
 // With the test runner, try to up all mutations independently, and reset after each one.
-func MutationTestSequence(runner Runner, set *MutationSet, dir IterationDirection) error {
+func MutationTestSequence(runner Executor, set *MutationSet, dir IterationDirection) error {
 
 	if err := runner.SavePoint("independent_test"); err != nil {
 		return err
@@ -59,7 +59,7 @@ func MutationTestSequence(runner Runner, set *MutationSet, dir IterationDirectio
 }
 
 // Test downing all mutations in the set independently. Consider they have been applied beforehand.
-func TestDowningMutations(runner Runner, set *MutationSet) error {
+func TestDowningMutations(runner Executor, set *MutationSet) error {
 	if err := runner.SavePoint("test_mutation_full"); err != nil {
 		return err
 	}

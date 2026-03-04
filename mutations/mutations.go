@@ -1,6 +1,7 @@
 package mutations
 
 import (
+	"fmt"
 	"iter"
 
 	au "github.com/logrusorgru/aurora"
@@ -43,6 +44,78 @@ type Mutation struct {
 
 	// Only used during yaml parsing
 	ChildrenMutations MutationMap `yaml:"children,omitempty"`
+}
+
+func parseStringList(value interface{}) (list []string, err error) {
+	if v, ok := value.([]interface{}); ok {
+		for _, value := range v {
+			if v, ok := value.(string); ok {
+				list = append(list, v)
+			} else {
+				return nil, fmt.Errorf("expected string, got %T", value)
+			}
+		}
+		return list, nil
+	} else {
+		return nil, fmt.Errorf("expected list, got %T", value)
+	}
+}
+
+func parseMutation(ms *MutationSet, value interface{}) (mut *Mutation, err error) {
+	mutation_def, ok := value.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("expected map, got %T", value)
+	}
+	mut = &Mutation{set: ms}
+	for key, value := range mutation_def {
+		switch key {
+		case "needs":
+			if list, err := parseStringList(value); err != nil {
+				return nil, err
+			} else {
+				mut.Needs = list
+			}
+		case "roles":
+			if list, err := parseStringList(value); err != nil {
+				return nil, err
+			} else {
+				mut.Roles = list
+			}
+		case "sql":
+			if list, err := parseStatements(value); err != nil {
+				return nil, err
+			} else {
+				mut.Sql = list
+			}
+		case "meta":
+			if list, err := parseStatements(value); err != nil {
+				return nil, err
+			} else {
+				mut.Meta = list
+			}
+		case "meta_needs":
+			if list, err := parseStringList(value); err != nil {
+				return nil, err
+			} else {
+				mut.MetaNeeds = list
+			}
+		case "children":
+			if children, ok := value.(map[string]interface{}); !ok {
+				return nil, fmt.Errorf("children must be a map of mutations, got %T", value)
+			} else {
+				mut.ChildrenMutations = make(MutationMap)
+				for child_name, child_value := range children {
+					if child, err := parseMutation(mut.set, child_value); err != nil {
+						return nil, err
+					} else {
+						mut.ChildrenMutations[child_name] = child
+					}
+				}
+			}
+		}
+	}
+	mut.Normalize()
+	return mut, nil
 }
 
 func (mut *Mutation) DisplayName() string {
@@ -140,7 +213,7 @@ func (mut *Mutation) Runnable(dir IterationDirection) *Runnable {
 	}
 }
 
-func (mut *Mutation) RunRecursively(runner Runner, dir IterationDirection) error {
+func (mut *Mutation) RunRecursively(runner Executor, dir IterationDirection) error {
 	for dep := range mut.IterateDependencies(dir) {
 		if err := runner.Run(dep.Runnable(dir)); err != nil {
 			return err

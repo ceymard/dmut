@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ceymard/dmut/mutations"
+	au "github.com/logrusorgru/aurora"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -83,14 +84,25 @@ func (t TestCmd) Run() error {
 	}
 	defer runner.Close()
 
-	if sequence, ok := muts[""]; ok {
-		set := sequence[0]
-		if err := mutations.RunMutations(runner, set, &mutations.MutationRunnerOptions{
-			TestBefore: true,
-		}); err != nil {
-			return err
+	for namespace, sequence := range muts.Values() {
+		runner.Logger().Println(au.BrightGreen("🖥"), "running mutations for namespace", namespace)
+		if set, ok := sequence.Revisions[0]; ok {
+			if err := mutations.RunMutations(runner, set, &mutations.MutationRunnerOptions{
+				TestBefore: true,
+			}); err != nil {
+				return err
+			}
 		}
 	}
+
+	// if sequence, ok := muts[""]; ok {
+	// 	set := sequence[0]
+	// 	if err := mutations.RunMutations(runner, set, &mutations.MutationRunnerOptions{
+	// 		TestBefore: true,
+	// 	}); err != nil {
+	// 		return err
+	// 	}
+	// }
 
 	return nil
 }

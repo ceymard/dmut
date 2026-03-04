@@ -1,8 +1,10 @@
 package mutations
 
 import (
+	"embed"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,35 +12,14 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+//go:embed dmut-mutations/*
+var dmut_mutations embed.FS
+
 type MutationMap map[string]*Mutation
 
-func readMutations(file *MutationSet, mutations MutationMap, parent *Mutation) error {
-	for name, mut := range mutations {
-
-		if parent != nil {
-			mut.Name = parent.Name + "." + name
-		} else {
-			mut.Name = name
-		}
-
-		if err := file.AddMutation(mut); err != nil {
-			return err
-		}
-
-		if len(mut.ChildrenMutations) > 0 {
-			if err := readMutations(file, mut.ChildrenMutations, mut); err != nil {
-				return err
-			}
-		}
-
-	}
-
-	return nil
-}
-
-func (ms *MutationSet) readFile(filename string) error {
+func (ms *MutationSet) readFile(system fs.FS, filename string) error {
 	ms.File = filename
-	f, err := os.Open(filename)
+	f, err := system.Open(filename)
 	if err != nil {
 		return fmt.Errorf("error reading file %s: %w", filename, err)
 	}
@@ -46,8 +27,9 @@ func (ms *MutationSet) readFile(filename string) error {
 
 	dec := yaml.NewDecoder(f)
 	for {
-		var ym MutationMap = make(MutationMap)
-		err = dec.Decode(&ym)
+		var mp = make(map[string]interface{})
+
+		err = dec.Decode(&mp)
 		if err == io.EOF {
 			break // normal end of stream
 		}
@@ -56,65 +38,88 @@ func (ms *MutationSet) readFile(filename string) error {
 			return fmt.Errorf("error decoding yaml: %w", err)
 		}
 
-		if err := readMutations(ms, ym, nil); err != nil {
-			return err
+		for key, value := range mp {
+			switch key {
+			case "__namespace":
+				if v, ok := value.(string); ok {
+					ms.Namespace = v
+				} else {
+					return fmt.Errorf("__namespace must be a string")
+				}
+			case "__revision":
+				if v, ok := value.(int); ok {
+					ms.Revision = v
+				} else {
+					return fmt.Errorf("__revision must be an integer")
+				}
+			default:
+				if mut, err := parseMutation(ms, value); err != nil {
+					return err
+				} else {
+					ms.AddMutation(mut)
+				}
+			}
+		}
+
+	}
+	return nil
+}
+
+func readFile(namespace *MutationNamespace, system fs.FS, filename string) error {
+	if !strings.HasSuffix(filename, ".yaml") && !strings.HasSuffix(filename, ".yml") {
+		return nil
+	}
+
+	ms := NewMutationSet("", 0, filename)
+	if err := ms.readFile(system, filename); err != nil {
+		return err
+	}
+	namespace.AddSet(ms)
+	return nil
+}
+
+func browseFs(namespace *MutationNamespace, system fs.FS, root string) error {
+	entries, err := fs.ReadDir(system, root)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			if err := browseFs(namespace, system, filepath.Join(root, entry.Name())); err != nil {
+				return err
+			}
+		} else {
+			if err := readFile(namespace, system, filepath.Join(root, entry.Name())); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func LoadYamlMutations(paths ...string) (MutationNamespace, error) {
-	var res MutationNamespace = make(MutationNamespace)
+func LoadYamlMutations(paths ...string) (*MutationNamespace, error) {
+	var res = NewMutationNamespace()
 
-	// var res = &YamlMigrationSet{
-	// 	Mutations: make(MutationMap),
-	// 	Roles:     mapset.NewSet[string](),
-	// 	Namespace: "",
-	// 	Revision:  0,
-	// }
+	if err := browseFs(res, dmut_mutations, "."); err != nil {
+		return nil, err
+	}
+
 	for _, path := range paths {
-		mut_file := NewMutationSet("", 0, path)
-
 		if info, err := os.Stat(path); err != nil {
 			return nil, err
 		} else if info.IsDir() {
-			files, err := os.ReadDir(path)
-			if err != nil {
+
+			dirfs := os.DirFS(path)
+			if err := browseFs(res, dirfs, "."); err != nil {
 				return nil, err
 			}
-			for _, file := range files {
-				if strings.HasPrefix(file.Name(), "_") {
-					continue
-				}
 
-				if file.IsDir() {
-					if err := mut_file.readFile(filepath.Join(path, file.Name())); err != nil {
-						return nil, err
-					}
-					continue
-				}
-
-				if !strings.HasSuffix(file.Name(), ".yaml") && !strings.HasSuffix(file.Name(), ".yml") {
-					continue
-				}
-
-				err = mut_file.readFile(filepath.Join(path, file.Name()))
-				if err != nil {
-					return nil, err
-				}
-			}
 		} else {
-			if !strings.HasSuffix(path, ".yaml") && !strings.HasSuffix(path, ".yml") {
-				continue
-			}
-			err = mut_file.readFile(path)
-			if err != nil {
+			dirfs := os.DirFS(filepath.Dir(path))
+			fname := filepath.Base(path)
+			if err := readFile(res, dirfs, fname); err != nil {
 				return nil, err
 			}
-		}
-
-		if err := res.AddSet(mut_file); err != nil {
-			return nil, err
 		}
 	}
 

@@ -5,10 +5,7 @@ import (
 	"iter"
 	"strings"
 
-	"github.com/goccy/go-yaml"
-	"github.com/goccy/go-yaml/ast"
 	"github.com/ugurcsen/gods-generic/maps/hashmap"
-	"github.com/ugurcsen/gods-generic/maps/linkedhashmap"
 	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
 
@@ -17,7 +14,7 @@ type MutationChildrenMap map[string][]*Mutation
 type MutationSet struct {
 	*hashmap.Map[string, *Mutation]
 	Namespace string
-	Revision  int
+	Revision  int `yaml:"__revision"`
 	File      string
 
 	Roles *hashset.Set[string]
@@ -87,32 +84,6 @@ func (ms *MutationSet) AddMutation(mut *Mutation) error {
 	return nil
 }
 
-func (ms *MutationSet) UnmarshalYAML(node ast.Node) error {
-
-	map_node, ok := node.(*ast.MappingNode)
-	if !ok {
-		return fmt.Errorf("expected mapping node, got %T", node)
-	}
-
-	for _, value := range map_node.Values {
-		if value.Key.String() == "__namespace" {
-			yaml.NodeToValue(value.Value, &ms.Namespace)
-		} else if value.Key.String() == "__revision" {
-			yaml.NodeToValue(value.Value, &ms.Revision)
-		} else {
-			var mutation_name string
-
-			var mutation = &Mutation{
-				Name: mutation_name,
-				File: ms.File,
-			}
-			yaml.NodeToValue(value.Key, &mutation_name)
-			yaml.NodeToValue(value.Value, mutation)
-		}
-	}
-	return nil
-}
-
 func (ms *MutationSet) ResolveDependencies() error {
 	// FIXME we should test for cycles
 	for mut := range ms.AllMutations() {
@@ -152,11 +123,11 @@ func (ms *MutationSet) ResolveDependencies() error {
 
 // Compares both mutationsets
 func (ms *MutationSet) GetMutationsDelta(other *MutationSet, dir IterationDirection) (
-	to_down *linkedhashmap.Map[string, *Runnable],
-	to_up *linkedhashmap.Map[string, *Runnable],
+	to_down *RunnableMap,
+	to_up *RunnableMap,
 ) {
-	to_down = linkedhashmap.New[string, *Runnable]()
-	to_up = linkedhashmap.New[string, *Runnable]()
+	to_down = NewRunnableMap()
+	to_up = NewRunnableMap()
 
 	// Start by computing obsoletes
 	for mut := range other.AllMutations() {

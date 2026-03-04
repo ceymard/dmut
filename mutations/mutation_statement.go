@@ -2,50 +2,58 @@ package mutations
 
 import (
 	"fmt"
-
-	"github.com/goccy/go-yaml"
-	"github.com/goccy/go-yaml/ast"
 )
 
 type MutationStatement struct {
-	Node ast.Node `yaml:"-"`
-	Up   string   `yaml:"up"`
-	Down string   `yaml:"down"`
+	Up   string `yaml:"up"`
+	Down string `yaml:"down"`
 }
 
-func (stm *MutationStatement) UnmarshalYAML(node ast.Node) error {
-	stm.Node = node
-
-	if node.Type() == ast.StringType || node.Type() == ast.LiteralType {
-		var val string
-		yaml.NodeToValue(node, &val)
-		stmt, err := mutationStatementFromString(val)
+func parseStatements(value interface{}) (list []MutationStatement, err error) {
+	if v, ok := value.([]interface{}); ok {
+		for _, value := range v {
+			stmt, err := parseSingleStatement(value)
+			if err != nil {
+				return list, err
+			}
+			list = append(list, stmt)
+		}
+		return list, nil
+	} else {
+		stmt, err := parseSingleStatement(value)
 		if err != nil {
-			// pp.Println(node.GetToken().Position)
-			return fmt.Errorf("error parsing yaml statement: %w", err)
+			return nil, err
 		}
-		stm.Up = stmt.Up
-		stm.Down = stmt.Down
-		return nil
-	} else if node.Type() == ast.MappingType {
-		map_node, ok := node.(*ast.MappingNode)
-		if !ok {
-			return fmt.Errorf("expected mapping node, got %T", node)
-		}
-		for _, value := range map_node.Values {
-			if !ok {
-				continue
-			}
-			if value.Key.String() == "up" {
-				yaml.NodeToValue(value.Value, &stm.Up)
-			} else if value.Key.String() == "down" {
-				yaml.NodeToValue(value.Value, &stm.Down)
-			}
-		}
-		return nil
+		return []MutationStatement{stmt}, nil
 	}
+}
 
-	return fmt.Errorf("expected string or mapping node, got %T", node)
+func parseSingleStatement(value interface{}) (stmt MutationStatement, err error) {
+	if v, ok := value.(string); ok {
+		// simple string
+		return mutationStatementFromString(v)
+	} else if v, ok := value.(map[string]interface{}); ok {
+		for key, value := range v {
+			switch key {
+			case "up":
+				if v, ok := value.(string); ok {
+					stmt.Up = v
+				} else {
+					return stmt, fmt.Errorf("up must be a string")
+				}
+			case "down":
+				if v, ok := value.(string); ok {
+					stmt.Down = v
+				} else {
+					return stmt, fmt.Errorf("down must be a string")
+				}
+			default:
+				return stmt, fmt.Errorf("unknown key %s", key)
+			}
+		}
+		return stmt, nil
+	}
+	return stmt, fmt.Errorf("expected string or mapping, got %T", value)
 }
 
 func mutationStatementFromString(str string) (MutationStatement, error) {
