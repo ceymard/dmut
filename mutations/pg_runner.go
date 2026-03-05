@@ -120,7 +120,13 @@ func (r *PgRunner) Run(runnable *Runnable) error {
 	r.logger.Println(up_or_down, au.BrightMagenta(runnable.Mutation.set.Namespace).String(), runnable.Mutation.Name, meta_or_not)
 	for i, stmt := range runnable.Statements() {
 		if err := r.exec(runnable.Mutation, stmt); err != nil {
-			return oops.With("statement index", i+1).With("statement", stmt).Wrap(err)
+			oo := oops.With("statement index", i+1)
+			if oop2, ok := err.(*oops.OopsError); ok {
+				if _, ok := oop2.Context()["statement"]; !ok {
+					oo = oo.With("statement", au.BrightBlue(stmt).String())
+				}
+			}
+			return oo.With("statement", stmt).Wrap(err)
 		}
 	}
 	return nil
