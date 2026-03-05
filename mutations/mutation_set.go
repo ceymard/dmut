@@ -17,8 +17,6 @@ type MutationSet struct {
 	Revision  int
 	File      string
 	Override  bool
-
-	Roles *hashset.Set[string]
 }
 
 func (ms *MutationSet) GetMutation(name string) (*Mutation, bool) {
@@ -59,7 +57,6 @@ func NewMutationSet(namespace string, revision int, file string) *MutationSet {
 		Revision:  revision,
 		File:      file,
 		Override:  false,
-		Roles:     hashset.New[string](),
 	}
 }
 
@@ -87,10 +84,6 @@ func (ms *MutationSet) AddMutation(mut *Mutation) error {
 	}
 	mut.Namespace = ms.Namespace
 	ms.Map.Put(mut.Name, mut)
-
-	for _, role := range mut.Roles {
-		ms.Roles.Add(role)
-	}
 
 	return nil
 }

@@ -4,11 +4,15 @@ pgcrypto:
   sql:
     - create extension pgcrypto;
 
-auth:
-  roles:
-    - "@admin"
-    - "@active"
+roles:
+  # Roles are put in SQL, because their presence is as defining as a table for the meta blocks.
+  # It therefore makes sense to have them in their own mutation, in the sql block, upon which no other sql mutation will depend.
+  # Being in sql means that it will be available for the meta blocks to use.
+  sql:
+    - create role "@admin";
+    - create role "@active";
 
+auth:
   sql:
     - create schema auth;
 
@@ -21,7 +25,7 @@ auth:
     # There is no down. We just don't want that for new schemas.
     - up: |
         ALTER DEFAULT PRIVILEGES IN SCHEMA auth
-        REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC sdfsdf;
+        REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
 # The auth.passwords table is a way to store
 auth.passwords:

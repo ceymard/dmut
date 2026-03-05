@@ -84,7 +84,7 @@ func (t TestCmd) Run() error {
 	defer runner.Close()
 
 	// Test before
-	if err := mutations.TestAllMutationsInTestDatabase(runner, muts); err != nil {
+	if err := mutations.TestAllMutations(runner, muts); err != nil {
 		return err
 	}
 

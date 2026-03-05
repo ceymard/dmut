@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v4"
 	au "github.com/logrusorgru/aurora"
 	"github.com/samber/oops"
-	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
 
 var _ Executor = &PgRunner{}
@@ -215,55 +214,6 @@ func (r *PgRunner) exec(mutation *Mutation, sql string, args ...interface{}) err
 	return err
 }
 
-func (r *PgRunner) getDbRoles(namespace string) (*hashset.Set[string], error) {
-	var res = hashset.New[string]()
-	rows, err := r.conn.Query(context.Background(), `SELECT name FROM __dmut__.roles WHERE namespace = $1`, namespace)
-	if err != nil {
-		return nil, wrapPgError(err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var role string
-		if err = rows.Scan(&role); err != nil {
-			return nil, wrapPgError(err)
-		}
-		res.Add(role)
-	}
-
-	return res, nil
-}
-
-func (r *PgRunner) AddRole(namespace string, role string) error {
-	if err := r.exec(nil, `CREATE ROLE `+pgx.Identifier{role}.Sanitize()); err != nil {
-		return wrapPgError(err)
-	}
-	return r.exec(nil, `INSERT INTO __dmut__.roles(namespace, name) VALUES ($1, $2)`, namespace, role)
-}
-
-func (r *PgRunner) RemoveRole(namespace string, name string) error {
-	if err := r.exec(nil, `DROP ROLE `+pgx.Identifier{name}.Sanitize()); err != nil {
-		return wrapPgError(err)
-	}
-	return r.exec(nil, `DELETE FROM __dmut__.roles WHERE namespace = $1 AND name = $2`, namespace, name)
-}
-
-func (r *PgRunner) GetDBRoles(namespace string) (*hashset.Set[string], error) {
-	return r.getDbRoles(namespace)
-}
-
-func (r *PgRunner) OverwriteRoles(namespace string, roles *hashset.Set[string]) error {
-	if err := r.exec(nil, `DELETE FROM __dmut__.roles WHERE namespace = $1`, namespace); err != nil {
-		return wrapPgError(err)
-	}
-	for _, role := range roles.Values() {
-		if err := r.exec(nil, `INSERT INTO __dmut__.roles(namespace, rolname) VALUES ($1, $2)`, namespace, role); err != nil {
-			return wrapPgError(err)
-		}
-	}
-	return nil
-}
-
 // get the mutations already in the database
 func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) {
 	var (
@@ -286,11 +236,6 @@ func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) 
 	}
 
 	res := NewMutationSet(namespace, 0, "")
-
-	res.Roles, err = r.getDbRoles(namespace)
-	if err != nil {
-		return nil, err
-	}
 
 	// First, extract a list of already active mutations and check if they have to be downed because they're
 	// either inexistant or their hash changed.

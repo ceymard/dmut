@@ -1,60 +1,74 @@
 package mutations
 
 import (
-	"fmt"
-	"os"
 	"slices"
 
-	"github.com/jackc/pgx/v4"
 	au "github.com/logrusorgru/aurora"
 )
 
-func TestAllMutationsInTestDatabase(runner Executor, namespaces *MutationNamespace) (err error) {
+func TestAllMutations(runner Executor, namespaces *MutationNamespace) (err error) {
 
 	// Create the test runner before BEGIN, so that we have the test database ready before modifying the roles.
-	var test_runner Executor
-	test_runner, err = runner.GetTestExecutor()
-	if err != nil {
-		return err
-	}
-	defer test_runner.Close()
-	defer func() {
-		if err != nil {
-			os.Stdout.WriteString(test_runner.GetTestOutput())
-		}
-	}()
 
-	if err = test_runner.Begin(); err != nil {
+	if err = runner.Begin(); err != nil {
 		return err
 	}
 	rollbacked := false
 	defer func() {
 		if !rollbacked {
-			if err2 := test_runner.Rollback(); err2 != nil {
-				test_runner.Logger().Println(au.BrightRed("error rolling back test database"), err2)
+			if err2 := runner.Rollback(); err2 != nil {
+				runner.Logger().Println(au.BrightRed("error rolling back test database"), err2)
 			}
 		}
 	}()
 
+	if err = runner.SavePoint("test_namespaces"); err != nil {
+		return err
+	}
+
 	for _, namespace := range namespaces.Values() {
 
-		if err = test_runner.SavePoint("test_mutations"); err != nil {
+		namespace_name := namespace.Revisions[0].Namespace
+		db_mutations, err := runner.GetDBMutationsFromDb(namespace_name)
+		if err != nil {
+			return err
+		}
+
+		// Start by downing all mutations in the database
+		runner.Logger().Println(au.Bold(au.BrightGreen("downing all mutations in the database")).String())
+		var empty_set *MutationSet = NewMutationSet(namespace_name, 0, "")
+
+		meta_down, _ := empty_set.GetMutationsDelta(db_mutations, ITER_META)
+		if err = meta_down.Run(runner); err != nil {
+			return err
+		}
+
+		sql_down, _ := empty_set.GetMutationsDelta(db_mutations, ITER_SQL)
+		if err = sql_down.Run(runner); err != nil {
+			return err
+		}
+
+		if err = runner.SavePoint("test_mutations"); err != nil {
 			return err
 		}
 
 		for _, revision := range namespace.Revisions {
-			if err = TestMutationsInTestDatabase(test_runner, revision); err != nil {
+
+			if err = TestMutationSet(runner, revision); err != nil {
 				return err
 			}
 
-			if err = test_runner.RollbackToSavepoint("test_mutations"); err != nil {
+			if err = runner.RollbackToSavepoint("test_mutations"); err != nil {
 				return err
 			}
 		}
 
+		if err := runner.RollbackToSavepoint("test_namespaces"); err != nil {
+			return err
+		}
 	}
 
-	if err = test_runner.Rollback(); err != nil {
+	if err = runner.Rollback(); err != nil {
 		return err
 	}
 	rollbacked = true
@@ -62,18 +76,7 @@ func TestAllMutationsInTestDatabase(runner Executor, namespaces *MutationNamespa
 	return nil
 }
 
-func TestMutationsInTestDatabase(test_runner Executor, set *MutationSet) error {
-
-	for _, role := range set.Roles.Values() {
-		// We cheat, because we don't want to compare the roles, but we need them to exist anyway for the purpose of the tests
-		if err := test_runner.Exec(fmt.Sprintf(`DO $$ BEGIN
-		  IF NOT EXISTS ( SELECT FROM pg_catalog.pg_roles WHERE rolname = '%s' )
-			THEN CREATE ROLE %s LOGIN;
-			END IF;
-			END $$ LANGUAGE plpgsql;`, role, pgx.Identifier{role}.Sanitize())); err != nil {
-			return err
-		}
-	}
+func TestMutationSet(test_runner Executor, set *MutationSet) error {
 
 	if err := MutationTestSequence(test_runner, set, ITER_SQL); err != nil {
 		return err
@@ -100,13 +103,6 @@ func TestMutationsInTestDatabase(test_runner Executor, set *MutationSet) error {
 			return err
 		}
 	}
-
-	// This test may not be necessary : any forgotten dependencies will be detected by now
-	// if err := TestDowningMutations(test_runner, set); err != nil {
-	// 	return err
-	// }
-
-	// Undo it all
 
 	return nil
 

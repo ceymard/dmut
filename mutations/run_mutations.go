@@ -32,22 +32,11 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	sql_down, sql_up := local.GetMutationsDelta(distant, ITER_SQL)
 	meta_down, meta_up := local.GetMutationsDelta(distant, ITER_META)
 
-	var new_roles = local.Roles.Difference(distant.Roles)
-	var removed_roles = distant.Roles.Difference(local.Roles)
-
-	if sql_down.Size() > 0 || removed_roles.Size() > 0 {
+	if sql_down.Size() > 0 {
 		_, full_meta_up := local.GetMutationsDelta(nil, ITER_META)
 		full_meta_down, _ := distant.GetMutationsDelta(nil, ITER_META)
 		meta_down = full_meta_down
 		meta_up = full_meta_up
-	}
-
-	// Unfortunately, we have to create missing roles outside of the BEGIN transaction, because the test runner will be in another database and thus cannot access the new roles as transactions cannot span databases.
-	for _, role := range new_roles.Values() {
-		runner.Logger().Println(au.BrightGreen(""), "adding", au.Bold(au.BrightGreen(role)).String())
-		if err := runner.AddRole(namespace, role); err != nil {
-			return err
-		}
 	}
 
 	if err := runner.Begin(); err != nil {
@@ -57,15 +46,6 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	// 1. Start by downing the meta
 	if err := meta_down.Run(runner); err != nil {
 		return err
-	}
-
-	// Now, we're inside a transaction, so we can remove the roles without fear of having to undo stuff manually
-	if removed_roles.Size() > 0 {
-		for _, role := range removed_roles.Values() {
-			if err := runner.RemoveRole(namespace, role); err != nil {
-				return err
-			}
-		}
 	}
 
 	if err := sql_down.Run(runner); err != nil {

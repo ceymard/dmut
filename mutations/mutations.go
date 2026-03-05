@@ -47,8 +47,6 @@ type Mutation struct {
 	MetaNeeds []string            `yaml:"meta_needs,omitempty,flow"`
 	Meta      []MutationStatement `yaml:"meta,omitempty"`
 
-	Roles []string `yaml:"roles,omitempty"`
-
 	// Will only be used when loading from yaml, not from database
 	SqlParents   *hashset.Set[*Mutation]
 	SqlChildren  *hashset.Set[*Mutation]
@@ -79,12 +77,15 @@ func parseMutation(name string, ms *MutationSet, value interface{}) (mut *Mutati
 	if !ok {
 		return nil, oops.In("mutations").Errorf("expected map, got %T", value)
 	}
+
 	mut = &Mutation{set: ms, Name: name}
 	mut.SqlParents = hashset.New[*Mutation]()
 	mut.SqlChildren = hashset.New[*Mutation]()
 	mut.MetaParents = hashset.New[*Mutation]()
 	mut.MetaChildren = hashset.New[*Mutation]()
 	ms.AddMutation(mut)
+
+	oo := oops.In("mutations").With("mutation", mut.Name).With("file", ms.File).With("namespace", ms.Namespace)
 
 	for key, value := range mutation_def {
 		switch key {
@@ -93,15 +94,6 @@ func parseMutation(name string, ms *MutationSet, value interface{}) (mut *Mutati
 				return nil, err
 			} else {
 				mut.Needs = list
-			}
-		case "roles":
-			if list, err := parseStringList(value); err != nil {
-				return nil, err
-			} else {
-				mut.Roles = list
-				for _, role := range list {
-					mut.set.Roles.Add(role)
-				}
 			}
 		case "sql":
 			if list, err := parseStatements(value); err != nil {
@@ -123,7 +115,7 @@ func parseMutation(name string, ms *MutationSet, value interface{}) (mut *Mutati
 			}
 		case "children":
 			if children, ok := value.(map[string]interface{}); !ok {
-				return nil, oops.In("mutations").Errorf("children must be a map of mutations, got %T", value)
+				return nil, oo.Errorf("'children' must be a map of mutations, got %T", value)
 			} else {
 				mut.ChildrenMutations = make(MutationMap)
 				for child_name, child_value := range children {
@@ -134,6 +126,8 @@ func parseMutation(name string, ms *MutationSet, value interface{}) (mut *Mutati
 					}
 				}
 			}
+		default:
+			return nil, oo.Errorf("unknown key '%s'", key)
 		}
 	}
 	return mut, nil
@@ -155,12 +149,6 @@ func (mut *Mutation) MetaHash() string {
 	digest.WriteString(mut.Name)
 	digest.AddStatements(mut.Meta...)
 	return digest.Digest()
-}
-
-func (yml *Mutation) AddRoles(roles []string) {
-	for _, role := range roles {
-		yml.Roles = append(yml.Roles, role)
-	}
 }
 
 func (mut *Mutation) Hash(dir IterationDirection) string {
