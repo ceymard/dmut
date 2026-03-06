@@ -6,6 +6,8 @@ import (
 
 type Executor interface {
 	Logger() *log.Logger
+	GetTestExecutor() Executor
+	GetStringOutput() string
 
 	Exec(sql string, args ...interface{}) error
 	Begin() error

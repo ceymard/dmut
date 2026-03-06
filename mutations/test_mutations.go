@@ -8,6 +8,8 @@ import (
 
 func TestAllMutations(runner Executor, namespaces *MutationNamespace) (err error) {
 
+	old_runner := runner
+	runner = runner.GetTestExecutor()
 	// Create the test runner before BEGIN, so that we have the test database ready before modifying the roles.
 
 	if err = runner.Begin(); err != nil {
@@ -15,6 +17,9 @@ func TestAllMutations(runner Executor, namespaces *MutationNamespace) (err error
 	}
 	rollbacked := false
 	defer func() {
+		if err != nil {
+			old_runner.Logger().Println(runner.GetStringOutput())
+		}
 		if !rollbacked {
 			if err2 := runner.Rollback(); err2 != nil {
 				runner.Logger().Println(au.BrightRed("error rolling back test database"), err2)
@@ -118,7 +123,7 @@ func MutationTestSequence(runner Executor, set *MutationSet, dir IterationDirect
 
 	// Test all mutations independently
 	for mutation := range set.AllMutations() {
-		runner.Logger().Println("testing", mutation.DisplayName(), dir.String())
+		runner.Logger().Printf("testing %s.%s\n", mutation.DisplayName(), dir.MetaOrSql())
 
 		var inner_mutations []*Mutation
 		for mut := range mutation.IterateDependencies(dir) {

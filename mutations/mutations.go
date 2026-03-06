@@ -1,7 +1,6 @@
 package mutations
 
 import (
-	"fmt"
 	"iter"
 
 	au "github.com/logrusorgru/aurora"
@@ -14,16 +13,20 @@ type IterationDirection struct {
 	Meta bool
 }
 
-func (dir IterationDirection) String() string {
-	up_or_down := au.BrightGreen("up").String()
+func (dir IterationDirection) UpOrDown() string {
+	up_or_down := au.BrightGreen("↑").String()
 	if dir.Down {
-		up_or_down = au.BrightRed("down").String()
+		up_or_down = au.BrightRed("↓").String()
 	}
+	return up_or_down
+}
+
+func (dir IterationDirection) MetaOrSql() string {
 	meta_or_sql := au.BrightGreen("sql").String()
 	if dir.Meta {
 		meta_or_sql = au.BrightCyan("meta").String()
 	}
-	return fmt.Sprintf("%s %s", up_or_down, meta_or_sql)
+	return meta_or_sql
 }
 
 var (

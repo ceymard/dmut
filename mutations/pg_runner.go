@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"log"
-	"net/url"
 	"os"
 
 	"github.com/jackc/pgconn"
@@ -16,12 +15,11 @@ import (
 var _ Executor = &PgRunner{}
 
 type PgRunner struct {
-	isTesting bool
-	uri       string
-	logger    *log.Logger
-	conn      *pgx.Conn
-	verbose   bool
-	buf       bytes.Buffer
+	uri     string
+	logger  *log.Logger
+	conn    *pgx.Conn
+	verbose bool
+	buf     bytes.Buffer
 }
 
 func (r *PgRunner) Logger() *log.Logger {
@@ -32,13 +30,9 @@ func (r *PgRunner) Close() error {
 	return r.conn.Close(context.Background())
 }
 
-func (r *PgRunner) IsTesting() bool {
-	return r.isTesting
-}
-
 func NewPgRunner(url string, verbose bool) (*PgRunner, error) {
 
-	res := &PgRunner{isTesting: false, uri: url, verbose: verbose}
+	res := &PgRunner{uri: url, verbose: verbose}
 
 	res.logger = log.New(os.Stdout, "", log.Lshortfile|log.LstdFlags)
 	res.logger.SetPrefix(au.BrightGreen("pg ").String())
@@ -53,37 +47,18 @@ func NewPgRunner(url string, verbose bool) (*PgRunner, error) {
 	return res, nil
 }
 
-func (r *PgRunner) GetTestExecutor() (Executor, error) {
+func (r *PgRunner) GetTestExecutor() Executor {
 
-	r.logger.Println(au.BrightGreen("🖥"), "creating test database")
-
-	if err := r.exec(nil, `DROP DATABASE IF EXISTS __dmut_test__`); err != nil {
-		return nil, err
-	}
-
-	if err := r.exec(nil, `CREATE DATABASE __dmut_test__`); err != nil {
-		return nil, err
-	}
-
-	// replace the portion of the url after the URI with __dmut_test__ with URI manipulation library
-	uri, err := url.Parse(r.uri)
-	if err != nil {
-		return nil, err
-	}
-	uri.Path = "__dmut_test__"
-	new_url := uri.String()
-
-	conn, err := pgx.Connect(context.Background(), new_url)
-	if err != nil {
-		return nil, err
-	}
-
-	res := &PgRunner{conn: conn, isTesting: true, uri: new_url, logger: log.New(os.Stdout, "", log.Lshortfile|log.LstdFlags), verbose: r.verbose}
+	res := *r
+	res.logger = log.New(os.Stdout, "", r.logger.Flags())
 	res.logger.SetPrefix(au.BrightMagenta("test ").String())
-
 	res.logger.SetOutput(&res.buf)
 
-	return res, nil
+	return &res
+}
+
+func (r *PgRunner) GetStringOutput() string {
+	return r.buf.String()
 }
 
 func (r *PgRunner) GetTestOutput() string {
@@ -108,15 +83,10 @@ func wrapPgError(err error) error {
 }
 
 func (r *PgRunner) Run(runnable *Runnable) error {
-	meta_or_not := au.BrightGreen("sql").String()
-	if runnable.Direction.Meta {
-		meta_or_not = au.BrightCyan("meta").String()
+	if runnable.Size() == 0 {
+		return nil
 	}
-	up_or_down := au.BrightGreen("up").String()
-	if runnable.Direction.Down {
-		up_or_down = au.BrightRed("down").String()
-	}
-	r.logger.Println(up_or_down, au.BrightMagenta(runnable.Mutation.set.Namespace).String(), runnable.Mutation.Name, meta_or_not)
+	r.logger.Println(runnable.DisplayName())
 	for i, stmt := range runnable.Statements() {
 		if err := r.exec(runnable.Mutation, stmt); err != nil {
 			oo := oops.With("statement index", i+1)

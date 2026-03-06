@@ -1,14 +1,40 @@
 package mutations
 
 import (
+	"fmt"
 	"iter"
 
+	au "github.com/logrusorgru/aurora"
 	"github.com/ugurcsen/gods-generic/maps/linkedhashmap"
 )
 
 type Runnable struct {
 	Mutation  *Mutation
 	Direction IterationDirection
+}
+
+func (r *Runnable) IsEmpty() bool {
+	return r.Size() == 0
+}
+
+func (r *Runnable) DisplayName() string {
+	up_or_down := au.BrightGreen("↑").String()
+	if r.Direction.Down {
+		up_or_down = au.BrightRed("↓").String()
+	}
+	meta_or_sql := au.BrightGreen("sql").String()
+	if r.Direction.Meta {
+		meta_or_sql = au.BrightCyan("meta").String()
+	}
+	return fmt.Sprintf("%s %s.%s", up_or_down, r.Mutation.DisplayName(), meta_or_sql)
+}
+
+func (r *Runnable) Size() int {
+	if r.Direction.Meta {
+		return len(r.Mutation.Meta)
+	} else {
+		return len(r.Mutation.Sql)
+	}
 }
 
 func (r *Runnable) Statements() iter.Seq2[int, string] {

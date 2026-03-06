@@ -87,6 +87,7 @@ func (t TestCmd) Run() error {
 	if err := mutations.TestAllMutations(runner, muts); err != nil {
 		return err
 	}
+	runner.Logger().Println("tests were successful")
 
 	if err := mutations.RunAllMutations(runner, muts, &mutations.MutationRunnerOptions{
 		TestBefore: true,
