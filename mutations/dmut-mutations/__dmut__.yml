@@ -25,10 +25,9 @@ dmut.mutations:
         meta_needs text[] not null,
         sql __dmut__.mutation_statement[] not null,
         meta __dmut__.mutation_statement[] not null,
-        test __dmut__.mutation_statement[] not null,
 
         ts timestamp with time zone not null default now(),
-        forced boolean not null default false,
+        overriden boolean not null default false,
 
         primary key (namespace, name)
       );

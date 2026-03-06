@@ -9,6 +9,7 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/jackc/pgconn v1.7.0
 	github.com/jackc/pgx/v4 v4.9.0
+	github.com/jackc/pgx/v5 v5.8.0
 	github.com/logrusorgru/aurora v2.0.3+incompatible
 	github.com/samber/oops v1.21.0
 	github.com/testcontainers/testcontainers-go v0.40.0
@@ -46,7 +47,7 @@ require (
 	github.com/jackc/pgio v1.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgproto3/v2 v2.0.5 // indirect
-	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgtype v1.5.0 // indirect
 	github.com/k0kubun/pp v3.0.1+incompatible // indirect
 	github.com/klauspost/compress v1.18.0 // indirect

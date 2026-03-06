@@ -5,8 +5,8 @@ import (
 )
 
 type MutationStatement struct {
-	Up   string `yaml:"up"`
-	Down string `yaml:"down"`
+	Up   string `json:"up"`
+	Down string `json:"down"`
 }
 
 func parseStatements(value interface{}) (list []MutationStatement, err error) {

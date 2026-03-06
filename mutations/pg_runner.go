@@ -3,11 +3,12 @@ package mutations
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 
 	"github.com/jackc/pgconn"
-	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v5"
 	au "github.com/logrusorgru/aurora"
 	"github.com/samber/oops"
 )
@@ -43,7 +44,6 @@ func NewPgRunner(url string, verbose bool) (*PgRunner, error) {
 		return nil, err
 	}
 	res.conn = conn
-
 	return res, nil
 }
 
@@ -101,18 +101,50 @@ func (r *PgRunner) Run(runnable *Runnable) error {
 	return nil
 }
 
-func (r *PgRunner) DeleteMutation(m *Mutation) error {
-	err := r.exec(m, `DELETE FROM __dmut__.mutations WHERE namespace = $1 AND name = $2`, m.set.Namespace, m.Name)
-	return wrapPgError(err)
-}
-
 func (r *PgRunner) ClearMutations(namespace string) error {
 	err := r.exec(nil, `DELETE FROM __dmut__.mutations WHERE namespace = $1`, namespace)
 	return wrapPgError(err)
 }
 
-func (r *PgRunner) SaveMutation(m *Mutation) error {
-	err := r.exec(m, `INSERT INTO __dmut__.mutations(namespace, file, name, needs, meta, sql, meta) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (namespace, name) DO UPDATE SET file = $2, needs = $4, meta = $5, sql = $6, meta = $7`, m.set.Namespace, m.File, m.Name, m.Needs, m.Meta, m.Sql, m.Meta)
+func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
+	if err = r.ClearMutations(mutations.Namespace); err != nil {
+		return err
+	}
+
+	var muts []*Mutation
+	for m := range mutations.AllMutations() {
+		muts = append(muts, m)
+	}
+
+	var muts_json []byte
+	if muts_json, err = json.Marshal(muts); err != nil {
+		return err
+	}
+
+	if err := r.exec(nil, `
+		INSERT INTO __dmut__.mutations(
+			namespace,
+			file,
+			name,
+			needs,
+			meta_needs,
+			meta,
+			sql,
+			overriden
+		)
+		SELECT
+			coalesce(namespace, ''),
+			coalesce(file, ''),
+			name,
+			coalesce(needs, '{}'::text[]),
+			coalesce(meta_needs, '{}'::text[]),
+			coalesce(meta, '{}'::__dmut__.mutation_statement[]),
+			coalesce(sql, '{}'::__dmut__.mutation_statement[]),
+			coalesce(overriden, false)
+		FROM json_populate_recordset(NULL::__dmut__.mutations, $1::json)
+		ON CONFLICT (namespace, name) DO UPDATE SET file = excluded.file, needs = excluded.needs, meta_needs = excluded.meta_needs, meta = excluded.meta, sql = excluded.sql, overriden = excluded.overriden`, muts_json); err != nil {
+		return err
+	}
 	return wrapPgError(err)
 }
 

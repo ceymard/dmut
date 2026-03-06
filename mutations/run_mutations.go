@@ -22,41 +22,58 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	options.Merge(opts...)
 
 	var err error
-	var namespace = local.Namespace
-	var distant *MutationSet
 
-	if distant, err = runner.GetDBMutationsFromDb(namespace); err != nil {
+	if !local.Override {
+		var namespace = local.Namespace
+		var distant *MutationSet
+
+		if distant, err = runner.GetDBMutationsFromDb(namespace); err != nil {
+			return err
+		}
+
+		sql_down, sql_up := local.GetMutationsDelta(distant, ITER_SQL)
+		meta_down, meta_up := local.GetMutationsDelta(distant, ITER_META)
+
+		if sql_up.Size() == 0 && meta_up.Size() == 0 {
+			// No changes, no tests !
+			runner.Logger().Println(au.BrightGreen("≡"), "no changes to apply")
+			return nil
+		}
+
+		if sql_down.Size() > 0 {
+			_, full_meta_up := local.GetMutationsDelta(nil, ITER_META)
+			full_meta_down, _ := distant.GetMutationsDelta(nil, ITER_META)
+			meta_down = full_meta_down
+			meta_up = full_meta_up
+		}
+
+		if err := runner.Begin(); err != nil {
+			return err
+		}
+
+		// 1. Start by downing the meta
+		if err := meta_down.Run(runner); err != nil {
+			return err
+		}
+
+		if err := sql_down.Run(runner); err != nil {
+			return err
+		}
+
+		if err := sql_up.Run(runner); err != nil {
+			return err
+		}
+
+		if err := meta_up.Run(runner); err != nil {
+			return err
+		}
+	}
+
+	if err := runner.SaveMutations(local); err != nil {
 		return err
 	}
 
-	sql_down, sql_up := local.GetMutationsDelta(distant, ITER_SQL)
-	meta_down, meta_up := local.GetMutationsDelta(distant, ITER_META)
-
-	if sql_down.Size() > 0 {
-		_, full_meta_up := local.GetMutationsDelta(nil, ITER_META)
-		full_meta_down, _ := distant.GetMutationsDelta(nil, ITER_META)
-		meta_down = full_meta_down
-		meta_up = full_meta_up
-	}
-
-	if err := runner.Begin(); err != nil {
-		return err
-	}
-
-	// 1. Start by downing the meta
-	if err := meta_down.Run(runner); err != nil {
-		return err
-	}
-
-	if err := sql_down.Run(runner); err != nil {
-		return err
-	}
-
-	if err := sql_up.Run(runner); err != nil {
-		return err
-	}
-
-	if err := meta_up.Run(runner); err != nil {
+	if err := TestMutationSet(runner, local); err != nil {
 		return err
 	}
 

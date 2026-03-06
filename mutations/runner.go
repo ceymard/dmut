@@ -7,9 +7,12 @@ import (
 type Executor interface {
 	Logger() *log.Logger
 	GetTestExecutor() Executor
+	GetTestOutput() string
+
 	GetStringOutput() string
 
 	Exec(sql string, args ...interface{}) error
+
 	Begin() error
 	Rollback() error
 	Commit() error
@@ -20,9 +23,8 @@ type Executor interface {
 	GetDBMutationsFromDb(namespace string) (*MutationSet, error)
 
 	ClearMutations(namespace string) error
+	SaveMutations(mutations *MutationSet) error
+
 	Run(runnable *Runnable) error
-	SaveMutation(mut *Mutation) error
-	DeleteMutation(mut *Mutation) error
 	Close() error
-	GetTestOutput() string
 }

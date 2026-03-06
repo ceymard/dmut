@@ -39,25 +39,25 @@ var (
 )
 
 type Mutation struct {
-	set *MutationSet
+	set *MutationSet `json:"-"`
 
-	Name      string `yaml:"-"`
-	File      string `yaml:"file,omitempty"`
-	Namespace string
+	Name      string `json:"name"`
+	File      string `json:"file"`
+	Namespace string `json:"namespace"`
 
-	Needs     []string            `yaml:"needs,omitempty,flow"`
-	Sql       []MutationStatement `yaml:"sql,omitempty"`
-	MetaNeeds []string            `yaml:"meta_needs,omitempty,flow"`
-	Meta      []MutationStatement `yaml:"meta,omitempty"`
+	Needs     []string            `json:"needs,omitempty"`
+	Sql       []MutationStatement `json:"sql,omitempty"`
+	MetaNeeds []string            `json:"meta_needs,omitempty"`
+	Meta      []MutationStatement `json:"meta,omitempty"`
 
 	// Will only be used when loading from yaml, not from database
-	SqlParents   *hashset.Set[*Mutation]
-	SqlChildren  *hashset.Set[*Mutation]
-	MetaParents  *hashset.Set[*Mutation]
-	MetaChildren *hashset.Set[*Mutation]
+	SqlParents   *hashset.Set[*Mutation] `json:"-"`
+	SqlChildren  *hashset.Set[*Mutation] `json:"-"`
+	MetaParents  *hashset.Set[*Mutation] `json:"-"`
+	MetaChildren *hashset.Set[*Mutation] `json:"-"`
 
 	// Only used during yaml parsing
-	ChildrenMutations MutationMap `yaml:"children,omitempty"`
+	ChildrenMutations MutationMap `json:"-"`
 }
 
 func parseStringList(value interface{}) (list []string, err error) {
