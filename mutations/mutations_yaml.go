@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
 	"github.com/samber/oops"
 )
 
@@ -27,37 +28,46 @@ func (ms *MutationSet) readFile(system fs.FS, filename string) error {
 
 	dec := yaml.NewDecoder(f)
 	for {
-		var mp = make(map[string]interface{})
+		// var mp = make(map[string]interface{})
+		var node ast.Node
 
-		err = dec.Decode(&mp)
+		err = dec.Decode(&node)
 		if err == io.EOF {
 			break // normal end of stream
 		}
 
-		if err != nil {
-			return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding yaml")
+		map_node, ok := node.(*ast.MappingNode)
+		if !ok {
+			return oops.In("mutations").With("filename", filename).Errorf("expected a mapping node, got %T", node)
 		}
 
-		for key, value := range mp {
+		for _, mapping := range map_node.Values {
+			key_node := mapping.Key
+			var key string
+			if err := yaml.NodeToValue(key_node, &key); err != nil {
+				return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding key %T", key_node)
+			}
+			value := mapping.Value
+
 			switch key {
 			case "__namespace":
-				if v, ok := value.(string); ok {
-					ms.Namespace = v
-				} else {
-					return oops.In("mutations").With("filename", filename).Errorf("__namespace must be a string")
+				var namespace string
+				if err := yaml.NodeToValue(value, &namespace); err != nil {
+					return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding __namespace %T", value)
 				}
+				ms.Namespace = namespace
 			case "__revision":
-				if v, ok := value.(int); ok {
-					ms.Revision = v
-				} else {
-					return oops.In("mutations").With("filename", filename).Errorf("__revision must be an integer")
+				var revision int
+				if err := yaml.NodeToValue(value, &revision); err != nil {
+					return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding __revision %T", value)
 				}
+				ms.Revision = revision
 			case "__override":
-				if v, ok := value.(bool); ok {
-					ms.Override = v
-				} else {
-					return oops.In("mutations").With("filename", filename).Errorf("__override must be a boolean")
+				var override bool
+				if err := yaml.NodeToValue(value, &override); err != nil {
+					return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding __override %T", value)
 				}
+				ms.Override = override
 			default:
 				if _, err := parseMutation(key, ms, value); err != nil {
 					return err

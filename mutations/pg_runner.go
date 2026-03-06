@@ -220,9 +220,7 @@ func (r *PgRunner) exec(mutation *Mutation, sql string, args ...interface{}) err
 func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) {
 	var (
 		db     = r.conn
-		rows   pgx.Rows
 		exists bool
-		err    error
 	)
 
 	// test for the presence of the __dmut__ schema by
@@ -240,18 +238,28 @@ func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) 
 	res := NewMutationSet(namespace, 0, "")
 
 	// First, extract a list of already active mutations and check if they have to be downed because they're
-	// either inexistant or their hash changed.
-	if rows, err = db.Query(context.Background(), `select name, file, needs, meta_needs, meta, sql, meta from __dmut__.mutations WHERE namespace = $1`, namespace); err != nil {
+	// either	 inexistant or their hash changed.
+	row := db.QueryRow(
+		context.Background(),
+		`select
+			json_agg(row_to_json(r))::text
+			from select * from __dmut__.mutations WHERE namespace = $1
+		`,
+		namespace,
+	)
+
+	var json_text []byte
+	if err := row.Scan(&json_text); err != nil {
 		return nil, wrapPgError(err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var dbmut Mutation
-		if err = rows.Scan(&dbmut.Name, &dbmut.File, &dbmut.Needs, &dbmut.MetaNeeds, &dbmut.Meta, &dbmut.Sql, &dbmut.Meta); err != nil {
-			return nil, wrapPgError(err)
-		}
-		res.AddMutation(&dbmut)
+	var muts []*Mutation
+	if err := json.Unmarshal(json_text, &muts); err != nil {
+		return nil, wrapPgError(err)
+	}
+
+	for _, mut := range muts {
+		res.AddMutation(mut)
 	}
 
 	if err := res.ResolveDependencies(); err != nil {

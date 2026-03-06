@@ -3,6 +3,8 @@ package mutations
 import (
 	"iter"
 
+	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
 	au "github.com/logrusorgru/aurora"
 	"github.com/samber/oops"
 	"github.com/ugurcsen/gods-generic/sets/hashset"
@@ -60,23 +62,16 @@ type Mutation struct {
 	ChildrenMutations MutationMap `json:"-"`
 }
 
-func parseStringList(value interface{}) (list []string, err error) {
-	if v, ok := value.([]interface{}); ok {
-		for _, value := range v {
-			if v, ok := value.(string); ok {
-				list = append(list, v)
-			} else {
-				return nil, oops.In("mutations").Errorf("expected string, got %T", value)
-			}
-		}
-		return list, nil
-	} else {
-		return nil, oops.In("mutations").Errorf("expected list, got %T", value)
+func parseStringList(value ast.Node) (list []string, err error) {
+	var value_list []string
+	if err := yaml.NodeToValue(value, &value_list); err != nil {
+		return nil, oops.In("mutations").Wrapf(err, "error decoding value %T", value)
 	}
+	return value_list, nil
 }
 
-func parseMutation(name string, ms *MutationSet, value interface{}) (mut *Mutation, err error) {
-	mutation_def, ok := value.(map[string]interface{})
+func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation, err error) {
+	mutation_def, ok := value.(*ast.MappingNode)
 	if !ok {
 		return nil, oops.In("mutations").Errorf("expected map, got %T", value)
 	}
@@ -90,7 +85,14 @@ func parseMutation(name string, ms *MutationSet, value interface{}) (mut *Mutati
 
 	oo := oops.In("mutations").With("mutation", mut.Name).With("file", ms.File).With("namespace", ms.Namespace)
 
-	for key, value := range mutation_def {
+	for _, mapping := range mutation_def.Values {
+		key_node := mapping.Key
+		var key string
+		if err := yaml.NodeToValue(key_node, &key); err != nil {
+			return nil, oops.In("mutations").Wrapf(err, "error decoding key %T", key_node)
+		}
+		value := mapping.Value
+
 		switch key {
 		case "needs":
 			if list, err := parseStringList(value); err != nil {
@@ -117,17 +119,24 @@ func parseMutation(name string, ms *MutationSet, value interface{}) (mut *Mutati
 				mut.MetaNeeds = list
 			}
 		case "children":
-			if children, ok := value.(map[string]interface{}); !ok {
+			children_def, ok := value.(*ast.MappingNode)
+			if !ok {
 				return nil, oo.Errorf("'children' must be a map of mutations, got %T", value)
-			} else {
-				mut.ChildrenMutations = make(MutationMap)
-				for child_name, child_value := range children {
-					if child, err := parseMutation(mut.Name+"."+child_name, mut.set, child_value); err != nil {
-						return nil, err
-					} else {
-						mut.ChildrenMutations[child_name] = child
-					}
+			}
+
+			mut.ChildrenMutations = make(MutationMap)
+			for _, mapping := range children_def.Values {
+				child_name_node := mapping.Key
+				var child_name string
+				if err := yaml.NodeToValue(child_name_node, &child_name); err != nil {
+					return nil, oo.Wrapf(err, "error decoding child name %T", child_name_node)
 				}
+				child_value := mapping.Value
+				child, err := parseMutation(mut.Name+"."+child_name, mut.set, child_value)
+				if err != nil {
+					return nil, err
+				}
+				mut.ChildrenMutations[child_name] = child
 			}
 		default:
 			return nil, oo.Errorf("unknown key '%s'", key)

@@ -1,18 +1,20 @@
 package mutations
 
 import (
+	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/ast"
 	"github.com/samber/oops"
 )
 
 type MutationStatement struct {
-	Up   string `json:"up"`
-	Down string `json:"down"`
+	Up   string `json:"up" yaml:"up"`
+	Down string `json:"down" yaml:"down"`
 }
 
-func parseStatements(value interface{}) (list []MutationStatement, err error) {
-	if v, ok := value.([]interface{}); ok {
-		for _, value := range v {
-			stmt, err := parseSingleStatement(value)
+func parseStatements(value ast.Node) (list []MutationStatement, err error) {
+	if seq, ok := value.(*ast.SequenceNode); ok {
+		for _, node := range seq.Values {
+			stmt, err := parseSingleStatement(node)
 			if err != nil {
 				return list, err
 			}
@@ -20,39 +22,21 @@ func parseStatements(value interface{}) (list []MutationStatement, err error) {
 		}
 		return list, nil
 	} else {
-		stmt, err := parseSingleStatement(value)
-		if err != nil {
-			return nil, err
-		}
-		return []MutationStatement{stmt}, nil
+
 	}
+	return list, oops.In("mutations").Errorf("expected sequence, got %T", value)
 }
 
-func parseSingleStatement(value interface{}) (stmt MutationStatement, err error) {
-	if v, ok := value.(string); ok {
-		// simple string
-		return mutationStatementFromString(v)
-	} else if v, ok := value.(map[string]interface{}); ok {
-		for key, value := range v {
-			switch key {
-			case "up":
-				if v, ok := value.(string); ok {
-					stmt.Up = v
-				} else {
-					return stmt, oops.In("mutations").Errorf("up must be a string")
-				}
-			case "down":
-				if v, ok := value.(string); ok {
-					stmt.Down = v
-				} else {
-					return stmt, oops.In("mutations").Errorf("down must be a string")
-				}
-			default:
-				return stmt, oops.In("mutations").Errorf("unknown key %s", key)
-			}
-		}
+func parseSingleStatement(value ast.Node) (stmt MutationStatement, err error) {
+	var single string
+	if err := yaml.NodeToValue(value, &single); err == nil {
+		return mutationStatementFromString(single)
+	}
+
+	if err := yaml.NodeToValue(value, &stmt); err == nil {
 		return stmt, nil
 	}
+
 	return stmt, oops.In("mutations").Errorf("expected string or mapping, got %T", value)
 }
 
