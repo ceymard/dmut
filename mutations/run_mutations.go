@@ -23,6 +23,7 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 
 	var err error
 
+	runner.Logger().Println(au.BrightGreen("→"), "applying mutations for namespace", local.Namespace, "revision", local.Revision)
 	if !local.Override {
 		var namespace = local.Namespace
 		var distant *MutationSet
@@ -73,9 +74,11 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 		return err
 	}
 
+	runner.Logger().Println(au.BrightGreen("🧪"), "performing tests")
 	if err := TestMutationSet(runner, local); err != nil {
 		return err
 	}
+	runner.Logger().Println(au.BrightGreen("✓"), "tests passed")
 
 	return nil
 }

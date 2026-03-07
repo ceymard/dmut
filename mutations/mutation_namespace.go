@@ -50,20 +50,19 @@ func NewMutationNamespace() *MutationNamespace {
 
 // Ensure there is no gap in the revision sequence and that there is a default revision that will be applied
 func (ns MutationNamespace) EnsureContinuousRevisions() error {
-	for namespace_name, revision_sequence := range ns.Values() {
+	for _, revision_sequence := range ns.Values() {
 
-		if len(revision_sequence.Revisions) == 0 {
-			return oops.In("mutations").With("namespace", namespace_name).Errorf("there are no mutations for namespace '%s'", namespace_name)
-		}
-
-		if revision_sequence.Revisions[len(revision_sequence.Revisions)-1].Revision != 0 {
-			return oops.In("mutations").With("namespace", namespace_name).Errorf("there is no default mutation set for namespace %s", namespace_name)
-		}
-
+		last_revision_nb := 0
 		for i := 1; i < len(revision_sequence.Revisions)-2; i++ {
+			last_revision_nb = revision_sequence.Revisions[i].Revision
 			if revision_sequence.Revisions[i].Revision != revision_sequence.Revisions[i-1].Revision+1 {
 				return oops.In("mutations").With("revision", revision_sequence.Revisions[i].Revision).Errorf("revision %d is not continuous", revision_sequence.Revisions[i].Revision)
 			}
+		}
+
+		last_revision := revision_sequence.Revisions[len(revision_sequence.Revisions)-1]
+		if last_revision.Revision == 0 {
+			last_revision.Revision = last_revision_nb + 1
 		}
 
 	}

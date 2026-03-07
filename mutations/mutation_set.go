@@ -89,6 +89,13 @@ func (ms *MutationSet) AddMutation(mut *Mutation) error {
 }
 
 func (ms *MutationSet) ResolveDependencies() error {
+	for mut := range ms.AllMutations() {
+		mut.SqlParents = hashset.New[*Mutation]()
+		mut.SqlChildren = hashset.New[*Mutation]()
+		mut.MetaParents = hashset.New[*Mutation]()
+		mut.MetaChildren = hashset.New[*Mutation]()
+	}
+
 	// FIXME we should test for cycles
 	for mut := range ms.AllMutations() {
 		// For dotted names, find if there are parents and add them automatically.
