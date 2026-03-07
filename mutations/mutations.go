@@ -73,14 +73,10 @@ func parseStringList(value ast.Node) (list []string, err error) {
 func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation, err error) {
 	mutation_def, ok := value.(*ast.MappingNode)
 	if !ok {
-		return nil, oops.In("mutations").Errorf("expected map, got %T", value)
+		return nil, oops.In("mutations").Errorf("in key %s, expected a map describing a mutation, got %T", name, value)
 	}
 
 	mut = &Mutation{set: ms, Name: name}
-	mut.SqlParents = hashset.New[*Mutation]()
-	mut.SqlChildren = hashset.New[*Mutation]()
-	mut.MetaParents = hashset.New[*Mutation]()
-	mut.MetaChildren = hashset.New[*Mutation]()
 	ms.AddMutation(mut)
 
 	oo := oops.In("mutations").With("mutation", mut.Name).With("file", ms.File).With("namespace", ms.Namespace)
