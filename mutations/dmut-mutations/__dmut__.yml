@@ -20,6 +20,7 @@ dmut.mutations:
         name text not null,
         namespace text not null,
         file text not null,
+        revision int not null,
 
         needs text[] not null,
         meta_needs text[] not null,
@@ -30,30 +31,4 @@ dmut.mutations:
         overriden boolean not null default false,
 
         primary key (namespace, name)
-      );
-
-dmut.roles:
-  sql:
-    - |
-      create table __dmut__.roles (
-        name text not null,
-        namespace text not null,
-
-        ts timestamp with time zone not null default now(),
-        forced boolean not null default false,
-
-        primary key (namespace, name)
-      );
-
-dmut.revisions:
-  sql:
-    - |
-      create table __dmut__.revisions (
-        sequence int not null,
-        namespace text not null,
-
-        ts timestamp with time zone not null default now(),
-        file_contents text not null default '',
-
-        primary key (namespace, sequence)
       );

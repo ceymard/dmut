@@ -7,8 +7,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/k0kubun/pp"
 	au "github.com/logrusorgru/aurora"
 	"github.com/samber/oops"
 )
@@ -65,21 +66,33 @@ func (r *PgRunner) GetTestOutput() string {
 	return r.buf.String()
 }
 
-func wrapPgError(err error) error {
+func wrapPgError(err error, sql string) error {
 	if err == nil {
 		return nil
 	}
+	oo := oops.In("pg").Code("pg_error").With("sql", sql)
+	if pgerr, ok := err.(*pgconn.PrepareError); ok {
+		err = pgerr.Unwrap()
+	}
+
 	if pgerr, ok := err.(*pgconn.PgError); ok {
-		oo := oops.In("pg").Code("pg_error")
 		if details := pgerr.Detail; details != "" {
 			oo = oo.With("detail", details)
 		}
 		if hint := pgerr.Hint; hint != "" {
 			oo = oo.With("hint", hint)
 		}
+		if pgerr.Position > 0 {
+			oo = oo.With("sql", au.BrightBlue(sql[0:pgerr.Position-1]).String()+au.BrightRed(sql[pgerr.Position-1:]).String())
+		} else {
+			oo = oo.With("sql", au.BrightBlue(sql).String())
+		}
+
 		return oo.Wrap(err)
 	}
-	return err
+
+	pp.Println(err)
+	return oo.Wrap(err)
 }
 
 func (r *PgRunner) Run(runnable *Runnable) error {
@@ -102,50 +115,9 @@ func (r *PgRunner) Run(runnable *Runnable) error {
 }
 
 func (r *PgRunner) ClearMutations(namespace string) error {
-	err := r.exec(nil, `DELETE FROM __dmut__.mutations WHERE namespace = $1`, namespace)
-	return wrapPgError(err)
-}
-
-func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
-	if err = r.ClearMutations(mutations.Namespace); err != nil {
-		return err
-	}
-
-	var muts []*Mutation
-	for m := range mutations.AllMutations() {
-		muts = append(muts, m)
-	}
-
-	var muts_json []byte
-	if muts_json, err = json.Marshal(muts); err != nil {
-		return err
-	}
-
-	if err := r.exec(nil, `
-		INSERT INTO __dmut__.mutations(
-			namespace,
-			file,
-			name,
-			needs,
-			meta_needs,
-			meta,
-			sql,
-			overriden
-		)
-		SELECT
-			coalesce(namespace, ''),
-			coalesce(file, ''),
-			name,
-			coalesce(needs, '{}'::text[]),
-			coalesce(meta_needs, '{}'::text[]),
-			coalesce(meta, '{}'::__dmut__.mutation_statement[]),
-			coalesce(sql, '{}'::__dmut__.mutation_statement[]),
-			coalesce(overriden, false)
-		FROM json_populate_recordset(NULL::__dmut__.mutations, $1::json)
-		ON CONFLICT (namespace, name) DO UPDATE SET file = excluded.file, needs = excluded.needs, meta_needs = excluded.meta_needs, meta = excluded.meta, sql = excluded.sql, overriden = excluded.overriden`, muts_json); err != nil {
-		return wrapPgError(err)
-	}
-	return wrapPgError(err)
+	sql := `DELETE FROM __dmut__.mutations WHERE namespace = $1`
+	err := r.exec(nil, sql, namespace)
+	return wrapPgError(err, sql)
 }
 
 func (r *PgRunner) Commit() error {
@@ -166,7 +138,7 @@ func (r *PgRunner) Rollback() error {
 func (r *PgRunner) SavePoint(name string) error {
 	if name == "" {
 		if err := r.exec(nil, "BEGIN"); err != nil {
-			return wrapPgError(err)
+			return wrapPgError(err, "BEGIN")
 		}
 		return nil
 	}
@@ -197,14 +169,8 @@ func (r *PgRunner) exec(mutation *Mutation, sql string, args ...interface{}) err
 	}
 	_, err := r.conn.Exec(context.Background(), sql, args...)
 	if err != nil {
+		err = wrapPgError(err, sql)
 		oo := oops.In("pg")
-		if pg_err, ok := err.(*pgconn.PgError); ok {
-			if pg_err.Position > 0 {
-				oo = oo.With("sql", au.BrightBlue(sql[0:pg_err.Position-1]).String()+au.BrightRed(sql[pg_err.Position-1:]).String())
-			}
-		} else {
-			oo = oo.With("sql", au.BrightBlue(sql).String())
-		}
 
 		if mutation != nil {
 			oo = oo.With("mutation", mutation.Name).With("file", mutation.File).With("namespace", mutation.Namespace).With("needs", mutation.Needs).With("meta_needs", mutation.MetaNeeds)
@@ -224,12 +190,13 @@ func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) 
 	)
 
 	// test for the presence of the __dmut__ schema by
-	if err := db.QueryRow(context.Background(), `SELECT EXISTS (
+	sql := `SELECT EXISTS (
 		SELECT 1
 		FROM pg_catalog.pg_namespace
 		WHERE nspname = '__dmut__'
-	)`).Scan(&exists); err != nil {
-		return nil, wrapPgError(err)
+	)`
+	if err := db.QueryRow(context.Background(), sql).Scan(&exists); err != nil {
+		return nil, wrapPgError(err, sql)
 	}
 	if !exists {
 		return NewMutationSet(namespace, 0, ""), nil
@@ -239,26 +206,34 @@ func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) 
 
 	// First, extract a list of already active mutations and check if they have to be downed because they're
 	// either	 inexistant or their hash changed.
-	row := db.QueryRow(
-		context.Background(),
-		`select
-			coalesce(json_agg(row_to_json(r))::text, '[]'::text)
-			from (select * from __dmut__.mutations WHERE namespace = $1) r
-		`,
-		namespace,
-	)
+	sql = `select
+	   json_build_object(
+			'revision', coalesce(max(revision), 0),
+			'mutations', coalesce(json_agg(row_to_json(r))::json, '[]'::json)
+		) as data
+		from (select * from __dmut__.mutations WHERE namespace = $1) r
+	`
+	row := db.QueryRow(context.Background(), sql, namespace)
 
 	var json_text []byte
 	if err := row.Scan(&json_text); err != nil {
-		return nil, wrapPgError(err)
+		return nil, wrapPgError(err, sql)
 	}
 
-	var muts []*Mutation
-	if err := json.Unmarshal(json_text, &muts); err != nil {
+	type scanned struct {
+		Revision  int         `json:"revision"`
+		Mutations []*Mutation `json:"mutations"`
+	}
+
+	var sc scanned
+	if err := json.Unmarshal(json_text, &sc); err != nil {
 		return nil, oops.In("pg").Wrapf(err, "error unmarshalling mutations %s", json_text)
 	}
 
-	for _, mut := range muts {
+	res.Revision = sc.Revision
+	res.Namespace = namespace
+
+	for _, mut := range sc.Mutations {
 		res.AddMutation(mut)
 	}
 
@@ -267,4 +242,50 @@ func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) 
 	}
 
 	return res, nil
+}
+
+func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
+	if err = r.ClearMutations(mutations.Namespace); err != nil {
+		return err
+	}
+
+	var muts []*Mutation
+	for m := range mutations.AllMutations() {
+		muts = append(muts, m)
+	}
+
+	var muts_json []byte
+	if muts_json, err = json.Marshal(muts); err != nil {
+		return err
+	}
+
+	sql := `
+		INSERT INTO __dmut__.mutations(
+			namespace,
+			revision,
+			file,
+			name,
+			needs,
+			meta_needs,
+			meta,
+			sql,
+			overriden
+		)
+		SELECT
+			$2,
+			$3,
+			coalesce(file, ''),
+			name,
+			coalesce(needs, '{}'::text[]),
+			coalesce(meta_needs, '{}'::text[]),
+			coalesce(meta, '{}'::__dmut__.mutation_statement[]),
+			coalesce(sql, '{}'::__dmut__.mutation_statement[]),
+			coalesce(overriden, false)
+		FROM json_populate_recordset(NULL::__dmut__.mutations, $1::json)
+		ON CONFLICT (namespace, name) DO UPDATE SET file = excluded.file, needs = excluded.needs, meta_needs = excluded.meta_needs, meta = excluded.meta, sql = excluded.sql, overriden = excluded.overriden`
+
+	if err := r.exec(nil, sql, muts_json, mutations.Namespace, mutations.Revision); err != nil {
+		return wrapPgError(err, sql)
+	}
+	return nil
 }
