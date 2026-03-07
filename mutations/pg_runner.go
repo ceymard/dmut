@@ -143,7 +143,7 @@ func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
 			coalesce(overriden, false)
 		FROM json_populate_recordset(NULL::__dmut__.mutations, $1::json)
 		ON CONFLICT (namespace, name) DO UPDATE SET file = excluded.file, needs = excluded.needs, meta_needs = excluded.meta_needs, meta = excluded.meta, sql = excluded.sql, overriden = excluded.overriden`, muts_json); err != nil {
-		return err
+		return wrapPgError(err)
 	}
 	return wrapPgError(err)
 }
@@ -242,8 +242,8 @@ func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) 
 	row := db.QueryRow(
 		context.Background(),
 		`select
-			json_agg(row_to_json(r))::text
-			from select * from __dmut__.mutations WHERE namespace = $1
+			coalesce(json_agg(row_to_json(r))::text, '[]'::text)
+			from (select * from __dmut__.mutations WHERE namespace = $1) r
 		`,
 		namespace,
 	)
@@ -255,7 +255,7 @@ func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) 
 
 	var muts []*Mutation
 	if err := json.Unmarshal(json_text, &muts); err != nil {
-		return nil, wrapPgError(err)
+		return nil, oops.In("pg").Wrapf(err, "error unmarshalling mutations %s", json_text)
 	}
 
 	for _, mut := range muts {
