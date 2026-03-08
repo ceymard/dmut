@@ -18,7 +18,7 @@ When running, dmut performs the following operations :
 
 - Fetch currently applied mutations from the database and compute which need to be de-applied
 - If roles or sql changed (some sql statements have to be downed): undo all meta blocks and sync roles (remove obsolete, add missing).
-- In a temporary test database (on the same server), try to run all mutations indepentently.
+- If possible, in a temporary test database (on the same server), try to run all mutations indepentently.
 - If mutations changed: de-apply and re-apply according to the new `needs` clauses. This is where the mutations really are applied.
 - Try to down all mutations one by one (this is done using savepoints and does not lose data). The operation is aborted if one of them fails.
 
@@ -58,31 +58,37 @@ Roles are mostly meant to be group roles. If your users have roles in the databa
 
 # Revisions : Evolving your mutations over time
 
-Over the lifetime of your database, your data model will change. Since you do not want to lose already existing data, you will make incremental changes in `children` mutations to avoid changing parent mutations so they don't get de-applied.
+As your database evolves, the data model changes. To avoid losing existing data, you add incremental changes in *child* mutations instead of editing existing SQL mutations—so those mutations are not de-applied.
 
-After a while however, having definitions scattered across several mutations becomes untidy. When mutating an empty database, why have a table created and then immediately altered to add or remove their columns ?
+Over time, definitions spread across many mutations become hard to follow. On an empty database, it is redundant to create a table and then immediately alter it to add or remove columns.
 
-You have two options to rewrite your mutations to re-integrate new columns into the original table definition:
+You can consolidate by folding those changes back into the original table definition in two ways:
 
-- Either change your mutations so that the CREATE TABLE ... has all your columns, backup your data, reapply the mutations and then reintegrate your data. While it is not a big deal in dev, it quickly becomes problematic if you have several databases in production that need that treatment or if the volume of data is too big.
+- **Manual rewrite:** Update mutations so each `CREATE TABLE ...` includes all columns, then backup data, reapply mutations, and restore data. This is manageable in development but awkward in production when many databases or large datasets are involved.
 
-- Use `__revision` in your mutations to apply transitional states
+- **Revisions:** Use `__revision` so a cleaned-up mutation set (whose definitions would normally cause drops if applied as-is) is treated as the new source of truth. New mutations are applied from that revision onward, and you keep a single, tidy set of statements.
+
+## Revisions in your mutation files
+
+A yaml file can define `__revision: <int>` at the toplevel. Every mutation that are part of this file are now part of this specific revision.
+
+Mutation files that do not specify their revision will be considered part of the revision `n+1` of what was found. If no revision is ever specified, it means that the default revision is `1`. (If you have used revisions, should always keep at least the latest explicitely named revision around so that unrevisioned mutations are attributed the correct sequence number.)
+
+On top of specifying `__revision`, a mutation file may specify `__override: true`. When encountered, instead of being applied, this revision will be accepted as the new mutation definitions in the database. It will still be tested ; after all, it is supposed to work on the current version of the database it has found.
 
 ## How revisions work
 
 When applying mutations on a database, dmut does the following regarding revisions :
 
-1. Get the current revision number for the current namespace.
-2. For all supplied revisions >= the current revision, apply them in order
-3. Set the current revision at last revision + 1
-4. Overwrite the mutations with the supplied ones that are revisionless
-5. Try downing all the mutations one by one to ensure the new mutations still make sense with the current database.
+1. Get the current _applied_ revision number for the current namespace.
+2. For all supplied local revisions greater _or equal_ to the current revision, apply and test them in order.
+   If a revision has `__override: true` set, then the revision is saved as if had executed.
 
-An empty database that had no prior revision will be applied the current revisionless ones, and its revision number will be set at last revision + 1. No revisioned mutation file will be executed.
+An empty database that had no revisions _will only have the latest one applied_, even if the latest one is an override.
 
-Dmut always considers the currently unrevisioned mutations to be at last `__revision` + 1, which is why you should always keep at least the _last_ one to make sure that the new revision on an empty database will be the correct one.
+Dmut always considers the currently unrevisioned mutations to be at last supplied `__revision` + 1, which is why you should always keep at least the _last_ one to make sure that the new revision on an empty database will be the correct one.
 
-You may remove obsolete revisions from your code ; it is not needed for them all to exist, since new/empty databases get seeded with the unrevisioned code. As a rule of thumb, keep at least the last one, or an empty file with just the `__revision` attribute to make sure the database is seeded with the latest number, or keep the lowest one that is still in production.
+You may remove obsolete revisions from your code ; it is not needed for them all to exist, since new/empty databases get seeded with the unrevisioned code. As a rule of thumb, keep at least the last one, or an empty file with just the `__revision` attribute to make sure a new database is seeded with the latest number, or keep the lowest one that is still in production.
 
 Use the `dmut collect` command on an existing database to get a single .yml file with all the currently applied mutations with their revision number, or on paths to collect all unrevisioned mutations into a single file.
 
@@ -90,9 +96,11 @@ Try to keep revisioned file names explicit, such as `<namespace>-r<revision>.yml
 
 # Namespaces
 
-By default, and unless supplied in `__namespace`, dmut puts the mutations in the namespace of the parent directly that was supplied in the `dmut` command.
+Mutations can be namespaced by setting `__namespace: <string>` at the toplevel of their file.
 
-**BEWARE**: roles must be unique across namespaces.
+They act as silos ; namespaced mutations will not touch mutations from other namespaces. They may be applied completely independently.
+
+Make absolutely sure that no code from a namespace can reference objects that are created in another ; they are explicitely made to handle completely independent code and structures that will have to live in the same database but will most likely never interact together.
 
 # Mutation structure
 
