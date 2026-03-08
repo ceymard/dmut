@@ -158,7 +158,7 @@ Revisions **must** be sequential ; there may be no gaps between the lowest and t
 
 You do not need to keep every revision file in the codebase. In practice, keep at least the latest revision—or a minimal file that only sets `__revision` so new databases get the right revision number-or the lowest revision that you know is still in production.
 
-To retire an obsolete mutation inside a revision, set `new_needs: []` and `new_sql: []`. Any mutation that ends up with no meta, sql, or needs is not persisted.
+To retire an obsolete mutation inside a revision, set `new_sql: []`. Any mutation that has no meta, sql, and children is not persisted.
 
 You should use clear names for revision files, e.g. `<namespace>-r<revision>.yml` or `r<revision>.yml`.
 

@@ -251,7 +251,9 @@ func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
 
 	var muts []*Mutation
 	for m := range mutations.AllMutations() {
-		muts = append(muts, m)
+		if m.ShouldBeSaved() {
+			muts = append(muts, m)
+		}
 	}
 
 	var muts_json []byte

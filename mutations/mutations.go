@@ -1,6 +1,7 @@
 package mutations
 
 import (
+	"encoding/json"
 	"iter"
 
 	"github.com/goccy/go-yaml"
@@ -52,6 +53,10 @@ type Mutation struct {
 	MetaNeeds []string            `json:"meta_needs,omitempty"`
 	Meta      []MutationStatement `json:"meta,omitempty"`
 
+	//
+	NewNeeds []string            `json:"-"`
+	NewSql   []MutationStatement `json:"-"`
+
 	// Will only be used when loading from yaml, not from database
 	SqlParents   *hashset.Set[*Mutation] `json:"-"`
 	SqlChildren  *hashset.Set[*Mutation] `json:"-"`
@@ -60,6 +65,46 @@ type Mutation struct {
 
 	// Only used during yaml parsing
 	ChildrenMutations MutationMap `json:"-"`
+}
+
+type SaveableMutation struct {
+	Name      string `json:"name"`
+	File      string `json:"file"`
+	Namespace string `json:"namespace"`
+
+	Needs     []string            `json:"needs,omitempty"`
+	Sql       []MutationStatement `json:"sql,omitempty"`
+	MetaNeeds []string            `json:"meta_needs,omitempty"`
+	Meta      []MutationStatement `json:"meta,omitempty"`
+}
+
+func (mut *Mutation) ShouldBeSaved() bool {
+	return mut.SqlChildren.Size() > 0 ||
+		mut.MetaChildren.Size() > 0 ||
+		(mut.NewSql == nil && len(mut.Sql) > 0 || mut.NewSql != nil && len(mut.NewSql) > 0) ||
+		len(mut.Meta) > 0
+}
+
+func (mut *Mutation) MarshalJSON() ([]byte, error) {
+
+	saveable_mut := &SaveableMutation{
+		Name:      mut.Name,
+		File:      mut.File,
+		Namespace: mut.Namespace,
+		Needs:     mut.Needs,
+		Sql:       mut.Sql,
+		MetaNeeds: mut.MetaNeeds,
+		Meta:      mut.Meta,
+	}
+
+	if mut.NewNeeds != nil {
+		saveable_mut.Needs = mut.NewNeeds
+	}
+	if mut.NewSql != nil {
+		saveable_mut.Sql = mut.NewSql
+	}
+
+	return json.Marshal(saveable_mut)
 }
 
 func parseStringList(value ast.Node) (list []string, err error) {
@@ -113,6 +158,18 @@ func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation,
 				return nil, err
 			} else {
 				mut.MetaNeeds = list
+			}
+		case "new_needs":
+			if list, err := parseStringList(value); err != nil {
+				return nil, err
+			} else {
+				mut.NewNeeds = list
+			}
+		case "new_sql":
+			if list, err := parseStatements(value); err != nil {
+				return nil, err
+			} else {
+				mut.NewSql = list
 			}
 		case "children":
 			children_def, ok := value.(*ast.MappingNode)
