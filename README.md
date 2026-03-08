@@ -24,10 +24,6 @@ When running, dmut performs the following operations :
 
 As everything is ran inside a transaction, failure at any given step halts the process and mutations are not applied.
 
-# Role handling
-
-Roles are mostly meant to be group roles. If your users have roles in the database, they should be handled using triggers.
-
 # Considerations
 
 - Do not use create "if not exists" or drop "if exists".
@@ -55,52 +51,6 @@ Roles are mostly meant to be group roles. If your users have roles in the databa
   - `CREATE POLICY <name> ...`
   - `CREATE TRIGGER <name> ...`
   - `GRANT ...`
-
-# Revisions : Evolving your mutations over time
-
-As your database evolves, the data model changes. To avoid losing existing data, you add incremental changes in *child* mutations instead of editing existing SQL mutations—so those mutations are not de-applied.
-
-Over time, definitions spread across many mutations become hard to follow. On an empty database, it is redundant to create a table and then immediately alter it to add or remove columns.
-
-You can consolidate by folding those changes back into the original table definition in two ways:
-
-- **Manual rewrite:** Update mutations so each `CREATE TABLE ...` includes all columns, then backup data, reapply mutations, and restore data. This is manageable in development but awkward in production when many databases or large datasets are involved.
-
-- **Revisions:** Use `__revision` so a cleaned-up mutation set (whose definitions would normally cause drops if applied as-is) is treated as the new source of truth. New mutations are applied from that revision onward, and you keep a single, tidy set of statements.
-
-## Revisions in your mutation files
-
-A yaml file can define `__revision: <int>` at the toplevel. Every mutation that are part of this file are now part of this specific revision.
-
-Mutation files that do not specify their revision will be considered part of the revision `n+1` of what was found. If no revision is ever specified, it means that the default revision is `1`. (If you have used revisions, should always keep at least the latest explicitely named revision around so that unrevisioned mutations are attributed the correct sequence number.)
-
-On top of specifying `__revision`, a mutation file may specify `__override: true`. When encountered, instead of being applied, this revision will be accepted as the new mutation definitions in the database. It will still be tested ; after all, it is supposed to work on the current version of the database it has found.
-
-## How revisions work
-
-When applying mutations on a database, dmut does the following regarding revisions :
-
-1. Get the current _applied_ revision number for the current namespace.
-2. For all supplied local revisions greater _or equal_ to the current revision, apply and test them in order.
-   If a revision has `__override: true` set, then the revision is saved as if had executed.
-
-An empty database that had no revisions _will only have the latest one applied_, even if the latest one is an override.
-
-Dmut always considers the currently unrevisioned mutations to be at last supplied `__revision` + 1, which is why you should always keep at least the _last_ one to make sure that the new revision on an empty database will be the correct one.
-
-You may remove obsolete revisions from your code ; it is not needed for them all to exist, since new/empty databases get seeded with the unrevisioned code. As a rule of thumb, keep at least the last one, or an empty file with just the `__revision` attribute to make sure a new database is seeded with the latest number, or keep the lowest one that is still in production.
-
-Use the `dmut collect` command on an existing database to get a single .yml file with all the currently applied mutations with their revision number, or on paths to collect all unrevisioned mutations into a single file.
-
-Try to keep revisioned file names explicit, such as `<namespace>-r<revision>.yml, or `r<revision>.yml` when using the default namespace.
-
-# Namespaces
-
-Mutations can be namespaced by setting `__namespace: <string>` at the toplevel of their file.
-
-They act as silos ; namespaced mutations will not touch mutations from other namespaces. They may be applied completely independently.
-
-Make absolutely sure that no code from a namespace can reference objects that are created in another ; they are explicitely made to handle completely independent code and structures that will have to live in the same database but will most likely never interact together.
 
 # Mutation structure
 
@@ -132,6 +82,13 @@ mutation_name:
     - up: the sql that brings this mutation up
       down: the sql that undoes it
 
+  # optional: when using revisions
+  new_needs: [new, parents]
+
+  # optional: when using revisions
+  new_sql:
+    - statement that replaces what is in `sql`
+
   # optional, names of the mutations whose meta must run before
   # there is no need to indicate mutations whose sql must run before, because _all_ sql runs before meta, always.
   meta_needs: [mutation, names]
@@ -158,7 +115,7 @@ Dmut understands `.` separators in the mutation names. Mutations that have compo
 
 ## Automatic sql statements
 
-For some common SQL statements, undo can be inferred, so you need not specify `up` or `down`. The inferred undo is always a destructive operation (e.g. `DROP`); dmut does not try to restore the database to its exact previous state.
+For some common SQL statements, undo can be inferred, so you need not specify `up` or `down`. The inferred undo is always a destructive operation (e.g. `DROP`); when creating auto-down statement, dmut does **not** query the database to guess how it was before, which is what a lot of `ALTER` statements are not supported in this manner.
 
 It is recommended to use these statements in `sql` blocks :
 
@@ -166,3 +123,53 @@ It is recommended to use these statements in `sql` blocks :
 - `CREATE INDEX ...`
 
 And these in `meta` blocks, as they are not so much about data than behaviour :
+
+# Namespaces
+
+Mutations can be namespaced by setting `__namespace: <string>` at the toplevel of their file.
+
+They act as silos ; namespaced mutations will not touch mutations from other namespaces. They may be applied completely independently.
+
+Make absolutely sure that no code from a namespace can reference objects that are created in another ; they are explicitely made to handle completely independent code and structures that will have to live in the same database but will most likely never interact together.
+
+# Revisions : Evolving your mutations over time
+
+As your database evolves, the data model changes. To avoid losing existing data, you add incremental changes in *child* mutations instead of editing existing SQL mutations—so those mutations are not de-applied.
+
+Over time, definitions spread across many mutations become hard to follow. On an empty database, it is redundant to create a table and then immediately alter it to add or remove columns.
+
+You can consolidate by folding those changes back into the original table definition in two ways:
+
+- **Manual rewrite:** Update mutations so each `CREATE TABLE ...` includes all columns, then backup data, reapply mutations, and restore data. This is manageable in development but awkward in production when many databases or large datasets are involved.
+
+- **Revisions:** Use `__revision` and, in revisioned files, `new_needs` / `new_sql`. When a revision is applied, the current `needs` and `sql` run as usual, but the values stored in the database are the `new_` ones—so the recorded source of truth becomes your cleaned-up set. New or empty databases are then seeded from that tidy definition.
+
+## Revisions in your mutation files
+
+You can set `__revision: <int>` at the top level of a YAML file. Every mutation in that file then belongs to that revision.
+
+Mutations in a file with an explicit `__revision` can define `new_needs` and `new_sql`. When such a mutation is applied, `needs` and `sql` run as usual, but the values stored in the database are the `new_` versions (so the “cleaned” definition is what future revisions see).
+
+Files that do not set `__revision` are treated as revision `n+1`, where `n` is the highest revision number found. If no file sets a revision, the effective revision is `1`.
+
+When you supply revisions, dmut applies every revision greater than _or equal_ to the database’s current revision, in order. If the database has no revision, only the highest one is applied.
+
+Revisions **must** be sequential ; there may be no gaps between the lowest and the highest that is supplied.
+
+You do not need to keep every revision file in the codebase. In practice, keep at least the latest revision—or a minimal file that only sets `__revision` so new databases get the right revision number-or the lowest revision that you know is still in production.
+
+To retire an obsolete mutation inside a revision, set `new_needs: []` and `new_sql: []`. Any mutation that ends up with no meta, sql, or needs is not persisted.
+
+You should use clear names for revision files, e.g. `<namespace>-r<revision>.yml` or `r<revision>.yml`.
+
+## Creating a new revision
+
+To make revision creation easier, dmut ships the command `dmut create-revision [-o <new-revision-file.yml>] <database or previous-revision.yml> <future revision paths...>` that compares a revision file or the revision currently applied in the database to the local mutations at `paths...` and detects the changes between `sql` and `needs` blocks to create a _new_ revision with the `new_needs` and `new_sql` blocks created automatically.
+
+Use `dmut diff` to compare two revisions and only display what changed.
+
+## Considerations when writing revisions
+
+Mutations that use "complicated" statements like ALTER that cannot be auto-downed are tricky, and dmut makes no attempt at comparing database states : it applies, or it downs. While it does run tests everytime to catch most common errors, it cannot catch them all. The responsability falls on the developer to make sure that the revisions they write make sense.
+
+It is possible to use `meta` blocks to write unit tests in `do $$ begin ... end $$ language plpgsql` statements as usage of the `raise` statement will fail a mutation.
