@@ -39,20 +39,8 @@ func (c CollectCmd) Run() error {
 	return nil
 }
 
-type ApplyCmd struct {
-	Host     string   `arg:"" help:"Database host."`
-	Paths    []string `arg:"" help:"Paths to apply."`
-	Override bool     `short:"o" name:"override" help:"Save the mutations to the database, but don't run them."`
-}
-
 type DryCmd struct {
 	ApplyCmd
-}
-
-func (a ApplyCmd) Run() error {
-	_ = a.Host
-	_ = a.Paths
-	return nil
 }
 
 type VersionCmd struct{}
