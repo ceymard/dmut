@@ -107,7 +107,7 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 
 		// Db has no mutations, only apply the highest local one
 		if db_mutations.Revision == 0 {
-			runner.Logger().Println(au.BrightGreen("→"), "applying highest local revision for namespace", namespace)
+			runner.Logger().Println(au.BrightGreen("→"), "no database mutations,applying highest local revision for namespace", namespace)
 			if revision, ok := revisions.Revisions[revisions.MaxRevision]; ok {
 				if err := RunMutations(runner, revision, opts...); err != nil {
 					return err

@@ -81,7 +81,10 @@ func (c LegacyCmd) Run() error {
 					// Down: mut.Down[len(mut.Down)-i-1],
 				})
 			}
-			for _, down := range mut.Down {
+
+			// add down in reverse order
+			for i := len(mut.Down) - 1; i >= 0; i-- {
+				down := mut.Down[i]
 				statements = append(statements, mutations.MutationStatement{
 					Down: replaceLineComments(down),
 				})

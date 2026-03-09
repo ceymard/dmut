@@ -138,7 +138,7 @@ func (c *combinator) ParseAndGetDefault(s string) (string, error) {
 		return "", err
 	}
 	if res.isNoMatch() {
-		return "", oops.In("auto_parser").Errorf("no match")
+		return "", oops.In("auto_parser").With("input", s).Errorf("no match")
 	}
 	var acc = ""
 	for _, result := range res.results {
