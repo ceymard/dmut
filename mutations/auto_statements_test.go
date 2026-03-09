@@ -38,6 +38,8 @@ func TestAutoDowner(t *testing.T) {
 			}
 			if !compareTokens(t, id_token, got, tt.Down) {
 				displayMismatch(t, strings.ToLower(tt.Down), strings.ToLower(got))
+			} else {
+				// log.Println("=>", got)
 			}
 		})
 	}
@@ -160,12 +162,10 @@ func compareTokens(t *testing.T, id_token lexer.TokenType, cmp string, got strin
 		if cmpTokens[i].Type == id_token {
 			// ids are case insensitive
 			if !compareIdToken(cmpTokens[i], gotTokens[i]) {
-
 				return false
 			}
 		} else {
 			if cmpTokens[i].Value != gotTokens[i].Value {
-
 				return false
 			}
 		}

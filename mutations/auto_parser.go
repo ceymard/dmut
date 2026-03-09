@@ -132,6 +132,17 @@ func (c *combinator) Parse(s string) (state, error) {
 	}), nil
 }
 
+func wantSpace(s string) (want_left bool, want_right bool) {
+	switch s {
+	case "(", "[", "{", ")", "]", "}", "::", ".":
+		return false, false
+	case ",", ":", ";":
+		return false, true
+	default:
+		return true, true
+	}
+}
+
 func (c *combinator) ParseAndGetDefault(s string) (string, error) {
 	res, err := c.Parse(s)
 	if err != nil {
@@ -140,15 +151,18 @@ func (c *combinator) ParseAndGetDefault(s string) (string, error) {
 	if res.isNoMatch() {
 		return "", oops.In("auto_parser").With("input", s).Errorf("no match")
 	}
-	var acc = ""
+	var acc = strings.Builder{}
+	var last_want_right = false
 	for _, result := range res.results {
-		token := result.value
-		if token.Pos.Offset > 0 && unicode.IsSpace(rune(res.file[token.Pos.Offset-1])) {
-			acc += " "
+		str := result.value.Value
+		want_left, want_right := wantSpace(str)
+		if last_want_right && want_left {
+			acc.WriteString(" ")
 		}
-		acc += token.Value
+		last_want_right = want_right
+		acc.WriteString(str)
 	}
-	return acc, nil
+	return acc.String(), nil
 }
 
 // ///////////////////////////////////////////////
@@ -196,11 +210,7 @@ type stringProducer struct {
 }
 
 func (s *stringProducer) act(st state, old_results []result) state {
-	var space = ""
-	if len(old_results) > 0 && old_results[0].hasSpaceBefore(&st) || len(st.results) > 0 && st.results[len(st.results)-1].hasSpaceAfter(&st) {
-		space = " "
-	}
-	st.addResult(s.group, lexer.Token{Value: space + s.value, Pos: lexer.Position{Offset: -1}})
+	st.addResult(s.group, lexer.Token{Value: s.value, Pos: lexer.Position{Offset: -1}})
 	return st
 }
 
@@ -566,4 +576,54 @@ func token(tok lexer.TokenType) *combinator {
 func separated_by(separator any, s ...any) *combinator {
 	var sequence = seq(s...)
 	return seq(sequence, zero_or_more(separator, sequence))
+}
+
+type balancedAny struct {
+	pairs []*combinator
+}
+
+func (b *balancedAny) Parse(st state) state {
+	for i := 0; i < len(b.pairs); i += 2 {
+		open := b.pairs[i]
+		if open_match := open.ParseState(st); open_match.isMatch() {
+			st := open_match
+			balance := 1
+
+			for !st.isEOF() {
+
+				for j := 0; j < len(b.pairs); j += 2 {
+					open := b.pairs[j]
+					close := b.pairs[j+1]
+
+					if open_match2 := open.ParseState(st); open_match2.isMatch() {
+						balance++
+						st.pos = open_match2.pos
+					} else if close_match := close.ParseState(st); close_match.isMatch() {
+						balance--
+						st.pos = close_match.pos
+					} else {
+						st.pos++
+					}
+
+					if balance == 0 {
+						return st
+					}
+				}
+			}
+		}
+	}
+	return st.noMatch()
+}
+
+func balanced_any(s ...any) *combinator {
+	pairs := getCombinatorSlice(s...)
+	if len(pairs)%2 != 0 {
+		panic("balanced requires an even number of arguments")
+	}
+
+	return &combinator{
+		parser: &balancedAny{
+			pairs: pairs,
+		},
+	}
 }
