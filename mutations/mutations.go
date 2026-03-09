@@ -25,9 +25,9 @@ func (dir IterationDirection) UpOrDown() string {
 }
 
 func (dir IterationDirection) MetaOrSql() string {
-	meta_or_sql := au.BrightGreen("sql").String()
+	meta_or_sql := au.BrightYellow("sql").String()
 	if dir.Meta {
-		meta_or_sql = au.BrightCyan("meta").String()
+		meta_or_sql = au.BrightBlue("meta").String()
 	}
 	return meta_or_sql
 }
