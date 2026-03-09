@@ -18,9 +18,8 @@ var VERSION = "1.0.0"
 
 type CLI struct {
 	Collect CollectCmd `cmd:"" help:"Collect all paths into a single yaml file."`
-	Dry     DryCmd     `cmd:"" help:"Apply the mutations but don't commit them."`
 	Apply   ApplyCmd   `cmd:"" help:"Apply the mutations to the database."`
-
+	Down    DownCmd    `cmd:"" help:"Down the mutations from the database."`
 	Version VersionCmd `cmd:"" help:"Show the version."`
 
 	Test   TestCmd   `cmd:"" help:"Test the mutations on an empty test database that will be created on the fly."`
@@ -37,10 +36,6 @@ func (c CollectCmd) Run() error {
 	_ = c.Outfile
 	_ = c.Paths
 	return nil
-}
-
-type DryCmd struct {
-	ApplyCmd
 }
 
 type VersionCmd struct{}

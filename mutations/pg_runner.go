@@ -9,7 +9,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/k0kubun/pp"
 	au "github.com/logrusorgru/aurora"
 	"github.com/samber/oops"
 )
@@ -91,7 +90,6 @@ func wrapPgError(err error, sql string) error {
 		return oo.Wrap(err)
 	}
 
-	pp.Println(err)
 	return oo.Wrap(err)
 }
 
@@ -131,7 +129,7 @@ func (r *PgRunner) Begin() error {
 }
 
 func (r *PgRunner) Rollback() error {
-	// r.logger.Println(au.BrightRed("💾"), "rolling back")
+	r.logger.Println(au.BrightRed("↩"), "rolling back")
 	return r.exec(nil, "ROLLBACK")
 }
 
@@ -249,7 +247,7 @@ func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
 		return err
 	}
 
-	var muts []*Mutation
+	var muts []*Mutation = make([]*Mutation, 0, mutations.Size())
 	for m := range mutations.AllMutations() {
 		if m.ShouldBeSaved() {
 			muts = append(muts, m)

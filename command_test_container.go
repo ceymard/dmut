@@ -42,11 +42,6 @@ func (t TestCmd) Run() error {
 		t.Password = "test"
 	}
 
-	muts, err := mutations.LoadYamlMutations(t.Paths...)
-	if err != nil {
-		return err
-	}
-
 	log.Println("testing mutations on", image)
 	ctx := context.Background()
 	container, err := postgres.Run(ctx,
@@ -77,19 +72,12 @@ func (t TestCmd) Run() error {
 	}
 	log.Println("test container URI:", uri)
 
-	runner, err := mutations.NewPgRunner(uri, t.Verbose)
-	if err != nil {
-		return err
-	}
-	defer runner.Close()
-
-	// Test before
-	if err := mutations.RunAllMutations(runner, muts, &mutations.MutationRunnerOptions{
-		Commit: false,
+	if err := runMutations(uri, t.Paths, mutations.MutationRunnerOptions{
+		Verbose: t.Verbose,
+		Commit:  false,
 	}); err != nil {
 		return err
 	}
-	runner.Logger().Println("tests were successful")
 
 	return nil
 }

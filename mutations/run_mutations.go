@@ -6,14 +6,14 @@ import (
 )
 
 type MutationRunnerOptions struct {
-	TestBefore bool
-	Commit     bool
-	Override   bool
+	Verbose  bool
+	Commit   bool
+	Override bool
 }
 
 func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
 	for _, other := range others {
-		o.TestBefore = o.TestBefore || other.TestBefore
+		o.Verbose = o.Verbose || other.Verbose
 		o.Commit = o.Commit || other.Commit
 		o.Override = o.Override || other.Override
 	}
@@ -28,8 +28,6 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 
 	if !options.Override {
 
-		runner.Logger().Println(au.BrightGreen("→"), "applying mutations for namespace", local.Namespace, "revision", local.Revision)
-
 		var namespace = local.Namespace
 		var distant *MutationSet
 
@@ -40,10 +38,12 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 		sql_down, sql_up := local.GetMutationsDelta(distant, ITER_SQL)
 		meta_down, meta_up := local.GetMutationsDelta(distant, ITER_META)
 
-		if sql_up.Size() == 0 && meta_up.Size() == 0 {
+		if sql_up.Size() == 0 && meta_up.Size() == 0 && sql_down.Size() == 0 && meta_down.Size() == 0 {
 			// No changes, no tests !
-			runner.Logger().Println(au.BrightGreen("≡"), "no changes to apply")
+			runner.Logger().Println(au.BrightGreen("≡"), "no changes to apply for namespace", au.BrightMagenta(local.Namespace).String(), "revision", au.BrightGreen(local.Revision).String())
 			return nil
+		} else {
+			runner.Logger().Println(au.BrightGreen("→"), "applying mutations for namespace", au.BrightMagenta(local.Namespace).String(), "revision", au.BrightGreen(local.Revision).String())
 		}
 
 		if sql_down.Size() > 0 {
