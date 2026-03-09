@@ -31,6 +31,8 @@
   down: DROP FUNCTION f(a1 integer, a2 text);
 - up: CREATE FUNCTION f(a1 integer, a2 text DEFAULT 'foo') RETURNS void AS $$ $$ LANGUAGE sql;
   down: DROP FUNCTION f(a1 integer, a2 text);
+- up: CREATE FUNCTION f(a1 integer, a2 text DEFAULT 'foo', a3 text[] = 'bar') RETURNS void AS $$ $$ LANGUAGE sql;
+  down: DROP FUNCTION f(a1 integer, a2 text, a3 text[]);
 # CreatePolicyOrTriggerStmt
 - up: CREATE POLICY p ON t USING (true);
   down: DROP POLICY p ON t;

@@ -411,21 +411,24 @@ func opt(s ...any) *combinator {
 
 // Returns a parser that
 type notCombinator struct {
-	combinator *combinator
+	combinators []*combinator
 }
 
 func (n *notCombinator) Parse(st state) state {
-	newst := n.combinator.ParseState(st)
-	if newst.isNoMatch() {
-		return st
+	for _, comb := range n.combinators {
+		newst := comb.ParseState(st)
+		if newst.isMatch() {
+			return st.noMatch()
+		}
 	}
-	return st.noMatch()
+	st.pos++
+	return st
 }
 
-func not(s any) *combinator {
+func not(s ...any) *combinator {
 	return &combinator{
 		parser: &notCombinator{
-			combinator: getCombinator(s),
+			combinators: getCombinatorSlice(s...),
 		},
 	}
 }

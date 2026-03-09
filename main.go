@@ -40,8 +40,9 @@ func (c CollectCmd) Run() error {
 }
 
 type ApplyCmd struct {
-	Host  string   `arg:"" help:"Database host."`
-	Paths []string `arg:"" help:"Paths to apply."`
+	Host     string   `arg:"" help:"Database host."`
+	Paths    []string `arg:"" help:"Paths to apply."`
+	Override bool     `short:"o" name:"override" help:"Save the mutations to the database, but don't run them."`
 }
 
 type DryCmd struct {

@@ -30,10 +30,10 @@ var auto_create = seq("create",
 			c(opt(id, ".")),
 			c(operator),
 			"(",
-			zero_or_more(not(")"), either(
+			zero_or_more(either(
 				seq("leftarg", "=", capture("left", id)),
 				seq("rightarg", "=", capture("right", id)),
-				until(either(",", ")")),
+				zero_or_more(not(",", ")")),
 			), opt(",")),
 			")",
 		).Produce(captured, "(", groupOrDefault("left", "none"), ",", group("right"), ")"),
@@ -68,7 +68,7 @@ var auto_create = seq("create",
 			zero_or_more(seq(
 				opt(either("in", "inout", "out", "variadic")),
 				c(id),
-				opt(seq(not("default"), c(id))),
+				opt(c(zero_or_more(not("default", "=", ",", ")")))),
 				opt(either("=", "default")),
 				until(either(",", ")")),
 				c(opt(",")),
@@ -94,7 +94,10 @@ var auto_create = seq("create",
 		// POLICY
 		// https://www.postgresql.org/docs/18/sql-createpolicy.html
 		// https://www.postgresql.org/docs/18/sql-droppolicy.html
-		c("policy", id, "on", id),
+		seq(
+			c("policy", id),
+			c("on", id),
+		),
 
 		// CAST
 		// https://www.postgresql.org/docs/18/sql-createcast.html
