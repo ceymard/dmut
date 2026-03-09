@@ -47,10 +47,9 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 		}
 
 		if sql_down.Size() > 0 {
-			_, full_meta_up := local.GetMutationsDelta(nil, ITER_META)
-			full_meta_down, _ := distant.GetMutationsDelta(nil, ITER_META)
-			meta_down = full_meta_down
-			meta_up = full_meta_up
+			var fake_empty_local_set *MutationSet = nil
+			_, meta_up = local.GetMutationsDelta(nil, ITER_META)
+			meta_down, _ = fake_empty_local_set.GetMutationsDelta(distant, ITER_META)
 		}
 
 		if err := runner.Begin(); err != nil {
