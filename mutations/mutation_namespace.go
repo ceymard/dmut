@@ -1,6 +1,8 @@
 package mutations
 
 import (
+	"math"
+
 	"github.com/samber/oops"
 	"github.com/ugurcsen/gods-generic/maps/linkedhashmap"
 )
@@ -8,12 +10,14 @@ import (
 type RevisionSequence struct {
 	Revisions   map[int]*MutationSet
 	MaxRevision int
+	MinRevision int
 }
 
 func NewRevisionSequence() *RevisionSequence {
 	return &RevisionSequence{
 		Revisions:   make(map[int]*MutationSet),
 		MaxRevision: 0,
+		MinRevision: math.MaxInt,
 	}
 }
 
@@ -35,6 +39,10 @@ func (rs *RevisionSequence) AddSet(set *MutationSet) error {
 		rs.MaxRevision = set.Revision
 	}
 
+	if set.Revision < rs.MinRevision && set.Revision != 0 {
+		rs.MinRevision = set.Revision
+	}
+
 	return nil
 }
 
@@ -50,21 +58,26 @@ func NewMutationNamespace() *MutationNamespace {
 
 // Ensure there is no gap in the revision sequence and that there is a default revision that will be applied
 func (ns MutationNamespace) EnsureContinuousRevisions() error {
-	for _, revision_sequence := range ns.Values() {
-
-		last_revision_nb := 0
-		for i := 1; i < len(revision_sequence.Revisions)-2; i++ {
-			last_revision_nb = revision_sequence.Revisions[i].Revision
-			if revision_sequence.Revisions[i].Revision != revision_sequence.Revisions[i-1].Revision+1 {
-				return oops.In("mutations").With("revision", revision_sequence.Revisions[i].Revision).Errorf("revision %d is not continuous", revision_sequence.Revisions[i].Revision)
-			}
+	for _, namespace := range ns.Keys() {
+		revision_sequence, ok := ns.Map.Get(namespace)
+		if !ok {
+			return oops.In("mutations").With("namespace", namespace).Errorf("no revision sequence found")
 		}
 
-		last_revision := revision_sequence.Revisions[len(revision_sequence.Revisions)-1]
-		if last_revision.Revision == 0 {
-			last_revision.Revision = last_revision_nb + 1
+		if revision, ok := revision_sequence.Revisions[0]; ok {
+			revision.Revision = revision_sequence.MaxRevision + 1
+			revision_sequence.MaxRevision = revision.Revision
+			delete(revision_sequence.Revisions, 0)
+			revision_sequence.AddSet(revision)
 		}
 
+		if len(revision_sequence.Revisions) == 0 {
+			return oops.In("mutations").With("namespace", namespace).Errorf("no revisions found")
+		}
+
+		if len(revision_sequence.Revisions) != revision_sequence.MaxRevision-revision_sequence.MinRevision+1 {
+			return oops.In("mutations").With("namespace", namespace).With("min_revision", revision_sequence.MinRevision).With("max_revision", revision_sequence.MaxRevision).Errorf("revision sequence is not continuous")
+		}
 	}
 	return nil
 }

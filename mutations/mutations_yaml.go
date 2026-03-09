@@ -62,12 +62,6 @@ func (ms *MutationSet) readFile(system fs.FS, filename string) error {
 					return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding __revision %T", value)
 				}
 				ms.Revision = revision
-			case "__override":
-				var override bool
-				if err := yaml.NodeToValue(value, &override); err != nil {
-					return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding __override %T", value)
-				}
-				ms.Override = override
 			default:
 				if _, err := parseMutation(key, ms, value); err != nil {
 					return err

@@ -81,7 +81,7 @@ type SaveableMutation struct {
 func (mut *Mutation) ShouldBeSaved() bool {
 	return mut.SqlChildren.Size() > 0 ||
 		mut.MetaChildren.Size() > 0 ||
-		(mut.NewSql == nil && len(mut.Sql) > 0 || mut.NewSql != nil && len(mut.NewSql) > 0) ||
+		(mut.NewSql == nil && len(mut.Sql) > 0 || len(mut.NewSql) > 0) ||
 		len(mut.Meta) > 0
 }
 
