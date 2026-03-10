@@ -249,6 +249,7 @@ func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
 
 	var muts []*Mutation = make([]*Mutation, 0, mutations.Size())
 	for m := range mutations.AllMutations() {
+
 		if m.ShouldBeSaved() {
 			muts = append(muts, m)
 		}
@@ -266,10 +267,11 @@ func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
 			file,
 			name,
 			needs,
+			new_needs,
 			meta_needs,
 			meta,
 			sql,
-			overriden
+			new_sql
 		)
 		SELECT
 			$2,
@@ -277,12 +279,13 @@ func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
 			coalesce(file, ''),
 			name,
 			coalesce(needs, '{}'::text[]),
+			new_needs,
 			coalesce(meta_needs, '{}'::text[]),
 			coalesce(meta, '{}'::__dmut__.mutation_statement[]),
 			coalesce(sql, '{}'::__dmut__.mutation_statement[]),
-			coalesce(overriden, false)
+			new_sql
 		FROM json_populate_recordset(NULL::__dmut__.mutations, $1::json)
-		ON CONFLICT (namespace, name) DO UPDATE SET file = excluded.file, needs = excluded.needs, meta_needs = excluded.meta_needs, meta = excluded.meta, sql = excluded.sql, overriden = excluded.overriden`
+		ON CONFLICT (namespace, name) DO UPDATE SET file = excluded.file, needs = excluded.needs, meta_needs = excluded.meta_needs, meta = excluded.meta, sql = excluded.sql, new_sql = excluded.new_sql`
 
 	if err := r.exec(nil, sql, muts_json, mutations.Namespace, mutations.Revision); err != nil {
 		return wrapPgError(err, sql)

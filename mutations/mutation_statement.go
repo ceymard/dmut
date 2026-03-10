@@ -12,6 +12,7 @@ type MutationStatement struct {
 }
 
 func parseStatements(value ast.Node) (list []MutationStatement, err error) {
+	list = []MutationStatement{}
 	if seq, ok := value.(*ast.SequenceNode); ok {
 		for _, node := range seq.Values {
 			stmt, err := parseSingleStatement(node)

@@ -23,7 +23,6 @@ type DigestBuffer struct {
 // and does so by "simplifying" it, ignoring white space where convenient, but
 // not inside strings or string like constructs like $$ ... $$
 func (dg *DigestBuffer) AddStatement(stmt string) error {
-	stmt = "   " + stmt
 	// var reader = strings.NewReader(stmt)
 
 	// not checking err since "normally" only code previously lexed

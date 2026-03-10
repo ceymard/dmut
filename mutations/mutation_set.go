@@ -13,10 +13,19 @@ type MutationChildrenMap map[string][]*Mutation
 
 type MutationSet struct {
 	*hashmap.Map[string, *Mutation]
-	Namespace string
-	Revision  int
-	File      string
-	Override  bool
+	Namespace    string
+	Revision     int
+	File         string
+	HasOverrides bool // has NewSql or NewNeeds
+}
+
+func (ms *MutationSet) AsNewMutationSet() *MutationSet {
+	ms2 := NewMutationSet(ms.Namespace, ms.Revision, ms.File)
+	for mut := range ms.AllMutations() {
+		ms2.AddMutation(mut.AsNewMutation())
+	}
+	ms2.ResolveDependencies()
+	return ms2
 }
 
 func (ms *MutationSet) GetMutation(name string) (*Mutation, bool) {
@@ -56,7 +65,6 @@ func NewMutationSet(namespace string, revision int, file string) *MutationSet {
 		Namespace: namespace,
 		Revision:  revision,
 		File:      file,
-		Override:  false,
 	}
 }
 
@@ -84,6 +92,10 @@ func (ms *MutationSet) AddMutation(mut *Mutation) error {
 	}
 	mut.Namespace = ms.Namespace
 	ms.Map.Put(mut.Name, mut)
+
+	if len(mut.NewSql) > 0 || len(mut.NewNeeds) > 0 {
+		ms.HasOverrides = true
+	}
 
 	return nil
 }

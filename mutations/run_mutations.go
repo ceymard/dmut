@@ -25,6 +25,7 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	options.Merge(opts...)
 
 	var err error
+	has_changes := true
 
 	if !options.Override {
 
@@ -35,52 +36,68 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 			return err
 		}
 
+		if distant.HasOverrides && distant.Revision < local.Revision {
+			runner.Logger().Println("using new_* mutations from previous revision")
+			distant = distant.AsNewMutationSet()
+		}
+
 		sql_down, sql_up := local.GetMutationsDelta(distant, ITER_SQL)
 		meta_down, meta_up := local.GetMutationsDelta(distant, ITER_META)
+		has_changes = sql_up.Size() != 0 || meta_up.Size() != 0 || sql_down.Size() != 0 || meta_down.Size() != 0
 
-		if sql_up.Size() == 0 && meta_up.Size() == 0 && sql_down.Size() == 0 && meta_down.Size() == 0 {
+		if !has_changes {
 			// No changes, no tests !
 			runner.Logger().Println(au.BrightGreen("≡"), "no changes to apply for namespace", au.BrightMagenta(local.Namespace).String(), "revision", au.BrightGreen(local.Revision).String())
-			return nil
 		} else {
 			runner.Logger().Println(au.BrightGreen("→"), "applying mutations for namespace", au.BrightMagenta(local.Namespace).String(), "revision", au.BrightGreen(local.Revision).String())
+
+			if sql_down.Size() > 0 {
+				var fake_empty_local_set *MutationSet = nil
+				_, meta_up = local.GetMutationsDelta(nil, ITER_META)
+				meta_down, _ = fake_empty_local_set.GetMutationsDelta(distant, ITER_META)
+			}
+
+			if err := runner.Begin(); err != nil {
+				return err
+			}
+
+			// 1. Start by downing the meta
+			if err := meta_down.Run(runner); err != nil {
+				return err
+			}
+
+			if err := sql_down.Run(runner); err != nil {
+				return err
+			}
+
+			if err := sql_up.Run(runner); err != nil {
+				return err
+			}
+
+			if err := meta_up.Run(runner); err != nil {
+				return err
+			}
 		}
 
-		if sql_down.Size() > 0 {
-			var fake_empty_local_set *MutationSet = nil
-			_, meta_up = local.GetMutationsDelta(nil, ITER_META)
-			meta_down, _ = fake_empty_local_set.GetMutationsDelta(distant, ITER_META)
-		}
-
-		if err := runner.Begin(); err != nil {
-			return err
-		}
-
-		// 1. Start by downing the meta
-		if err := meta_down.Run(runner); err != nil {
-			return err
-		}
-
-		if err := sql_down.Run(runner); err != nil {
-			return err
-		}
-
-		if err := sql_up.Run(runner); err != nil {
-			return err
-		}
-
-		if err := meta_up.Run(runner); err != nil {
-			return err
-		}
 	}
 
 	if err := runner.SaveMutations(local); err != nil {
 		return err
 	}
 
-	runner.Logger().Println(au.BrightGreen("🧪"), "performing tests")
-	if err := TestMutationSet(runner, local); err != nil {
-		return err
+	if has_changes {
+		runner.Logger().Println(au.BrightGreen("🧪"), "performing tests")
+		if err := TestMutationSet(runner, local); err != nil {
+			return err
+		}
+	}
+
+	if local.HasOverrides {
+		local2 := local.AsNewMutationSet()
+		runner.Logger().Println(au.BrightGreen("🧪"), "performing tests with new_*")
+		if err := TestMutationSet(runner, local2); err != nil {
+			return err
+		}
 	}
 	runner.Logger().Println(au.BrightGreen("✓"), "tests passed")
 

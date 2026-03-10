@@ -1,7 +1,6 @@
 package mutations
 
 import (
-	"encoding/json"
 	"iter"
 
 	"github.com/goccy/go-yaml"
@@ -54,8 +53,8 @@ type Mutation struct {
 	Meta      []MutationStatement `json:"meta,omitempty"`
 
 	//
-	NewNeeds []string            `json:"-"`
-	NewSql   []MutationStatement `json:"-"`
+	NewNeeds []string            `json:"new_needs"`
+	NewSql   []MutationStatement `json:"new_sql"`
 
 	// Will only be used when loading from yaml, not from database
 	SqlParents   *hashset.Set[*Mutation] `json:"-"`
@@ -67,48 +66,12 @@ type Mutation struct {
 	ChildrenMutations MutationMap `json:"-"`
 }
 
-type SaveableMutation struct {
-	Name      string `json:"name"`
-	File      string `json:"file"`
-	Namespace string `json:"namespace"`
-
-	Needs     []string            `json:"needs,omitempty"`
-	Sql       []MutationStatement `json:"sql,omitempty"`
-	MetaNeeds []string            `json:"meta_needs,omitempty"`
-	Meta      []MutationStatement `json:"meta,omitempty"`
-}
-
 func (mut *Mutation) ShouldBeSaved() bool {
-	return mut.SqlChildren.Size() > 0 ||
-		mut.MetaChildren.Size() > 0 ||
-		(mut.NewSql == nil && len(mut.Sql) > 0 || len(mut.NewSql) > 0) ||
-		len(mut.Meta) > 0
-}
-
-func (mut *Mutation) MarshalJSON() ([]byte, error) {
-
-	saveable_mut := &SaveableMutation{
-		Name:      mut.Name,
-		File:      mut.File,
-		Namespace: mut.Namespace,
-		Needs:     mut.Needs,
-		Sql:       mut.Sql,
-		MetaNeeds: mut.MetaNeeds,
-		Meta:      mut.Meta,
-	}
-
-	if mut.NewNeeds != nil {
-		saveable_mut.Needs = mut.NewNeeds
-	}
-	if mut.NewSql != nil {
-		saveable_mut.Sql = mut.NewSql
-	}
-
-	return json.Marshal(saveable_mut)
+	return len(mut.NewSql) > 0 || len(mut.NewNeeds) > 0 || len(mut.Sql) > 0 || len(mut.Needs) > 0 || len(mut.Meta) > 0 || len(mut.MetaNeeds) > 0
 }
 
 func parseStringList(value ast.Node) (list []string, err error) {
-	var value_list []string
+	var value_list []string = make([]string, 0)
 	if err := yaml.NodeToValue(value, &value_list); err != nil {
 		return nil, oops.In("mutations").Wrapf(err, "error decoding value %T", value)
 	}
@@ -122,7 +85,6 @@ func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation,
 	}
 
 	mut = &Mutation{set: ms, Name: name}
-	ms.AddMutation(mut)
 
 	oo := oops.In("mutations").With("mutation", mut.Name).With("file", ms.File).With("namespace", ms.Namespace)
 
@@ -195,7 +157,31 @@ func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation,
 			return nil, oo.Errorf("unknown key '%s'", key)
 		}
 	}
+	ms.AddMutation(mut)
 	return mut, nil
+}
+
+func (mut *Mutation) AsNewMutation() *Mutation {
+	mut2 := &Mutation{
+		Name:      mut.Name,
+		File:      mut.File,
+		Namespace: mut.Namespace,
+		Needs:     mut.Needs,
+		Sql:       mut.Sql,
+		MetaNeeds: mut.MetaNeeds,
+		Meta:      mut.Meta,
+	}
+
+	if mut.NewSql != nil {
+		mut2.Sql = mut.NewSql
+		mut2.NewSql = nil
+	}
+	if mut.NewNeeds != nil {
+		mut2.Needs = mut.NewNeeds
+		mut2.NewNeeds = nil
+	}
+
+	return mut2
 }
 
 func (mut *Mutation) DisplayName() string {

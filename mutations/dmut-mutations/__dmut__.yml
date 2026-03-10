@@ -23,12 +23,13 @@ dmut.mutations:
         revision int not null,
 
         needs text[] not null,
+        new_needs text[],
         meta_needs text[] not null,
         sql __dmut__.mutation_statement[] not null,
+        new_sql __dmut__.mutation_statement[],
         meta __dmut__.mutation_statement[] not null,
 
         ts timestamp with time zone not null default now(),
-        overriden boolean not null default false,
 
         primary key (namespace, name)
       );

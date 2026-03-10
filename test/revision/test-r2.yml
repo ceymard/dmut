@@ -1,0 +1,27 @@
+# yaml-embedded-languages: sql
+
+__namespace: test
+__revision: 2
+
+test:
+  new_sql:
+    - |
+      create table test (
+        id serial primary key,
+        name text not null,
+        age integer not null default 0
+      );
+
+  sql:
+    - |
+      create table test (
+        id serial primary key,
+        name text not null
+      );
+
+  children:
+    add_column_age:
+      new_sql: []
+      sql:
+        - |
+          alter table test add column age integer not null default 0;

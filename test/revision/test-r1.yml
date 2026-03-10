@@ -1,0 +1,12 @@
+# yaml-embedded-languages: sql
+
+__namespace: test
+__revision: 1
+
+test:
+  sql:
+    - |
+      create table test (
+        id serial primary key,
+        name text not null
+      );
