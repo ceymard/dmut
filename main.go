@@ -21,6 +21,7 @@ type CLI struct {
 	Apply   ApplyCmd   `cmd:"" help:"Apply the mutations to the database."`
 	Down    DownCmd    `cmd:"" help:"Down the mutations from the database."`
 	Version VersionCmd `cmd:"" help:"Show the version."`
+	Explode ExplodeCmd `cmd:"" help:"Explode mutations into individual yaml files."`
 
 	Test   TestCmd   `cmd:"" help:"Test the mutations on an empty test database that will be created on the fly."`
 	Legacy LegacyCmd `cmd:"" help:"Extract a yaml from a legacy dmut system prior to version 1.0.0"`

@@ -35,6 +35,9 @@ func (ms *MutationSet) readFile(system fs.FS, filename string) error {
 		if err == io.EOF {
 			break // normal end of stream
 		}
+		if err != nil {
+			return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding file %s", filename)
+		}
 
 		map_node, ok := node.(*ast.MappingNode)
 		if !ok {

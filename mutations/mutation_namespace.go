@@ -50,6 +50,10 @@ type MutationNamespace struct {
 	*linkedhashmap.Map[string, *RevisionSequence]
 }
 
+func (ns *MutationNamespace) DeleteNamespace(namespace string) {
+	ns.Map.Remove(namespace)
+}
+
 func NewMutationNamespace() *MutationNamespace {
 	return &MutationNamespace{
 		Map: linkedhashmap.New[string, *RevisionSequence](),

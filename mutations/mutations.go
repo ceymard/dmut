@@ -2,6 +2,7 @@ package mutations
 
 import (
 	"iter"
+	"strings"
 
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
@@ -64,6 +65,10 @@ type Mutation struct {
 
 	// Only used during yaml parsing
 	ChildrenMutations MutationMap `json:"-"`
+}
+
+func (mut *Mutation) NameComponents() []string {
+	return strings.Split(mut.Name, ".")
 }
 
 func (mut *Mutation) ShouldBeSaved() bool {

@@ -43,6 +43,11 @@ func (t TestCmd) Run() error {
 		t.Password = "test"
 	}
 
+	_, err := mutations.LoadYamlMutations(t.Paths...)
+	if err != nil {
+		return err
+	}
+
 	log.Println("testing mutations on", image)
 	ctx := context.Background()
 	container, err := postgres.Run(ctx,
