@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/ceymard/dmut/mutations"
+	"github.com/ceymard/dmut/v2/mutations"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -78,7 +78,7 @@ func (t TestCmd) Run() error {
 	}
 	log.Println("test container URI:", uri)
 
-	if err := runMutations(uri, t.Paths, mutations.MutationRunnerOptions{
+	if err := mutations.ReadAndRunMutations(uri, t.Paths, mutations.MutationRunnerOptions{
 		Verbose: t.Verbose,
 		Commit:  false,
 		All:     t.All,

@@ -162,3 +162,24 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 
 	return nil
 }
+
+func ReadAndRunMutations(uri string, paths []string, opts MutationRunnerOptions) error {
+
+	muts, err := LoadYamlMutations(paths...)
+	if err != nil {
+		return err
+	}
+
+	runner, err := NewPgRunner(uri, opts.Verbose)
+	if err != nil {
+		return err
+	}
+	defer runner.Close()
+
+	// Test before
+	if err := RunAllMutations(runner, muts, &opts); err != nil {
+		return err
+	}
+
+	return nil
+}

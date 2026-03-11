@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ceymard/dmut/mutations"
+	"github.com/ceymard/dmut/v2/mutations"
 	"github.com/goccy/go-yaml"
 	"github.com/jackc/pgx/v4"
 )

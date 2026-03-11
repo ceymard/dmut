@@ -1,6 +1,6 @@
 package main
 
-import "github.com/ceymard/dmut/mutations"
+import "github.com/ceymard/dmut/v2/mutations"
 
 type DownCmd struct {
 	Uri       string `arg:"" help:"Database host."`

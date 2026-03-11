@@ -1,6 +1,6 @@
 package main
 
-import "github.com/ceymard/dmut/mutations"
+import "github.com/ceymard/dmut/v2/mutations"
 
 type ApplyCmd struct {
 	Uri      string   `arg:"" help:"Database host."`
@@ -12,7 +12,7 @@ type ApplyCmd struct {
 
 func (a ApplyCmd) Run() error {
 
-	if err := runMutations(a.Uri, a.Paths, mutations.MutationRunnerOptions{
+	if err := mutations.ReadAndRunMutations(a.Uri, a.Paths, mutations.MutationRunnerOptions{
 		Verbose:  a.Verbose,
 		Commit:   !a.Dry,
 		Override: a.Override,
