@@ -25,6 +25,10 @@ func (c DownCmd) Run() error {
 
 	fake_empty_local_set.Revision = db_mutations.Revision
 
+	if err := runner.Begin(); err != nil {
+		return err
+	}
+
 	if err := mutations.RunMutations(runner, fake_empty_local_set, &mutations.MutationRunnerOptions{
 		Verbose: c.Verbose,
 		Commit:  !c.Dry,

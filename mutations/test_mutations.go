@@ -10,17 +10,17 @@ import (
 // Consider that the set is already up in the database.
 func TestMutationSet(runner Executor, set *MutationSet) (err error) {
 
-	test_runner := runner.GetTestExecutor()
+	runner.SetTesting()
+	defer func() {
+		runner.ResumeLogging()
+		if err != nil {
+			runner.Logger().Println(runner.GetStringOutput())
+		}
+	}()
 
-	if err = test_runner.SavePoint("test_mutation_set"); err != nil {
+	if err = runner.SavePoint("test_mutation_set"); err != nil {
 		return err
 	}
-	defer func() {
-		if err != nil {
-			runner.Logger().Println(test_runner.GetStringOutput())
-		}
-
-	}()
 
 	// Downing
 	var fake_empty_local_set *MutationSet = nil
@@ -28,33 +28,33 @@ func TestMutationSet(runner Executor, set *MutationSet) (err error) {
 	meta_down, _ := fake_empty_local_set.GetMutationsDelta(set, ITER_META)
 
 	// Down the meta to be able to test it independently
-	if err = meta_down.Run(test_runner); err != nil {
+	if err = meta_down.Run(runner); err != nil {
 		return err
 	}
 
 	// Test the meta
-	if err = MutationTestSequence(test_runner, set, ITER_META); err != nil {
+	if err = MutationTestSequence(runner, set, ITER_META); err != nil {
 		return err
 	}
 
-	test_runner.Logger().Println("Downing SQL", sql_down.Size())
+	runner.Logger().Println("Downing SQL", sql_down.Size())
 
 	// Then, down the SQL
-	if err = sql_down.Run(test_runner); err != nil {
+	if err = sql_down.Run(runner); err != nil {
 		return err
 	}
 
 	// Test the SQL
-	if err = MutationTestSequence(test_runner, set, ITER_SQL); err != nil {
+	if err = MutationTestSequence(runner, set, ITER_SQL); err != nil {
 		return err
 	}
 
-	if err = test_runner.RollbackToSavepoint("test_mutation_set"); err != nil {
-		test_runner.Logger().Println(au.BrightRed("error rollbacking to savepoint"), err)
+	if err = runner.RollbackToSavepoint("test_mutation_set"); err != nil {
+		runner.Logger().Println(au.BrightRed("error rollbacking to savepoint"), err)
 	}
 
-	if err = test_runner.ReleaseSavepoint("test_mutation_set"); err != nil {
-		test_runner.Logger().Println(au.BrightRed("error rollbacking to savepoint"), err)
+	if err = runner.ReleaseSavepoint("test_mutation_set"); err != nil {
+		runner.Logger().Println(au.BrightRed("error rollbacking to savepoint"), err)
 	}
 
 	return nil

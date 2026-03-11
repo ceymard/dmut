@@ -9,6 +9,7 @@ type MutationRunnerOptions struct {
 	Verbose  bool
 	Commit   bool
 	Override bool
+	All      bool
 }
 
 func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
@@ -16,9 +17,11 @@ func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
 		o.Verbose = o.Verbose || other.Verbose
 		o.Commit = o.Commit || other.Commit
 		o.Override = o.Override || other.Override
+		o.All = o.All || other.All
 	}
 }
 
+// RunMutations runs the mutations for a given local mutation set. A transaction should be started before calling this function.
 func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOptions) error {
 
 	var options = MutationRunnerOptions{}
@@ -55,10 +58,6 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 				var fake_empty_local_set *MutationSet = nil
 				_, meta_up = local.GetMutationsDelta(nil, ITER_META)
 				meta_down, _ = fake_empty_local_set.GetMutationsDelta(distant, ITER_META)
-			}
-
-			if err := runner.Begin(); err != nil {
-				return err
 			}
 
 			// 1. Start by downing the meta
@@ -126,13 +125,18 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 
 		// Db has no mutations, only apply the highest local one
 		if db_mutations.Revision == 0 {
-			runner.Logger().Println(au.BrightGreen("→"), "no database mutations,applying highest local revision for namespace", namespace)
-			if revision, ok := revisions.Revisions[revisions.MaxRevision]; ok {
-				if err := RunMutations(runner, revision, opts...); err != nil {
-					return err
+			if !options.All {
+				runner.Logger().Println(au.BrightGreen("→"), "no database mutations,applying highest local revision for namespace", namespace)
+				if revision, ok := revisions.Revisions[revisions.MaxRevision]; ok {
+					if err := RunMutations(runner, revision, opts...); err != nil {
+						return err
+					}
 				}
+				continue
+			} else {
+				// db revision cannot be less than 1
+				db_mutations.Revision = 1
 			}
-			continue
 		}
 
 		for i := db_mutations.Revision; i <= revisions.MaxRevision; i++ {

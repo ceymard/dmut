@@ -25,3 +25,6 @@ test:
       sql:
         - |
           alter table test add column age integer not null default 0;
+
+        - up: |
+            insert into test (name, age) values ('test', 12);

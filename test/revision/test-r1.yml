@@ -10,3 +10,7 @@ test:
         id serial primary key,
         name text not null
       );
+
+  meta:
+    - up: |
+        insert into test (name) values ('test1');

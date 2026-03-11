@@ -39,30 +39,41 @@ func NewPgRunner(url string, verbose bool) (*PgRunner, error) {
 	res.logger.SetPrefix(au.BrightGreen("pg ").String())
 
 	res.logger.Println("connecting to", url)
-	conn, err := pgx.Connect(context.Background(), url)
+	config, err := pgx.ParseConfig(url)
 	if err != nil {
 		return nil, err
 	}
+
+	config.OnNotice = pgconn.NoticeHandler(func(conn *pgconn.PgConn, notice *pgconn.Notice) {
+		res.logger.Println(au.BrightYellow("notice").String(), notice.Message)
+		// oo := oops.With("message", notice.Message).New("notice")
+		// res.logger.Printf("%+v\n", oo)
+	})
+
+	conn, err := pgx.ConnectConfig(context.Background(), config)
+	if err != nil {
+		return nil, err
+	}
+
 	res.conn = conn
 	return res, nil
 }
 
-func (r *PgRunner) GetTestExecutor() Executor {
+func (r *PgRunner) ResumeLogging() {
+	r.logger.SetOutput(os.Stdout)
+	r.logger.SetPrefix("")
+}
 
-	res := *r
-	res.logger = log.New(os.Stdout, "", r.logger.Flags())
-	res.logger.SetPrefix(au.BrightMagenta("test ").String())
-	res.logger.SetOutput(&res.buf)
-
-	return &res
+func (r *PgRunner) SetTesting() {
+	r.buf = bytes.Buffer{}
+	r.logger.SetPrefix(au.BrightMagenta("test ").String())
+	r.logger.SetOutput(&r.buf)
 }
 
 func (r *PgRunner) GetStringOutput() string {
-	return r.buf.String()
-}
-
-func (r *PgRunner) GetTestOutput() string {
-	return r.buf.String()
+	res := r.buf.String()
+	r.buf.Reset()
+	return res
 }
 
 func wrapPgError(err error, sql string) error {

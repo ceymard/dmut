@@ -14,6 +14,7 @@ import (
 
 type TestCmd struct {
 	Verbose  bool     `short:"v" help:"Verbose output."`
+	All      bool     `short:"a" help:"Test all revisions, not just the latest one."`
 	Image    string   `short:"i" name:"test-image" help:"Postgres image name to test on."`
 	Database string   `short:"d" name:"test-database" help:"Database name to test on."`
 	Username string   `short:"u" name:"test-username" help:"Username to test on."`
@@ -75,6 +76,7 @@ func (t TestCmd) Run() error {
 	if err := runMutations(uri, t.Paths, mutations.MutationRunnerOptions{
 		Verbose: t.Verbose,
 		Commit:  false,
+		All:     t.All,
 	}); err != nil {
 		return err
 	}

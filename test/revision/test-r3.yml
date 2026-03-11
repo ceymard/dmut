@@ -15,3 +15,14 @@ test:
   meta:
     - |
       create view test_view as select age from test;
+    - up: |
+        do $$
+        declare
+          v_count integer;
+        begin
+          v_count := (select count(*) from test_view);
+          if v_count is null then
+            raise exception 'test_view should not be empty - test table was most likely dropped when it should not have been';
+          end if;
+          raise notice 'there was % rows in test_view', v_count;
+        end $$ language plpgsql;
