@@ -46,5 +46,8 @@ func mutationStatementFromString(str string) (MutationStatement, error) {
 	if err != nil {
 		return MutationStatement{}, oops.In("mutations").With("statement", str).Wrapf(err, "can't generate undo statement from %s", str)
 	}
+	if res == "" {
+		return MutationStatement{}, oops.In("mutations").With("statement", str).Errorf("empty undo statement generated from %s", str)
+	}
 	return MutationStatement{Up: str, Down: res}, nil
 }

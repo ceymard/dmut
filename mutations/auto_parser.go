@@ -31,7 +31,7 @@ var (
 
 		"MultilineString": {
 			{Name: "MultiStop", Pattern: `\1`, Action: lexer.Pop()},
-			{Name: "char", Pattern: `.|\n`},
+			{Name: "Char", Pattern: `.|\n`},
 		},
 	})
 )
@@ -122,7 +122,7 @@ func (c *combinator) Produce(producers ...any) *combinator {
 func (c *combinator) Parse(s string) (state, error) {
 	tokens, err := split(s)
 	if err != nil {
-		return state{}, nil
+		return state{}, err
 	}
 	return c.ParseState(state{
 		file:    s,

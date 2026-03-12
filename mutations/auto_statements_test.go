@@ -39,7 +39,6 @@ func TestAutoDowner(t *testing.T) {
 			if !compareTokens(t, id_token, got, tt.Down) {
 				displayMismatch(t, strings.ToLower(tt.Down), strings.ToLower(got))
 			} else {
-				// log.Println("=>", got)
 			}
 		})
 	}
@@ -124,7 +123,7 @@ func displayMismatch(t *testing.T, wants string, got string) {
 	}
 
 	wantInLCS, gotInLCS, has_diffs := lcsAlignment(wantsTokens, gotTokens)
-	if has_diffs {
+	if has_diffs || got == "" {
 		var wantOut, gotOut strings.Builder
 		for i, tk := range wantsTokens {
 			if wantInLCS[i] {

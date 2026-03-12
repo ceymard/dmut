@@ -91,5 +91,19 @@
   down: DROP OPERATOR + (int4, int4);
 - up: CREATE OPERATOR @ (RIGHTARG = mytype, FUNCTION = mytype_negate);
   down: DROP OPERATOR @ (NONE, mytype);
-- up: CREATE OPERATOR myschema.=== (LEFTARG = box, RIGHTARG = box, FUNCTION = area_equal_function,COMMUTATOR = ===, NEGATOR = !==);"
+- up: CREATE OPERATOR myschema.=== (LEFTARG = box, RIGHTARG = box, FUNCTION = area_equal_function,COMMUTATOR = ===, NEGATOR = !==);
   down: DROP OPERATOR myschema.=== (box, box);
+- up: |-
+    ALTER TABLE api.project
+    ADD CONSTRAINT "ensure project json is valid"
+    CHECK (jsonb_matches_schema($${
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "zboub": { "dsf": 1 }
+      }
+    }$$, project))
+    NOT VALID;
+  down: |-
+    ALTER TABLE api.project DROP CONSTRAINT "ensure project json is valid";
