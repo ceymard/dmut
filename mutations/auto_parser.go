@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	RestPattern = `\d+|::|<>|!=|<=|>=|[-+?!~|^#*/%,.()=<>:\[\]]`
+	RestPattern = `\d+|::|<>|!=|<=|>=|[-+?!~|^#*/%,.()=<>:\[\]{}]`
 	// The sql lexer
 	SqlLexer = lexer.MustStateful(lexer.Rules{
 		"Root": {
@@ -31,7 +31,14 @@ var (
 
 		"MultilineString": {
 			{Name: "MultiStop", Pattern: `\1`, Action: lexer.Pop()},
-			{Name: "Char", Pattern: `.|\n`},
+			{Name: "multiCommentStart", Pattern: `/\*`, Action: lexer.Push("MultiComment")},
+			{Name: "MultiStart", Pattern: `(\$[a-zA-Z_0-9]*\$)`, Action: lexer.Push("MultilineString")},
+			{Name: "whiteSpace", Pattern: `( |\s|\n)+|--[^\n]*\n?|/\*(.|\n)*?\*/`},
+			{Name: "Semicolon", Pattern: `;`},
+			{Name: "Id", Pattern: `(?:"(""|[^"])*"|[$a-zA-Z_][\w$]*|\[[^\]]+\])(?:\.(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\]))*`},
+			{Name: "Operator", Pattern: "[+\\-*/<>=~!@#%^&|`?$]{1,63}"},
+			{Name: "String", Pattern: `'(?:''|[^'])*'`},
+			{Name: "Rest", Pattern: RestPattern},
 		},
 	})
 )
