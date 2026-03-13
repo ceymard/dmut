@@ -266,9 +266,11 @@ var auto_grant = seq(
 	"grant",
 	either(
 		seq(c(id), "to", capture("to", separated_by(",", id2))),
+		seq(c("all", "tables", "in", "schema", id), "to", capture("to", id2)),
 		seq(
 			c(until("on"), "on"),
 			opt(c(either(
+				seq("all", "tables", "in", "schema"),
 				"table",
 				seq(opt("materialized"), "view"),
 				"schema",

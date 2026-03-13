@@ -107,3 +107,6 @@
     NOT VALID;
   down: |-
     ALTER TABLE api.project DROP CONSTRAINT "ensure project json is valid";
+
+- up: GRANT SELECT ON ALL TABLES IN SCHEMA pgmq TO pg_monitor;
+  down: REVOKE SELECT ON ALL TABLES IN SCHEMA pgmq FROM pg_monitor;
