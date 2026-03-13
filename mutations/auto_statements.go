@@ -270,7 +270,7 @@ var auto_grant = seq(
 		seq(
 			c(until("on"), "on"),
 			opt(c(either(
-				seq("all", "tables", "in", "schema"),
+				seq("all", either("tables", "sequences", "functions", "routines", "procedures"), "in", "schema"),
 				"table",
 				seq(opt("materialized"), "view"),
 				"schema",
