@@ -196,8 +196,9 @@ var auto_create = seq("create",
 			opt(either("global", "local")),
 			opt(either("temporary", "temp")),
 			opt(either("unlogged")),
+			c("table"),
 			if_not_exists,
-			c("table", id),
+			c(id),
 		),
 
 		// TABLESPACE
