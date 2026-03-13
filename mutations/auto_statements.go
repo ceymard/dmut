@@ -1,5 +1,11 @@
 package mutations
 
+import (
+	"strings"
+
+	lexer "github.com/alecthomas/participle/v2/lexer"
+)
+
 // Parser overview: recursive descent that builds the "opposite" statement (e.g. CREATE → DROP).
 // Syntax validation is left to the database; this parser does not report SQL errors.
 //
@@ -16,10 +22,12 @@ var id = token(SqlLexer.Symbols()["Id"])
 var id2 = token(SqlLexer.Symbols()["Id"])
 var operator = token(SqlLexer.Symbols()["Operator"])
 var captured = group("")
+var if_not_exists = opt("if", "not", "exists")
 
 // var balanced_expr = c("balanced_expr")
 
 var auto_create = seq("create",
+	opt("or", "replace"),
 	either(
 
 		// OPERATOR
@@ -29,6 +37,7 @@ var auto_create = seq("create",
 			c("operator"),
 			c(opt(id, ".")),
 			c(operator),
+			if_not_exists,
 			"(",
 			zero_or_more(either(
 				seq("leftarg", "=", capture("left", id)),
@@ -112,8 +121,24 @@ var auto_create = seq("create",
 		// INDEX
 		// https://www.postgresql.org/docs/18/sql-createindex.html
 		// https://www.postgresql.org/docs/18/sql-dropindex.html
-		seq(opt("unique"), c("index"), opt("concurrently"), c(id)),
-
+		seq(opt("unique"), c("index"), opt("concurrently"), if_not_exists,
+			seq(
+				capture("index_name", id),
+				"on",
+				capture("schema", id).Produce(produceFunc(func(st state, old_results []result) state {
+					var _id = old_results[0].value.Value
+					if strings.Contains(_id, ".") {
+						// return the schema name
+						// return strings.Split(_id, ".")[0]
+						st.addResult("schema", lexer.Token{Value: strings.Split(_id, ".")[0], Pos: lexer.Position{Offset: -1}})
+						st.addResult("schema", lexer.Token{Value: ".", Pos: lexer.Position{Offset: -1}})
+						return st
+					}
+					st.addResult("schema", lexer.Token{Value: "", Pos: lexer.Position{Offset: -1}})
+					return st
+				})),
+			).Produce(group("schema"), group("index_name")),
+		),
 		// LANGUAGE
 		// https://www.postgresql.org/docs/18/sql-createlanguage.html
 		// https://www.postgresql.org/docs/18/sql-droplanguage.html
@@ -171,6 +196,7 @@ var auto_create = seq("create",
 			opt(either("global", "local")),
 			opt(either("temporary", "temp")),
 			opt(either("unlogged")),
+			if_not_exists,
 			c("table", id),
 		),
 
@@ -293,4 +319,14 @@ var auto_grant = seq(
 	),
 ).Produce("revoke", captured, " from", group("to"), ";")
 
-var AutoDowner = seq(either(auto_create, auto_alter_table, auto_grant, auto_comment), until_opt(";"))
+var default_privileges = seq(
+	c("alter", "default", "privileges", "in", "schema", id),
+	str("grant").Produce("revoke"),
+	c(id, "on"),
+	c(until("to")),
+	str("to").Produce("from"),
+	c(id),
+	c(opt(";")),
+)
+
+var AutoDowner = seq(either(default_privileges, auto_create, auto_alter_table, auto_grant, auto_comment), until_opt(";"))

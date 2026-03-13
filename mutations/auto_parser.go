@@ -2,7 +2,6 @@ package mutations
 
 import (
 	"strings"
-	"unicode"
 
 	lexer "github.com/alecthomas/participle/v2/lexer"
 	"github.com/samber/oops"
@@ -232,14 +231,6 @@ type result struct {
 	pos   int
 	group string
 	value lexer.Token
-}
-
-func (r *result) hasSpaceBefore(st *state) bool {
-	return r.value.Pos.Offset > 0 && unicode.IsSpace(rune(st.file[r.value.Pos.Offset-1])) || unicode.IsSpace(rune(r.value.Value[0]))
-}
-
-func (r *result) hasSpaceAfter(st *state) bool {
-	return len(st.results) > 0 && r.value.Pos.Offset > 0 && r.value.Pos.Offset < len(st.file)-1 && unicode.IsSpace(rune(st.file[r.value.Pos.Offset+len(r.value.Value)]))
 }
 
 type state struct {
@@ -632,5 +623,19 @@ func balanced_any(s ...any) *combinator {
 		parser: &balancedAny{
 			pairs: pairs,
 		},
+	}
+}
+
+type producerFunc struct {
+	fn func(state, []result) state
+}
+
+func (p *producerFunc) act(st state, old_results []result) state {
+	return p.fn(st, old_results)
+}
+
+func produceFunc(fn func(state, []result) state) producer {
+	return &producerFunc{
+		fn: fn,
 	}
 }

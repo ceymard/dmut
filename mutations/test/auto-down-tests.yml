@@ -22,7 +22,7 @@
 - up: CREATE INDEX CONCURRENTLY idx ON t (col);
   down: DROP INDEX idx;
 - up: CREATE INDEX idx ON myschema.t (col);
-  down: DROP INDEX idx;
+  down: DROP INDEX myschema.idx;
 - up: CREATE FUNCTION f() RETURNS int AS $$ SELECT 1 $$ LANGUAGE sql;
   down: DROP FUNCTION f();
 - up: CREATE FUNCTION f(integer) RETURNS int AS $f$ SELECT 1 $f$ LANGUAGE sql;
@@ -112,3 +112,7 @@
   down: REVOKE SELECT ON ALL TABLES IN SCHEMA pgmq FROM pg_monitor;
 - up: GRANT SELECT ON ALL SEQUENCES IN SCHEMA pgmq TO pg_monitor;
   down: REVOKE SELECT ON ALL SEQUENCES IN SCHEMA pgmq FROM pg_monitor;
+- up: ALTER DEFAULT PRIVILEGES IN SCHEMA pgmq GRANT SELECT ON TABLES TO pg_monitor;
+  down: ALTER DEFAULT PRIVILEGES IN SCHEMA pgmq REVOKE SELECT ON TABLES FROM pg_monitor;
+- up: CREATE INDEX IF NOT EXISTS idx_topic_bindings_covering ON pgmq.topic_bindings (pattern) INCLUDE (queue_name, compiled_regex);
+  down: DROP INDEX pgmq.idx_topic_bindings_covering;
