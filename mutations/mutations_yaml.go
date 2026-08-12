@@ -18,8 +18,57 @@ var dmut_mutations embed.FS
 
 type MutationMap map[string]*Mutation
 
-func (ms *MutationSet) readFile(system fs.FS, filename string) error {
-	ms.File = filename
+// readDocument reads a single yaml document into the set. Each document carries its
+// own __namespace and __revision, so a file may hold several of them.
+func (ms *MutationSet) readDocument(node ast.Node) error {
+	filename := ms.File
+
+	map_node, ok := node.(*ast.MappingNode)
+	if !ok {
+		return oops.In("mutations").With("filename", filename).Errorf("expected a mapping node, got %T", node)
+	}
+
+	for _, mapping := range map_node.Values {
+		key_node := mapping.Key
+		var key string
+		if err := yaml.NodeToValue(key_node, &key); err != nil {
+			return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding key %T", key_node)
+		}
+		value := mapping.Value
+
+		switch key {
+		case "__namespace":
+			var namespace string
+			if err := yaml.NodeToValue(value, &namespace); err != nil {
+				return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding __namespace %T", value)
+			}
+			ms.Namespace = namespace
+		case "__revision":
+			var revision int
+			if err := yaml.NodeToValue(value, &revision); err != nil {
+				return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding __revision %T", value)
+			}
+			ms.Revision = revision
+		default:
+			if _, err := parseMutation(key, ms, value); err != nil {
+				return err
+			}
+		}
+	}
+
+	// __namespace and __revision may appear after the mutations they apply to.
+	for mut := range ms.AllMutations() {
+		mut.Namespace = ms.Namespace
+	}
+
+	return nil
+}
+
+func readFile(namespace *MutationNamespace, system fs.FS, filename string) error {
+	if !strings.HasSuffix(filename, ".yaml") && !strings.HasSuffix(filename, ".yml") {
+		return nil
+	}
+
 	f, err := system.Open(filename)
 	if err != nil {
 		return oops.In("mutations").With("filename", filename).Wrapf(err, "error reading file %s", filename)
@@ -28,7 +77,6 @@ func (ms *MutationSet) readFile(system fs.FS, filename string) error {
 
 	dec := yaml.NewDecoder(f)
 	for {
-		// var mp = make(map[string]interface{})
 		var node ast.Node
 
 		err = dec.Decode(&node)
@@ -39,53 +87,13 @@ func (ms *MutationSet) readFile(system fs.FS, filename string) error {
 			return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding file %s", filename)
 		}
 
-		map_node, ok := node.(*ast.MappingNode)
-		if !ok {
-			return oops.In("mutations").With("filename", filename).Errorf("expected a mapping node, got %T", node)
+		ms := NewMutationSet("", 0, filename)
+		if err := ms.readDocument(node); err != nil {
+			return err
 		}
-
-		for _, mapping := range map_node.Values {
-			key_node := mapping.Key
-			var key string
-			if err := yaml.NodeToValue(key_node, &key); err != nil {
-				return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding key %T", key_node)
-			}
-			value := mapping.Value
-
-			switch key {
-			case "__namespace":
-				var namespace string
-				if err := yaml.NodeToValue(value, &namespace); err != nil {
-					return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding __namespace %T", value)
-				}
-				ms.Namespace = namespace
-			case "__revision":
-				var revision int
-				if err := yaml.NodeToValue(value, &revision); err != nil {
-					return oops.In("mutations").With("filename", filename).Wrapf(err, "error decoding __revision %T", value)
-				}
-				ms.Revision = revision
-			default:
-				if _, err := parseMutation(key, ms, value); err != nil {
-					return err
-				}
-			}
-		}
-
-	}
-	return nil
-}
-
-func readFile(namespace *MutationNamespace, system fs.FS, filename string) error {
-	if !strings.HasSuffix(filename, ".yaml") && !strings.HasSuffix(filename, ".yml") {
-		return nil
+		namespace.AddSet(ms)
 	}
 
-	ms := NewMutationSet("", 0, filename)
-	if err := ms.readFile(system, filename); err != nil {
-		return err
-	}
-	namespace.AddSet(ms)
 	return nil
 }
 

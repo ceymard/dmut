@@ -42,9 +42,13 @@ func parseSingleStatement(value ast.Node) (stmt MutationStatement, err error) {
 }
 
 func mutationStatementFromString(str string) (MutationStatement, error) {
-	res, err := AutoDowner.ParseAndGetDefault(str)
+	res, no_down, err := AutoDowner.ParseAndGetDefault(str)
 	if err != nil {
 		return MutationStatement{}, oops.In("mutations").With("statement", str).Wrapf(err, "can't generate undo statement from %s", str)
+	}
+	if no_down {
+		// The statement has no reverse by design, not because we failed to find one.
+		return MutationStatement{Up: str, Down: ""}, nil
 	}
 	if res == "" {
 		return MutationStatement{}, oops.In("mutations").With("statement", str).Errorf("empty undo statement generated from %s", str)

@@ -1,175 +1,395 @@
 # Dmut, a tool for database schema migrations
 
-Dmut is a database migration tool that takes an approach based on dependencies rather than sequential changes.
+Dmut is a database migration tool that takes an approach based on dependencies rather than
+sequential changes. You describe the objects you want and how they depend on each other; dmut
+works out what to drop and recreate when a definition changes.
 
 As of now, dmut only handles postgres, but other databases may be supported if the demand exists.
 
-It features the following :
+It features the following:
 
-- Testing :A fairly comprehensive testing system to ensure the mutations you write are reproducible and you don't end up in an unworkable state
-- Automatic reverse statements : most of the time, only specify the `create` statements, dmut will
-- Revisions :
-- Namespaces : to have different sets of mutations on a same database so that team can function independently
-- A distinction between "heavy" and "lightweight" statements
+- **Automatic reverse statements**: for most `CREATE`, `ALTER TABLE` and `GRANT` statements you
+  only write the "up" and dmut infers the "down".
+- **Testing**: on every apply, dmut replays each mutation up-and-down independently to make sure
+  your mutations are reproducible and you don't end up in an unworkable state.
+- **Revisions**: fold years of incremental `ALTER`s back into clean definitions without losing
+  data in the databases already running.
+- **Namespaces**: several independent sets of mutations on the same database, so teams can work
+  without stepping on each other.
+- **A distinction between "heavy" (`sql`) and "lightweight" (`meta`) statements**, so redeploying
+  functions, grants and policies never touches your tables.
 
-Whenever a mutation changes, its dependents are recursively undone first before undoing it, then it is redone and its dependents are re-run as well.
+Whenever a mutation changes, its dependents are recursively undone first, then it is undone,
+then it is redone and its dependents are re-run as well.
 
-When running, dmut performs the following operations :
+## Installation
 
-- Fetch currently applied mutations from the database and compute which need to be de-applied
-- If roles or sql changed (some sql statements have to be downed): undo all meta blocks and sync roles (remove obsolete, add missing).
-- If possible, in a temporary test database (on the same server), try to run all mutations indepentently.
-- If mutations changed: de-apply and re-apply according to the new `needs` clauses. This is where the mutations really are applied.
-- Try to down all mutations one by one (this is done using savepoints and does not lose data). The operation is aborted if one of them fails.
+```sh
+go install github.com/ceymard/dmut/v2@latest
+```
 
-As everything is ran inside a transaction, failure at any given step halts the process and mutations are not applied.
+or, from a clone (needs Go 1.25 or later):
 
-# Considerations
+```sh
+go build -o dmut .
+```
 
-- Do not use create "if not exists" or drop "if exists".
-- Never put CASCADE in DROP statement in your custom mutations : dmut relies on every object being created in their mutations and declaring dependencies explicitely. For your safety, it must break during its tests phases if they were not.
-- Put data-altering statements whose down incurs loss of data in `sql` blocks:
-  - CREATE TABLE
-  - CREATE INDEX (data is not lost, but indexes can be slow to create)
-  - CREATE TYPE
-  - `CREATE SCHEMA ...`
-  - `CREATE EXTENSION ...`
-  - `ALTER TABLE <table> ADD CONSTRAINT <name> <def> ...`
-  - `ALTER TABLE <table> ADD COLUMN <name> <def> ...`
+## Usage
 
-  - ...
+```
+dmut apply <uri> <paths...>       apply mutations to a database
+  -v, --verbose                     echo every statement as it runs
+  -d, --dry                         run everything, then roll back instead of committing
+  -o, --override                    record the mutations without applying them (see below)
 
-- Only put "lightweight" statements in meta blocks : grants, functions, policies and the like. These will be de-applied and re-applied often
-  - GRANT ...
-  - CREATE POLICY
-  - CREATE FUNCTION
-  - ALTER TABLE ... ENABLE ROW LEVEL SECURITY
-  - `CREATE FUNCTION <name>`
-  - `CREATE [MATERIALIZED] VIEW <name>`
-  - `ALTER TABLE <table> ALTER COLUMN <name> SET DEFAULT`
-  - `ALTER TABLE <table> ENABLE ROW LEVEL SECURITY`
-  - `CREATE POLICY <name> ...`
-  - `CREATE TRIGGER <name> ...`
-  - `GRANT ...`
+dmut test <paths...>              apply and test against a throwaway postgres (requires Docker)
+  -v, --verbose
+  -a, --all                         replay every revision from 1, not just the latest
+  -i, --test-image <image>          postgres image to run (default: postgres:14)
+  -d, --test-database <name>        (default: test)
+  -u, --test-username <name>        (default: test)
+  -p, --test-password <pass>        (default: test)
 
-# Mutation structure
+dmut down <uri> <namespace>       down everything dmut applied in a namespace
+  -v, --verbose
+  -d, --dry
 
-Mutations are defined in yaml files that are read recursively from the directories dmut is instructed to look at.
+dmut collect <outfile> <paths...> write every mutation back out as a single yaml file
+dmut explode -o <dir> <paths...>  split a single-document yaml file into one file per mutation
+dmut legacy <uri>                 dump a pre-1.0 dmut schema as yaml
+dmut version
+```
 
-Yaml files starting with an `_` will be ignored.
+`<uri>` is a libpq/pgx connection string (`postgres://user:pass@host/db`).
+
+`<paths...>` are files or directories. Directories are walked recursively and every `.yml` /
+`.yaml` file found is read.
+
+The default namespace is the empty string, so downing unnamespaced mutations reads:
+
+```sh
+dmut down postgres://localhost/mydb ""
+```
+
+Note that `-d` means `--dry` on `apply` and `down`, but `--test-database` on `test`.
+
+`--override` records the mutations as applied *without running them*. It is how you correct the
+record: when the mutations already in the database are wrong, or were never there in the first
+place, and you want to hand dmut a corrected version of them without touching the objects
+themselves. The test phase still runs, deliberately — the dmut contract is that anything dmut
+knows about must be downable, and a new overriding version is no exception. Which means that even
+under `--override`, every object in the namespace is downed and re-upped behind savepoints before
+the transaction ends.
+
+Dmut keeps its own bookkeeping in the `__dmut__` schema (table `__dmut__.mutations`), which it
+creates on first run as a namespace of its own.
+
+## How a run works
+
+Everything happens inside a single transaction, per namespace, in ascending revision order.
+Failure at any step halts the process and nothing is applied.
+
+- Read the mutations already applied from `__dmut__.mutations` for that namespace.
+- Compute the delta. A mutation is obsolete if it no longer exists locally or if its hash
+  changed. Obsolete mutations are downed along with everything that depends on them, recursively.
+- Down the obsolete `meta`, down the obsolete `sql`, up the new `sql`, then up the new `meta`.
+  If *any* `sql` had to be downed, *all* `meta` in the namespace is downed and re-upped, since
+  meta may depend on any object the sql touched.
+- Record the new state in `__dmut__.mutations`.
+- Test, when anything changed: down all `meta`, then replay each mutation's `meta` chain
+  up-then-down on its own; then down all `sql` and do the same for `sql`. This runs against the
+  target database behind savepoints and is rolled back afterwards, so no data is lost — but every
+  mutation must be cleanly downable or the whole apply aborts.
+- Commit, or roll back if `-d` was given.
+
+A revision that defines `new_sql` / `new_needs` is additionally tested in its "new" form, so that
+the definitions the *next* revision will inherit are known to be valid before anything depends on
+them. A database pays for that pass on the run that carries it across that revision, and never
+again.
+
+`dmut test` runs the same sequence against a throwaway postgres container and never commits.
+
+## Mutation structure
+
+Mutations are defined in yaml files read recursively from the paths dmut is given.
 
 ```yaml
-# optional, indicate that all mutations in this file are part of a revision
+# optional, make all mutations in this file part of a revision
 __revision: 1
 # optional, make all mutations in this file part of a namespace
 __namespace: some-name
 
 mutation_name:
-  # optional, names the mutations whose `sql` must run before this mutation
+  # optional, names of the mutations whose `sql` must run before this one
   needs: [optional, parent, mutation, names]
 
-  # optional, list of roles that should exist
-  # multiple mutations can declare roles
-  roles: [a, list, of, roles]
-
-  # optional, mutations that directly related to this mutation
-  children: # optional
-    child_name: will be renamed as `mutation_name.child_name`
-      sql: # A list of statements, usually alter table ... add ...
-
   sql:
-    - automatic sql statements or
+    - a statement whose down dmut can infer on its own
     - up: the sql that brings this mutation up
       down: the sql that undoes it
 
-  # optional: when using revisions
-  new_needs: [new, parents]
+  # optional, mutations that belong to this one.
+  # `child_name` below is really the mutation `mutation_name.child_name`, and as such
+  # it automatically depends on `mutation_name` (see "Naming rules").
+  children:
+    child_name:
+      sql:
+        - alter table ... add ...
 
-  # optional: when using revisions
-  new_sql:
-    - statement that replaces what is in `sql`
-
-  # optional, names of the mutations whose meta must run before
-  # there is no need to indicate mutations whose sql must run before, because _all_ sql runs before meta, always.
+  # optional, names of the mutations whose `meta` must run before this one.
+  # There is no need to name mutations whose *sql* must run before: all `sql` always runs
+  # before any `meta`.
   meta_needs: [mutation, names]
 
-  # Statements of the meta mutation
-  meta: just like sql, but with lightweight statements
+  # Lightweight statements, same syntax as `sql`
+  meta:
+    - grant select on table ... to ...
+
+  # optional, only meaningful in a file that sets `__revision`: replaces `needs` in what gets stored
+  new_needs: [new, parents]
+
+  # optional, only meaningful in a file that sets `__revision`: replaces `sql` in what gets stored
+  new_sql:
+    - statement that replaces what is in `sql`
 ```
+
+There is no key for roles. Create them in a `sql` block of their own mutation — since all `sql`
+runs before any `meta`, they will exist by the time grants and policies reference them:
+
+```yaml
+roles:
+  sql:
+    - create role "@admin";
+    - create role "@active";
+```
+
+Keys other than the ones above are rejected with an error.
 
 ## Why the distinction between sql and meta
 
-`sql` blocks contain the physical description of your data ; "_what_" will be accessed and modified, whereas `meta` blocks describes the "_how_" (and _by whom_) it is accessed. Changes in the `sql` block can be heavy and lead to loss of data or long processing times. `meta` changes are mostly code and will thus be pretty fast.
+`sql` blocks contain the physical description of your data — "*what*" will be accessed and
+modified — whereas `meta` blocks describe "*how*" (and *by whom*) it is accessed. Changes in the
+`sql` block can be heavy and lead to loss of data or long processing times. `meta` changes are
+mostly code and will thus be pretty fast.
 
-Meta could be separate mutations (as in earlier dmut versions), but that approach gets messy: dependency graphs and naming conventions are hard to agree on. Keeping meta next to the objects it manages is simpler, and all `sql` runs before any meta, so objects and roles are guaranteed to exist when meta references them. The split also encourages thinking in terms of heavy (sql) vs light (meta) changes.
+The two are hashed separately, so editing a function or a grant never causes a table to be
+dropped.
 
-## Changes
+Meta could be separate mutations (as in earlier dmut versions), but that approach gets messy:
+dependency graphs and naming conventions are hard to agree on. Keeping meta next to the objects
+it manages is simpler, and all `sql` runs before any meta, so objects and roles are guaranteed to
+exist when meta references them. The split also encourages thinking in terms of heavy (sql) vs
+light (meta) changes.
 
-A mutation is considered to be different when content differs in `sql` or `meta`, or `name`. Comments are ignored when computing the hash of a mutation, so that comment changes don't trigger de-apply.
+### What goes in `sql`
 
-When a mutation changes, its children and itself will be downed before being re-applied. _BEWARE_: loss of data can happen then, as `CREATE TABLE` mutations that change get `DROP`ped. This is mostly useful in dev where you can change whatever you want and don't mind destoying stuff.
+Statements whose down would lose data or take a long time:
+
+- `CREATE TABLE ...`
+- `CREATE INDEX ...` (no data is lost, but indexes can be slow to create)
+- `CREATE TYPE ...`
+- `CREATE SCHEMA ...`
+- `CREATE EXTENSION ...`
+- `CREATE ROLE ...`
+- `ALTER TABLE <table> ADD COLUMN ...`
+- `ALTER TABLE <table> ADD CONSTRAINT ...`
+
+### What goes in `meta`
+
+Lightweight statements that describe behaviour and can be de-applied and re-applied often:
+
+- `CREATE FUNCTION ...` / `CREATE PROCEDURE ...`
+- `CREATE [MATERIALIZED] VIEW ...`
+- `CREATE TRIGGER ...`
+- `CREATE POLICY ...`
+- `ALTER TABLE <table> ENABLE ROW LEVEL SECURITY`
+- `ALTER TABLE <table> ALTER COLUMN <name> SET DEFAULT ...`
+- `GRANT ...`
+- `ALTER DEFAULT PRIVILEGES ...`
+
+## Automatic down statements
+
+For most statements, the undo can be inferred, so you write a plain string instead of an
+`up`/`down` pair. The inferred undo is always the destructive counterpart (`CREATE` → `DROP`,
+`GRANT` → `REVOKE`, `ADD COLUMN` → `DROP COLUMN`, …).
+
+Dmut does **not** query the database to guess what the previous state was, which is why many
+`ALTER` statements cannot be auto-downed and need an explicit `down`.
+
+Auto-down covers `CREATE` for around thirty object kinds (table, index, view, materialized view,
+schema, type, domain, role, function, procedure, aggregate, trigger, policy, rule, sequence,
+extension, operator, operator class/family, cast, collation, conversion, language, publication,
+subscription, server, statistics, tablespace, text search objects, transform, user mapping,
+foreign table, foreign data wrapper, access method, event trigger), the common `ALTER TABLE`
+forms, `GRANT`, and `ALTER DEFAULT PRIVILEGES`.
+
+`mutations/test/auto-down-tests.yml` is the authoritative list: every supported form appears there
+with the down dmut generates for it.
+
+If dmut cannot infer a down, loading the file fails with an error — write the `up`/`down` pair
+yourself. In particular:
+
+- A bare `DROP ...` never auto-downs. Dmut only understands `CREATE`, `ALTER TABLE`, `GRANT`,
+  `ALTER DEFAULT PRIVILEGES` and `COMMENT ON`.
+- `COMMENT ON` has no down at all — dmut leaves the comment in place rather than guess what it used
+  to be. It is still written as a plain statement; "no down" and "we could not find a down" are
+  different outcomes, and only the second one is an error.
+
+## Collecting
+
+`dmut collect <outfile> <paths...>` reads everything dmut would read and writes it back out as a
+single yaml file — one document per namespace and revision, mutations sorted by name. Pass `-` as
+the outfile to write to stdout.
+
+```sh
+dmut collect schema.yml ./mutations
+```
+
+The output is meant to be read back by dmut, and is normalised on the way out: statements whose
+down can be inferred are written as plain strings, the rest as `up`/`down` pairs, `children:` are
+flattened to their real `parent.child` names, and the dependencies dmut derives from dotted names
+are left out since it derives them again on load. Collecting an already collected file changes
+nothing.
+
+Collecting never changes a mutation's hash, so pointing dmut at a collected file instead of your
+tree applies as a no-op to an existing database.
+
+Dmut's own `__dmut__` mutations are left out — they ship inside the binary.
+
+`dmut explode` is *not* its inverse. It splits a file with a regex and knows nothing about
+documents, `__namespace` or `__revision`: run it on a multi-document file and mutations that share
+a name across revisions overwrite each other, silently. Use it on single-document files only.
 
 ## Naming rules
 
-Dmut understands `.` separators in the mutation names. Mutations that have composite paths like `parent1.parent2.child` automatically depend on mutations named `parent1` and `parent1.parent2` if they exist. They will **not**, however, depend on `parent1.unrelated`.
+Dmut understands `.` separators in mutation names. A mutation named `parent1.parent2.child`
+automatically depends on `parent1` and `parent1.parent2` if they exist, for both `sql` and `meta`.
+It will **not** depend on `parent1.unrelated`.
 
-## Automatic sql statements
+Mutations declared under `children:` are named `<parent>.<child>` and therefore pick up that
+dependency automatically.
 
-For some common SQL statements, undo can be inferred, so you need not specify `up` or `down`. The inferred undo is always a destructive operation (e.g. `DROP`); when creating auto-down statement, dmut does **not** query the database to guess how it was before, which is what a lot of `ALTER` statements are not supported in this manner.
+Duplicate mutation names within the same namespace and revision are an error, including across
+different files.
 
-It is recommended to use these statements in `sql` blocks :
+Dependency cycles are detected at load time and reported with the offending path.
 
-- `CREATE TABLE ...`
-- `CREATE INDEX ...`
+## Changes
 
-And these in `meta` blocks, as they are not so much about data than behaviour :
+A mutation is considered different when its `name` or the content of its `sql` or `meta` changes.
+The `down` half of a statement counts too: editing only an explicit `down:` will trigger a
+de-apply.
 
-# Namespaces
+Comments and whitespace are normalised away before hashing, so reformatting or commenting your SQL
+does not cause anything to be re-applied.
+
+When a mutation changes, it and its dependents are downed before being re-applied. *BEWARE*: loss
+of data can happen then, as `CREATE TABLE` mutations that change get `DROP`ped. This is mostly
+useful in dev where you can change whatever you want and don't mind destroying stuff. In
+production, use revisions.
+
+## Namespaces
 
 Mutations can be namespaced by setting `__namespace: <string>` at the toplevel of their file.
 
-They act as silos ; namespaced mutations will not touch mutations from other namespaces. They may be applied completely independently.
+They act as silos; namespaced mutations will not touch mutations from other namespaces, and may be
+applied completely independently.
 
-Make absolutely sure that no code from a namespace can reference objects that are created in another ; they are explicitely made to handle completely independent code and structures that will have to live in the same database but will most likely never interact together.
+`needs` and `meta_needs` cannot cross a namespace — naming a mutation from another namespace is a
+load-time error. Dmut cannot see through raw SQL, though, so make absolutely sure that no code from
+a namespace references objects created in another. Namespaces are explicitly made for completely
+independent code and structures that live in the same database but never interact.
 
-# Revisions : Evolving your mutations over time
+## Revisions: evolving your mutations over time
 
-As your database evolves, the data model changes. To avoid losing existing data, you add incremental changes in *child* mutations instead of editing existing SQL mutations—so those mutations are not de-applied.
+As your database evolves, the data model changes. To avoid losing existing data, you add
+incremental changes in *child* mutations instead of editing existing SQL mutations — so those
+mutations are not de-applied.
 
-Over time, definitions spread across many mutations become hard to follow. On an empty database, it is redundant to create a table and then immediately alter it to add or remove columns.
+Over time, definitions spread across many mutations become hard to follow. On an empty database, it
+is redundant to create a table and then immediately alter it to add or remove columns.
 
 You can consolidate by folding those changes back into the original table definition in two ways:
 
-- **Manual rewrite:** Update mutations so each `CREATE TABLE ...` includes all columns, then backup data, reapply mutations, and restore data. This is manageable in development but awkward in production when many databases or large datasets are involved.
+- **Manual rewrite**: update mutations so each `CREATE TABLE ...` includes all columns, then back
+  up data, reapply mutations, and restore data. This is manageable in development but awkward in
+  production when many databases or large datasets are involved.
 
-- **Revisions:** Use `__revision` and, in revisioned files, `new_needs` / `new_sql`. When a revision is applied, the current `needs` and `sql` run as usual, but the values stored in the database are the `new_` ones—so the recorded source of truth becomes your cleaned-up set. New or empty databases are then seeded from that tidy definition.
+- **Revisions**: use `__revision` and, in revisioned files, `new_needs` / `new_sql`. When a
+  revision is applied, the current `needs` and `sql` run as usual, but the values stored in the
+  database are the `new_` ones — so the recorded source of truth becomes your cleaned-up set. New
+  or empty databases are then seeded from that tidy definition.
 
-## Revisions in your mutation files
+### `new_sql` and `new_needs` are transitory
 
-You can set `__revision: <int>` at the top level of a YAML file. Every mutation in that file then belongs to that revision.
+They are only ever read when a *later* revision is applied on top: dmut reaches for the stored
+`new_` values precisely when the database's revision is lower than the one being applied. So they
+come in pairs — write `new_sql` in revision `n` only when you are shipping revision `n+1` that
+contains the consolidated definitions those `new_` values describe.
 
-Mutations in a file with an explicit `__revision` can define `new_needs` and `new_sql`. When such a mutation is applied, `needs` and `sql` run as usual, but the values stored in the database are the `new_` versions (so the “cleaned” definition is what future revisions see).
+A revision carrying `new_sql` with nothing after it is a half-finished job: nothing will ever read
+what it stored. Once revision `n+1` exists and your databases have moved past `n`, the `new_`
+blocks in `n` have done their work and the file can eventually be dropped.
 
-Files that do not set `__revision` are treated as revision `n+1`, where `n` is the highest revision number found. If no file sets a revision, the effective revision is `1`.
+### Revisions in your mutation files
 
-When you supply revisions, dmut applies every revision greater than _or equal_ to the database’s current revision, in order. If the database has no revision, only the highest one is applied.
+Set `__revision: <int>` at the top level of a yaml file; every mutation in that file belongs to
+that revision.
 
-Revisions **must** be sequential ; there may be no gaps between the lowest and the highest that is supplied.
+**Each revision must be self-contained.** A revision restates every mutation it consists of, not
+just what changed since the previous one — `needs` cannot reach into another revision any more than
+it can reach into another namespace. See `test/revision/test-r1.yml` through `test-r3.yml` for a
+worked example.
 
-You do not need to keep every revision file in the codebase. In practice, keep at least the latest revision—or a minimal file that only sets `__revision` so new databases get the right revision number-or the lowest revision that you know is still in production.
+Files that do not set `__revision` are treated as revision `n+1`, where `n` is the highest revision
+number found *in that namespace*. If no file in a namespace sets a revision, its effective revision
+is `1`.
 
-To retire an obsolete mutation inside a revision, set `new_sql: []`. Any mutation that has no meta, sql, and children is not persisted.
+Revisions **must** be sequential; there may be no gaps between the lowest and the highest supplied.
 
-You should use clear names for revision files, e.g. `<namespace>-r<revision>.yml` or `r<revision>.yml`.
+When you supply revisions, dmut applies every revision greater than *or equal* to the database's
+current revision, in order. If the database has no revision yet, only the highest one is applied —
+`dmut test -a` overrides this and replays every revision from 1, which is what you want in CI.
 
-## Creating a new revision
+You do not need to keep every revision file in the codebase. In practice, keep at least the latest
+revision — or a minimal file that only sets `__revision` so new databases get the right revision
+number — or the lowest revision that you know is still in production.
 
-To make revision creation easier, dmut ships the command `dmut create-revision [-o <new-revision-file.yml>] <database or previous-revision.yml> <future revision paths...>` that compares a revision file or the revision currently applied in the database to the local mutations at `paths...` and detects the changes between `sql` and `needs` blocks to create a _new_ revision with the `new_needs` and `new_sql` blocks created automatically.
+To retire a mutation in a new revision, set `new_sql: []`. It is then recorded with an empty `sql`,
+so the following revision downs it as a no-op and it drops out of the graph. A mutation disappears
+from `__dmut__.mutations` entirely only when it has no `sql`, `meta`, `needs`, `meta_needs`,
+`new_sql` and `new_needs` at all.
 
-Use `dmut diff` to compare two revisions and only display what changed.
+Use clear names for revision files, e.g. `<namespace>-r<revision>.yml` or `r<revision>.yml`.
 
-## Considerations when writing revisions
+### Considerations when writing revisions
 
-Mutations that use "complicated" statements like ALTER that cannot be auto-downed are tricky, and dmut makes no attempt at comparing database states : it applies, or it downs. While it does run tests everytime to catch most common errors, it cannot catch them all. The responsability falls on the developer to make sure that the revisions they write make sense.
+Mutations that use "complicated" statements like `ALTER`, which cannot be auto-downed, are tricky,
+and dmut makes no attempt at comparing database states: it applies, or it downs. While it does run
+tests every time to catch the most common errors, it cannot catch them all. The responsibility
+falls on the developer to make sure the revisions they write make sense.
 
-It is possible to use `meta` blocks to write unit tests in `do $$ begin ... end $$ language plpgsql` statements as usage of the `raise` statement will fail a mutation.
+You can use `meta` blocks to write unit tests in `do $$ begin ... end $$ language plpgsql`
+statements, since a `raise` will fail the mutation. `test/revision/test-r3.yml` uses this to assert
+that no data was lost across a revision.
+
+## Considerations
+
+- **Do not use `CREATE ... IF NOT EXISTS` or `DROP ... IF EXISTS`.** Dmut is meant to own the whole
+  life cycle of a symbol in the database: if a statement silently succeeds whether or not the
+  object is there, a botched down goes unnoticed and the test phase can no longer catch it. Dmut
+  will parse and auto-down `CREATE ... IF NOT EXISTS` without complaining — that leniency is there
+  for the case where the database already contains a symbol and you are adding dmut on top of it.
+  Outside that case, don't. (`DROP ... IF EXISTS` has no auto-down at all; no bare `DROP` does.)
+
+- **Never put `CASCADE` in a `DROP` statement** in your custom mutations. Dmut relies on every
+  object being created in its own mutation with dependencies declared explicitly. For your safety,
+  it must break during the test phase when they were not.
+
+- **Every mutation must be downable.** The test phase downs and re-ups everything; a mutation that
+  cannot be undone will fail the whole apply, not just itself.
+
+- `needs` and `meta_needs` may not cross a namespace or a revision.
+
+- **Write `new_sql` only alongside the next revision.** See
+  [`new_sql` and `new_needs` are transitory](#new_sql-and-new_needs-are-transitory).

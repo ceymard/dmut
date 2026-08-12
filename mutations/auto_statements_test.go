@@ -32,9 +32,12 @@ func TestAutoDowner(t *testing.T) {
 	id_token := SqlLexer.Symbols()["Id"]
 	for _, tt := range tests {
 		t.Run(tt.Up, func(t *testing.T) {
-			got, err := AutoDowner.ParseAndGetDefault(tt.Up)
+			got, no_down, err := AutoDowner.ParseAndGetDefault(tt.Up)
 			if err != nil {
 				t.Fatalf("parse error: %v - %s", red(err.Error()), tt.Up)
+			}
+			if no_down && tt.Down != "" {
+				t.Fatalf("expected no down, wanted %s - %s", red(tt.Down), tt.Up)
 			}
 			if !compareTokens(t, id_token, got, tt.Down) {
 				displayMismatch(t, strings.ToLower(tt.Down), strings.ToLower(got))

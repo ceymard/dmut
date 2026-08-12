@@ -149,13 +149,19 @@ func wantSpace(s string) (want_left bool, want_right bool) {
 	}
 }
 
-func (c *combinator) ParseAndGetDefault(s string) (string, error) {
+// ParseAndGetDefault returns the reverse statement for s. no_down is true when the
+// statement was understood but has nothing to undo (COMMENT ON ...), which callers
+// must not confuse with an empty result caused by a rule failing to produce.
+func (c *combinator) ParseAndGetDefault(s string) (down string, no_down bool, err error) {
 	res, err := c.Parse(s)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	if res.isNoMatch() {
-		return "", oops.In("auto_parser").With("input", s).Errorf("no match")
+		return "", false, oops.In("auto_parser").With("input", s).Errorf("no match")
+	}
+	if res.no_down {
+		return "", true, nil
 	}
 	var acc = strings.Builder{}
 	var last_want_right = false
@@ -168,7 +174,7 @@ func (c *combinator) ParseAndGetDefault(s string) (string, error) {
 		last_want_right = want_right
 		acc.WriteString(str)
 	}
-	return acc.String(), nil
+	return acc.String(), false, nil
 }
 
 // ///////////////////////////////////////////////
@@ -227,6 +233,19 @@ func newStringProducer(group string, s string) producer {
 	}
 }
 
+// noDown marks a rule as having no reverse statement at all, as opposed to one
+// whose reverse could not be computed.
+type noDownProducer struct{}
+
+func (n *noDownProducer) act(st state, old_results []result) state {
+	st.no_down = true
+	return st
+}
+
+func noDown() producer {
+	return &noDownProducer{}
+}
+
 type result struct {
 	pos   int
 	group string
@@ -238,6 +257,9 @@ type state struct {
 	tokens  []lexer.Token
 	results []result
 	pos     int
+	// set by the noDown() producer when the matched rule has nothing to undo,
+	// which is different from a rule that produced nothing by accident.
+	no_down bool
 }
 
 func (s *state) addResult(group string, value lexer.Token) {

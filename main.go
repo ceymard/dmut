@@ -11,6 +11,7 @@ import (
 	"os"
 
 	"github.com/alecthomas/kong"
+	"github.com/ceymard/dmut/v2/mutations"
 	"github.com/samber/oops"
 )
 
@@ -29,14 +30,31 @@ type CLI struct {
 }
 
 type CollectCmd struct {
-	Outfile string   `arg:"" help:"Output YAML file."`
+	Outfile string   `arg:"" help:"Output YAML file, or - for stdout."`
 	Paths   []string `arg:"" help:"Paths to collect."`
 }
 
 func (c CollectCmd) Run() error {
-	_ = c.Outfile
-	_ = c.Paths
-	return nil
+	muts, err := mutations.LoadYamlMutations(c.Paths...)
+	if err != nil {
+		return err
+	}
+
+	if c.Outfile == "-" {
+		return mutations.Collect(muts, os.Stdout)
+	}
+
+	f, err := os.Create(c.Outfile)
+	if err != nil {
+		return err
+	}
+
+	if err := mutations.Collect(muts, f); err != nil {
+		f.Close()
+		return err
+	}
+
+	return f.Close()
 }
 
 type VersionCmd struct{}

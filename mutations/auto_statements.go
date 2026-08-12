@@ -276,7 +276,9 @@ var auto_create = seq("create",
 
 ).Produce("DROP", captured, ";")
 
-var auto_comment = seq("comment", "on", until_opt(";")).Produce("")
+// COMMENT ON has no reverse : we leave the comment in place rather than guess what
+// it used to be, so it can be written as a plain statement with no `down`.
+var auto_comment = seq("comment", "on", until_opt(";")).Produce(noDown())
 
 var auto_alter_table = seq(c("alter", "table", id),
 	either(
