@@ -256,9 +256,15 @@ tree applies as a no-op to an existing database.
 
 Dmut's own `__dmut__` mutations are left out — they ship inside the binary.
 
-`dmut explode` is *not* its inverse. It splits a file with a regex and knows nothing about
-documents, `__namespace` or `__revision`: run it on a multi-document file and mutations that share
-a name across revisions overwrite each other, silently. Use it on single-document files only.
+`dmut explode` is not the inverse of `collect`. It is there to lay the *current* revision out as
+neat per-mutation files — the version of the code you are actually working on — and it should be
+run on that revision alone. It splits with a regex and knows nothing about documents, so given
+several revisions at once, mutations that share a name across them overwrite each other silently.
+
+`__namespace` is written at the top of every file it produces, since each of them is read back as a
+set of its own. `__revision` is deliberately not: a file that sets no revision is the current one by
+definition, which is exactly what exploded code is. A file declaring more than one namespace is
+refused rather than split across silos.
 
 ## Naming rules
 
