@@ -91,7 +91,9 @@ func readFile(namespace *MutationNamespace, system fs.FS, filename string) error
 		if err := ms.readDocument(node); err != nil {
 			return err
 		}
-		namespace.AddSet(ms)
+		if err := namespace.AddSet(ms); err != nil {
+			return err
+		}
 	}
 
 	return nil

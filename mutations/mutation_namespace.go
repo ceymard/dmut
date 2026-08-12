@@ -87,15 +87,13 @@ func (ns MutationNamespace) EnsureContinuousRevisions() error {
 }
 
 func (ns MutationNamespace) AddSet(set *MutationSet) error {
-	if revision_sequence, ok := ns.Map.Get(set.Namespace); ok {
-		revision_sequence.AddSet(set)
-	} else {
+	revision_sequence, ok := ns.Map.Get(set.Namespace)
+	if !ok {
 		revision_sequence = NewRevisionSequence()
 		ns.Map.Put(set.Namespace, revision_sequence)
-		revision_sequence.AddSet(set)
 	}
 
-	return nil
+	return revision_sequence.AddSet(set)
 }
 
 func (ns MutationNamespace) ResolveDependencies() error {

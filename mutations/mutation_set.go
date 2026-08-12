@@ -82,8 +82,12 @@ func (ms *MutationSet) DeleteMutation(mut *Mutation) error {
 }
 
 func (ms *MutationSet) AddMutation(mut *Mutation) error {
-	if ms.HasMutation(mut.Name) {
-		return oops.In("mutations").With("mutation", mut.Name).Errorf("duplicate migration name: %s", mut.Name)
+	if existing, ok := ms.GetMutation(mut.Name); ok {
+		return oops.In("mutations").
+			With("mutation", mut.Name).
+			With("file", mut.File).
+			With("previous_file", existing.File).
+			Errorf("duplicate mutation name %s, defined in both %s and %s", mut.Name, existing.File, mut.File)
 	}
 
 	mut.set = ms

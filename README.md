@@ -34,6 +34,23 @@ or, from a clone (needs Go 1.25 or later):
 go build -o dmut .
 ```
 
+## Running the tests
+
+```sh
+make test        # everything
+make test-unit   # parser, loader, hashing, collect — no database needed
+make test-db     # the integration tests only
+make test-ci     # everything, and a missing docker daemon fails instead of skipping
+```
+
+The integration tests share a single postgres container and give each test a
+database of its own. They are skipped when docker is not running, so `go test ./...`
+is safe anywhere; set `DMUT_REQUIRE_DOCKER=1` in CI to turn that skip into a
+failure. The container is only started if a test actually needs it.
+
+Because postgres roles are cluster-wide rather than per-database, mutations that
+create roles cannot be shared between integration tests.
+
 ## Usage
 
 ```
@@ -79,7 +96,9 @@ place, and you want to hand dmut a corrected version of them without touching th
 themselves. The test phase still runs, deliberately — the dmut contract is that anything dmut
 knows about must be downable, and a new overriding version is no exception. Which means that even
 under `--override`, every object in the namespace is downed and re-upped behind savepoints before
-the transaction ends.
+the transaction ends. It also means `--override` cannot be the *first* thing dmut does on a
+database: it skips creating its own bookkeeping schema along with everything else. Run a plain
+apply once before adopting objects with `--override`.
 
 Dmut keeps its own bookkeeping in the `__dmut__` schema (table `__dmut__.mutations`), which it
 creates on first run as a namespace of its own.
@@ -276,7 +295,7 @@ Mutations declared under `children:` are named `<parent>.<child>` and therefore 
 dependency automatically.
 
 Duplicate mutation names within the same namespace and revision are an error, including across
-different files.
+different files — the error names both files.
 
 Dependency cycles are detected at load time and reported with the offending path.
 

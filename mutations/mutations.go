@@ -162,7 +162,9 @@ func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation,
 			return nil, oo.Errorf("unknown key '%s'", key)
 		}
 	}
-	ms.AddMutation(mut)
+	if err := ms.AddMutation(mut); err != nil {
+		return nil, err
+	}
 	return mut, nil
 }
 
