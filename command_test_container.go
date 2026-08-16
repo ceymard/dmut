@@ -78,7 +78,7 @@ func (t TestCmd) Run() error {
 	}
 	log.Println("test container URI:", uri)
 
-	if err := mutations.ReadAndRunMutations(uri, t.Paths, mutations.MutationRunnerOptions{
+	if err := mutations.ReadAndRunMutations(uri, t.Paths, &mutations.MutationRunnerOptions{
 		Verbose: t.Verbose,
 		Commit:  false,
 		All:     t.All,

@@ -12,7 +12,7 @@ type ApplyCmd struct {
 
 func (a ApplyCmd) Run() error {
 
-	if err := mutations.ReadAndRunMutations(a.Uri, a.Paths, mutations.MutationRunnerOptions{
+	if err := mutations.ReadAndRunMutations(a.Uri, a.Paths, &mutations.MutationRunnerOptions{
 		Verbose:  a.Verbose,
 		Commit:   !a.Dry,
 		Override: a.Override,

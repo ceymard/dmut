@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/samber/oops"
 )
 
 // write drops the given files in a fresh directory and returns its path.
@@ -228,6 +230,92 @@ z:
     - create schema z;
 `,
 	})
+}
+
+// cyclePath extracts the "cycle" context value dmut attaches to a dependency-cycle
+// error: the sequence of mutation names that form the loop, starting and ending on
+// the same node.
+func cyclePath(t *testing.T, err error) []string {
+	t.Helper()
+
+	oe, ok := oops.AsOops(err)
+	if !ok {
+		t.Fatalf("expected an oops error, got: %T %v", err, err)
+	}
+	path, ok := oe.Context()["cycle"].([]string)
+	if !ok {
+		t.Fatalf("expected a %q context entry, got: %v", "cycle", oe.Context())
+	}
+	return path
+}
+
+// The reported cycle must be exactly the loop, not a scrambled DFS trace that also
+// drags in sibling branches that were never part of it.
+func TestCycleErrorReportsTheExactLoop(t *testing.T) {
+	_, err := load(t, map[string]string{
+		"a.yml": `x:
+  needs: [z]
+  sql:
+    - create schema x;
+y:
+  needs: [x]
+  sql:
+    - create schema y;
+z:
+  needs: [y]
+  sql:
+    - create schema z;
+`,
+	})
+	if err == nil {
+		t.Fatal("expected a cycle error")
+	}
+
+	path := cyclePath(t, err)
+	if len(path) != 4 || path[0] != path[3] {
+		t.Fatalf("expected a 4-element path looping back to its start, got: %v", path)
+	}
+	seen := map[string]bool{}
+	for _, name := range path[:3] {
+		seen[name] = true
+	}
+	if !seen["x"] || !seen["y"] || !seen["z"] {
+		t.Fatalf("expected the path to cover x, y and z, got: %v", path)
+	}
+}
+
+// A mutation that isn't on the cycle - not even one that shares a dependency with it -
+// must never show up in the reported path.
+func TestCyclePathExcludesUnrelatedMutations(t *testing.T) {
+	_, err := load(t, map[string]string{
+		"a.yml": `x:
+  needs: [z]
+  sql:
+    - create schema x;
+y:
+  needs: [x]
+  sql:
+    - create schema y;
+z:
+  needs: [y]
+  sql:
+    - create schema z;
+unrelated:
+  needs: [x]
+  sql:
+    - create schema unrelated;
+`,
+	})
+	if err == nil {
+		t.Fatal("expected a cycle error")
+	}
+
+	path := cyclePath(t, err)
+	for _, name := range path {
+		if name == "unrelated" {
+			t.Fatalf("reported cycle path should not include unrelated mutations, got: %v", path)
+		}
+	}
 }
 
 // A mutation defined twice would otherwise be silently dropped, and the version

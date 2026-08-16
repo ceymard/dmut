@@ -12,6 +12,12 @@ type MutationRunnerOptions struct {
 	All      bool
 }
 
+// Merge ORs every field: a flag becomes true if any of the merged options request
+// it, and nothing can turn a flag back off. That's intentional for opt-in switches
+// (Verbose, Override, All) where several independent sources should each be able to
+// request the behaviour without knowing about each other. Only add fields here that
+// fit that same "activate if requested" semantics — a field that needs tri-state
+// (unset / explicitly true / explicitly false) behaviour will misbehave under OR.
 func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
 	for _, other := range others {
 		o.Verbose = o.Verbose || other.Verbose
@@ -163,21 +169,24 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 	return nil
 }
 
-func ReadAndRunMutations(uri string, paths []string, opts MutationRunnerOptions) error {
+func ReadAndRunMutations(uri string, paths []string, opts ...*MutationRunnerOptions) error {
+
+	var options = MutationRunnerOptions{}
+	options.Merge(opts...)
 
 	muts, err := LoadYamlMutations(paths...)
 	if err != nil {
 		return err
 	}
 
-	runner, err := NewPgRunner(uri, opts.Verbose)
+	runner, err := NewPgRunner(uri, options.Verbose)
 	if err != nil {
 		return err
 	}
 	defer runner.Close()
 
 	// Test before
-	if err := RunAllMutations(runner, muts, &opts); err != nil {
+	if err := RunAllMutations(runner, muts, &options); err != nil {
 		return err
 	}
 

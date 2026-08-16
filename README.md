@@ -22,6 +22,18 @@ It features the following:
 Whenever a mutation changes, its dependents are recursively undone first, then it is undone,
 then it is redone and its dependents are re-run as well.
 
+## Scope
+
+Dmut is built for development ease — fast, safe-to-experiment iteration on a schema, and
+reproducible deploys — not for zero-downtime changes on a large, continuously-hammered
+production database. Every apply that has changes runs its test phase against the *target*
+database (see "How a run works" below): every object in the namespace gets downed and re-upped,
+individually, behind savepoints, inside the same transaction as the apply. That means real locks
+on real objects for the duration, scaling with how much is in the namespace. There is no flag to
+skip this on `apply`. If your database can't tolerate that, run `dmut test` against a throwaway
+copy to validate the mutations, review the change, and accept that dmut's production `apply` is
+not built to route around a database that must stay fully available while it runs.
+
 ## Installation
 
 ```sh
@@ -93,15 +105,26 @@ Short flags are consistent across commands: `-v` is always `--verbose`, `-d` is 
 `--test-*` flags, `explode`'s `--out-dir`) have no short form, so a short flag never means two
 different things depending on which subcommand you're running.
 
-`--override` records the mutations as applied *without running them*. It is how you correct the
-record: when the mutations already in the database are wrong, or were never there in the first
-place, and you want to hand dmut a corrected version of them without touching the objects
-themselves. The test phase still runs, deliberately — the dmut contract is that anything dmut
-knows about must be downable, and a new overriding version is no exception. Which means that even
-under `--override`, every object in the namespace is downed and re-upped behind savepoints before
-the transaction ends. It also means `--override` cannot be the *first* thing dmut does on a
-database: it skips creating its own bookkeeping schema along with everything else. Run a plain
-apply once before adopting objects with `--override`.
+`--override` records the mutations as applied *without running them*. It exists for a database
+dmut is **already** managing, where the recorded definitions turn out to be wrong — usually
+because a mutation's `up`/`down` pair didn't actually round-trip cleanly in some situation the
+test phase didn't catch, and re-applying or downing it the normal way would now fail or do the
+wrong thing. `--override` lets you hand dmut the corrected definition and have it accept that as
+the new source of truth for that mutation, without running the old or new SQL against the objects
+themselves — you already know the objects are in the state the corrected definition describes.
+
+`--override` is **never** appropriate on a new or empty database. It is not a seeding mechanism;
+it corrects the record for objects that already exist and are already tracked. On a fresh
+database, use a plain `apply` — that runs the mutations for real.
+
+The test phase still runs after an override, deliberately: the dmut contract is that anything
+dmut knows about must be downable, and an overriding definition is no exception, so it gets the
+same down-and-reup-behind-savepoints scrutiny as a normal apply before you can trust it. If the
+override's corrected `down` still doesn't round-trip, the test phase is what catches that.
+
+`--override` also cannot be the *first* thing dmut does on a database: it skips creating its own
+bookkeeping schema along with everything else, since that step assumes there's already a
+recorded state to correct. Run a plain apply once before adopting objects with `--override`.
 
 Dmut keeps its own bookkeeping in the `__dmut__` schema (table `__dmut__.mutations`), which it
 creates on first run as a namespace of its own.
@@ -327,6 +350,16 @@ applied completely independently.
 load-time error. Dmut cannot see through raw SQL, though, so make absolutely sure that no code from
 a namespace references objects created in another. Namespaces are explicitly made for completely
 independent code and structures that live in the same database but never interact.
+
+This isolation is enforced for declared dependencies, not for what the SQL itself does. Dmut does
+not parse your statements' bodies looking for cross-namespace references — that would mean
+building something close to a full SQL compiler, which is out of scope for what dmut is trying to
+be. What dmut does instead is catch *some* of these mistakes indirectly: the test phase downs and
+re-ups mutations independently, so a namespace that quietly depends on another namespace's object
+existing will tend to fail its test once the dependency it's leaning on isn't there — but this is
+a side effect of testing, not a guarantee, and plenty of undeclared cross-namespace coupling can
+still slip through undetected. Keeping namespaces to genuinely independent code, as intended, is
+what actually keeps this safe.
 
 ## Revisions: evolving your mutations over time
 

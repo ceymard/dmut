@@ -112,7 +112,6 @@ func (ms *MutationSet) ResolveDependencies() error {
 		mut.MetaChildren = hashset.New[*Mutation]()
 	}
 
-	// FIXME we should test for cycles
 	for mut := range ms.AllMutations() {
 		// For dotted names, find if there are parents and add them automatically.
 		split_name := strings.Split(mut.Name, ".")
@@ -147,33 +146,40 @@ func (ms *MutationSet) ResolveDependencies() error {
 	}
 
 	for mut := range ms.AllMutations() {
-		var cycle []string
-		seen := hashset.New[*Mutation]()
-		has_cycle := false
-		var iterate func(mut *Mutation)
-		iterate = func(inner_mut *Mutation) {
-			if seen.Contains(inner_mut) {
-				return
-			}
-			seen.Add(inner_mut)
-			cycle = append(cycle, inner_mut.Name)
-			for _, dep := range inner_mut.SqlParents.Values() {
-				if dep == mut {
-					has_cycle = true
-					return
+		// Standard DFS cycle detection: `on_stack` is the current recursion path, so
+		// finding a dependency already on it is a cycle and the path is exactly that
+		// stack. `cleared` is nodes already proven cycle-free from this starting point,
+		// so we don't re-walk them.
+		on_stack := hashset.New[*Mutation]()
+		cleared := hashset.New[*Mutation]()
+		var stack []string
+
+		var iterate func(inner_mut *Mutation) []string
+		iterate = func(inner_mut *Mutation) []string {
+			stack = append(stack, inner_mut.Name)
+			on_stack.Add(inner_mut)
+
+			for _, deps := range []*hashset.Set[*Mutation]{inner_mut.SqlParents, inner_mut.MetaParents} {
+				for _, dep := range deps.Values() {
+					if dep == mut {
+						return append(append([]string{}, stack...), mut.Name)
+					}
+					if cleared.Contains(dep) || on_stack.Contains(dep) {
+						continue
+					}
+					if path := iterate(dep); path != nil {
+						return path
+					}
 				}
-				iterate(dep)
 			}
-			for _, dep := range inner_mut.MetaParents.Values() {
-				if dep == mut {
-					has_cycle = true
-					return
-				}
-				iterate(dep)
-			}
+
+			stack = stack[:len(stack)-1]
+			on_stack.Remove(inner_mut)
+			cleared.Add(inner_mut)
+			return nil
 		}
-		iterate(mut)
-		if has_cycle {
+
+		if cycle := iterate(mut); cycle != nil {
 			return oops.In("mutations").With("cycle", cycle).Errorf("%s causes a dependency cycle", mut.Name)
 		}
 	}

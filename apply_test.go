@@ -370,7 +370,7 @@ func TestRevisionsKeepTheData(t *testing.T) {
 func TestReplayingAllRevisions(t *testing.T) {
 	uri := testdb(t)
 
-	if err := mutations.ReadAndRunMutations(uri, []string{revision_paths}, mutations.MutationRunnerOptions{
+	if err := mutations.ReadAndRunMutations(uri, []string{revision_paths}, &mutations.MutationRunnerOptions{
 		Commit: true,
 		All:    true,
 	}); err != nil {
