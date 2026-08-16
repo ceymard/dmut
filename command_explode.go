@@ -12,7 +12,7 @@ import (
 )
 
 type ExplodeCmd struct {
-	OutDir string   `required:"" short:"o" name:"out-dir" help:"Output directory to write the mutations to."`
+	OutDir string   `required:"" name:"out-dir" help:"Output directory to write the mutations to."`
 	Paths  []string `arg:"" help:"Paths to the mutation files"`
 }
 

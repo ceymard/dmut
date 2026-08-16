@@ -15,10 +15,10 @@ import (
 type TestCmd struct {
 	Verbose  bool     `short:"v" help:"Verbose output."`
 	All      bool     `short:"a" help:"Test all revisions, not just the latest one."`
-	Image    string   `short:"i" name:"test-image" help:"Postgres image name to test on."`
-	Database string   `short:"d" name:"test-database" help:"Database name to test on."`
-	Username string   `short:"u" name:"test-username" help:"Username to test on."`
-	Password string   `short:"p" name:"test-password" help:"Password to test on."`
+	Image    string   `name:"test-image" help:"Postgres image name to test on."`
+	Database string   `name:"test-database" help:"Database name to test on."`
+	Username string   `name:"test-username" help:"Username to test on."`
+	Password string   `name:"test-password" help:"Password to test on."`
 	Paths    []string `arg:"" help:"Paths to test."`
 }
 

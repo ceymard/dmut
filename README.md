@@ -62,17 +62,17 @@ dmut apply <uri> <paths...>       apply mutations to a database
 dmut test <paths...>              apply and test against a throwaway postgres (requires Docker)
   -v, --verbose
   -a, --all                         replay every revision from 1, not just the latest
-  -i, --test-image <image>          postgres image to run (default: postgres:14)
-  -d, --test-database <name>        (default: test)
-  -u, --test-username <name>        (default: test)
-  -p, --test-password <pass>        (default: test)
+  --test-image <image>              postgres image to run (default: postgres:14)
+  --test-database <name>            (default: test)
+  --test-username <name>            (default: test)
+  --test-password <pass>            (default: test)
 
 dmut down <uri> <namespace>       down everything dmut applied in a namespace
   -v, --verbose
   -d, --dry
 
 dmut collect <outfile> <paths...> write every mutation back out as a single yaml file
-dmut explode -o <dir> <paths...>  split a single-document yaml file into one file per mutation
+dmut explode --out-dir <dir> <paths...>  split a single-document yaml file into one file per mutation
 dmut legacy <uri>                 dump a pre-1.0 dmut schema as yaml
 dmut version
 ```
@@ -88,7 +88,10 @@ The default namespace is the empty string, so downing unnamespaced mutations rea
 dmut down postgres://localhost/mydb ""
 ```
 
-Note that `-d` means `--dry` on `apply` and `down`, but `--test-database` on `test`.
+Short flags are consistent across commands: `-v` is always `--verbose`, `-d` is always `--dry`,
+`-o` is always `--override`. Options that don't share meaning with another command (`test`'s
+`--test-*` flags, `explode`'s `--out-dir`) have no short form, so a short flag never means two
+different things depending on which subcommand you're running.
 
 `--override` records the mutations as applied *without running them*. It is how you correct the
 record: when the mutations already in the database are wrong, or were never there in the first
