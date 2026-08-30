@@ -288,6 +288,13 @@ var auto_alter_table = seq(c("alter", "table", id),
 		seq(c("alter", "column", id), str("set").Produce("drop"), c("default")),
 		seq("add", c("constraint", id)).Produce("drop", captured),
 		seq(c("rename", either("constraint", "column")), capture("from", id), "to", capture("to", id)).Produce(captured, group("to"), "to", group("from")),
+		// ATTACH/DETACH PARTITION is a lossless, symmetric pair, but only in
+		// the attach direction: attaching just needs the partition name to
+		// undo (detach), while detaching would need the original bounds
+		// (FOR VALUES ...) to reattach, and those aren't present in the
+		// DETACH statement itself — so DETACH intentionally has no auto-down
+		// here and falls through to requiring a manual down.
+		seq("attach", c("partition", id)).Produce("detach", captured),
 	),
 ).Produce(captured, ";")
 

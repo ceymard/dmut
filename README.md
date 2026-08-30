@@ -279,6 +279,17 @@ yourself. In particular:
 - `COMMENT ON` has no down at all — dmut leaves the comment in place rather than guess what it used
   to be. It is still written as a plain statement; "no down" and "we could not find a down" are
   different outcomes, and only the second one is an error.
+- `ALTER TABLE ... ATTACH PARTITION` auto-downs to `DETACH PARTITION`. The reverse,
+  `DETACH PARTITION`, does not auto-down: reattaching needs the original `FOR VALUES` bounds, which
+  aren't present in the `DETACH` statement itself, so it needs an explicit `down`.
+- `ALTER TYPE ... ADD VALUE` (adding an enum value) can never be auto-downed, not just today but in
+  principle: Postgres has no way to remove a value from an enum type short of rebuilding the type,
+  which is destructive if anything already stored that value. Write an explicit `down` for it —
+  typically a type rebuild, or a documented no-op if removal isn't actually safe.
+- `CREATE INDEX CONCURRENTLY` (and other `CONCURRENTLY` variants) will auto-down and load fine, but
+  fails at execution: Postgres refuses to run `CONCURRENTLY` statements inside a transaction block,
+  and every dmut run is transactional. There's no way to make this work under dmut's execution
+  model — use a plain `CREATE INDEX` instead.
 
 ## Collecting
 

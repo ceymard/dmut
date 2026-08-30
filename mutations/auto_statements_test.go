@@ -47,6 +47,17 @@ func TestAutoDowner(t *testing.T) {
 	}
 }
 
+// DETACH PARTITION can't be auto-downed: reattaching needs the original FOR
+// VALUES bounds, which aren't present in the DETACH statement itself. It
+// must fall through to requiring a manual down rather than silently
+// producing a wrong or empty one.
+func TestDetachPartitionRequiresManualDown(t *testing.T) {
+	_, _, err := AutoDowner.ParseAndGetDefault("ALTER TABLE t DETACH PARTITION t_2024;")
+	if err == nil {
+		t.Fatalf("expected DETACH PARTITION to have no auto-down, but it parsed successfully")
+	}
+}
+
 func compareIdToken(cmp lexer.Token, got lexer.Token) bool {
 	if len(cmp.Value) > 0 && cmp.Value[0] == '"' || len(got.Value) > 0 && got.Value[0] == '"' {
 		return cmp.Value == got.Value
