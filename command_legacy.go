@@ -7,7 +7,7 @@ import (
 
 	"github.com/ceymard/dmut/v2/mutations"
 	"github.com/goccy/go-yaml"
-	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v5"
 )
 
 // Legacy commands that are no longer supported
