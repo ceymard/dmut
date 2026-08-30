@@ -1,6 +1,8 @@
 package mutations
 
 import (
+	"io"
+
 	au "github.com/logrusorgru/aurora"
 	"github.com/samber/oops"
 )
@@ -10,20 +12,32 @@ type MutationRunnerOptions struct {
 	Commit   bool
 	Override bool
 	All      bool
+
+	// Output, when set, replaces the PgRunner's default os.Stdout as the
+	// destination for dmut's own progress/notice log lines — lets an
+	// embedding application (anything driving dmut as a library rather
+	// than through the CLI) capture that output into its own logging
+	// instead of it going straight to stdout. nil (the default) leaves
+	// PgRunner's stdout behaviour unchanged.
+	Output io.Writer
 }
 
-// Merge ORs every field: a flag becomes true if any of the merged options request
-// it, and nothing can turn a flag back off. That's intentional for opt-in switches
-// (Verbose, Override, All) where several independent sources should each be able to
-// request the behaviour without knowing about each other. Only add fields here that
-// fit that same "activate if requested" semantics — a field that needs tri-state
-// (unset / explicitly true / explicitly false) behaviour will misbehave under OR.
+// Merge ORs every boolean field: a flag becomes true if any of the merged
+// options request it, and nothing can turn a flag back off. That's
+// intentional for opt-in switches (Verbose, Override, All) where several
+// independent sources should each be able to request the behaviour without
+// knowing about each other. Output isn't boolean, so it merges by
+// last-write-wins instead: the last non-nil Output among others replaces
+// whatever was set before it.
 func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
 	for _, other := range others {
 		o.Verbose = o.Verbose || other.Verbose
 		o.Commit = o.Commit || other.Commit
 		o.Override = o.Override || other.Override
 		o.All = o.All || other.All
+		if other.Output != nil {
+			o.Output = other.Output
+		}
 	}
 }
 
@@ -194,6 +208,10 @@ func ReadAndRunMutations(uri string, paths []string, opts ...*MutationRunnerOpti
 		return err
 	}
 	defer runner.Close()
+
+	if options.Output != nil {
+		runner.Logger().SetOutput(options.Output)
+	}
 
 	// Test before
 	if err := RunAllMutations(runner, muts, &options); err != nil {
