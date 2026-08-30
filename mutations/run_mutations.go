@@ -118,6 +118,16 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 		return err
 	}
 
+	// Every early return below is a failure path: leave the transaction open
+	// only on the successful Commit/Rollback at the end, otherwise roll back
+	// so a direct caller (not going through ReadAndRunMutations, which defers
+	// runner.Close()) doesn't inherit a dangling open transaction.
+	defer func() {
+		if err != nil {
+			runner.Rollback()
+		}
+	}()
+
 	for _, namespace := range namespaces.Keys() {
 		db_mutations, err := runner.GetDBMutationsFromDb(namespace)
 		if err != nil {
