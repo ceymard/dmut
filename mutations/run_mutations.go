@@ -210,7 +210,7 @@ func ReadAndRunMutations(uri string, paths []string, opts ...*MutationRunnerOpti
 	defer runner.Close()
 
 	if options.Output != nil {
-		runner.Logger().SetOutput(options.Output)
+		runner.SetOutput(options.Output)
 	}
 
 	// Test before

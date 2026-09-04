@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"os"
 
@@ -21,6 +22,15 @@ type PgRunner struct {
 	conn    *pgx.Conn
 	verbose bool
 	buf     bytes.Buffer
+
+	// normalOutput/normalPrefix are what ResumeLogging restores after a
+	// SetTesting/ResumeLogging cycle (run once per Run for every mutation
+	// with changes — see test_mutations.go) — NOT hardcoded to os.Stdout,
+	// so a SetOutput redirect (see below) survives the test phase instead
+	// of silently reverting to stdout the first time anything is actually
+	// applied.
+	normalOutput io.Writer
+	normalPrefix string
 }
 
 func (r *PgRunner) Logger() *log.Logger {
@@ -35,8 +45,10 @@ func NewPgRunner(url string, verbose bool) (*PgRunner, error) {
 
 	res := &PgRunner{uri: url, verbose: verbose}
 
-	res.logger = log.New(os.Stdout, "", log.Lshortfile|log.LstdFlags)
-	res.logger.SetPrefix(au.BrightGreen("pg ").String())
+	res.normalOutput = os.Stdout
+	res.normalPrefix = au.BrightGreen("pg ").String()
+	res.logger = log.New(res.normalOutput, "", log.Lshortfile|log.LstdFlags)
+	res.logger.SetPrefix(res.normalPrefix)
 
 	res.logger.Println("connecting to", url)
 	config, err := pgx.ParseConfig(url)
@@ -59,9 +71,25 @@ func NewPgRunner(url string, verbose bool) (*PgRunner, error) {
 	return res, nil
 }
 
-func (r *PgRunner) ResumeLogging() {
-	r.logger.SetOutput(os.Stdout)
+// SetOutput redirects this runner's log lines to w for the rest of its
+// lifetime, including across any later SetTesting/ResumeLogging cycle —
+// ResumeLogging restores normalOutput/normalPrefix, which this updates,
+// rather than the hardcoded os.Stdout it used to. Also drops the
+// terminal-oriented aurora color prefix and the logger's own timestamp/
+// file:line flags : a redirect target is assumed to be a caller with its
+// own logging context (rel's slog output, say), where duplicating both
+// would just be noise.
+func (r *PgRunner) SetOutput(w io.Writer) {
+	r.normalOutput = w
+	r.normalPrefix = ""
+	r.logger.SetOutput(w)
+	r.logger.SetFlags(0)
 	r.logger.SetPrefix("")
+}
+
+func (r *PgRunner) ResumeLogging() {
+	r.logger.SetOutput(r.normalOutput)
+	r.logger.SetPrefix(r.normalPrefix)
 }
 
 func (r *PgRunner) SetTesting() {
