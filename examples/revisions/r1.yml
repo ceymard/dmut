@@ -1,0 +1,29 @@
+# yaml-embedded-languages: sql
+#
+# A worked revisions example: the same story as examples/hotel/properties.yml's
+# `description_search` child (a stored generated column added after the fact,
+# for full-text search), but told across three revisions of the same table
+# instead of being written in its final shape from the start. See
+# ../../README.md's "Revisions: evolving your mutations over time".
+#
+# Run this with `dmut test -a examples/revisions` to replay r1 -> r2 -> r3 in
+# order, the way an existing production database would actually walk it.
+
+__namespace: revisions
+__revision: 1
+
+properties:
+  sql:
+    - |
+      create table properties (
+        id serial primary key,
+        name text not null,
+        description text
+      );
+
+  meta:
+    - up: |
+        insert into properties (name, description) values
+          ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),
+          ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.');
+      down: delete from properties where name in ('Seaside Inn', 'Mountain Lodge');

@@ -1,0 +1,52 @@
+# yaml-embedded-languages: sql
+#
+# Revision 3 ships the consolidated definition r2 promised via `new_sql`:
+# `description_search` is now part of the table's own CREATE TABLE, and the
+# child mutation from r2 simply isn't restated here - it has no `new_sql`,
+# `meta`, `needs` etc. left in the recorded state (r2 set `new_sql: []` on
+# it), so it quietly drops out of the graph instead of being downed.
+#
+# The `do $$ ... $$` block below is a unit test for the revision itself: it
+# fails the mutation (and the whole apply) if the two rows inserted back in
+# r1 didn't survive the trip through r2, or if full-text search over the
+# now-consolidated column doesn't work. See README, "Considerations when
+# writing revisions".
+
+__namespace: revisions
+__revision: 3
+
+properties:
+  sql:
+    - |
+      create table properties (
+        id serial primary key,
+        name text not null,
+        description text,
+        description_search tsvector
+          generated always as (to_tsvector('english', coalesce(description, ''))) stored
+      );
+    - create index properties_description_search_idx on properties using gin (description_search);
+
+  meta:
+    - up: |
+        insert into properties (name, description) values
+          ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),
+          ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.');
+      down: delete from properties where name in ('Seaside Inn', 'Mountain Lodge');
+
+    - up: |
+        do $$
+        declare
+          v_count integer;
+        begin
+          v_count := (select count(*) from properties);
+          if v_count <> 2 then
+            raise exception 'expected 2 properties to survive the revision, found %', v_count;
+          end if;
+          if not exists (
+            select 1 from properties where description_search @@ websearch_to_tsquery('english', 'pool')
+          ) then
+            raise exception 'full text search over description_search should still find the seaside inn';
+          end if;
+          raise notice 'revision check passed: % properties, full text search still works', v_count;
+        end $$ language plpgsql;

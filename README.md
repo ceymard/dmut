@@ -34,6 +34,11 @@ skip this on `apply`. If your database can't tolerate that, run `dmut test` agai
 copy to validate the mutations, review the change, and accept that dmut's production `apply` is
 not built to route around a database that must stay fully available while it runs.
 
+Full documentation, including a walked-through example database
+([`examples/hotel`](examples/hotel)) and a worked revisions example
+([`examples/revisions`](examples/revisions)), is built with [Zensical](https://zensical.org/) —
+see `just docs-serve` / `just docs-build`, or browse `docs/content/`.
+
 ## Installation
 
 ```sh
@@ -49,10 +54,10 @@ go build -o dmut .
 ## Running the tests
 
 ```sh
-make test        # everything
-make test-unit   # parser, loader, hashing, collect — no database needed
-make test-db     # the integration tests only
-make test-ci     # everything, and a missing docker daemon fails instead of skipping
+just test        # everything
+just test-unit   # parser, loader, hashing, collect — no database needed
+just test-db     # the integration tests only
+just test-ci     # everything, and a missing docker daemon fails instead of skipping
 ```
 
 The integration tests share a single postgres container and give each test a

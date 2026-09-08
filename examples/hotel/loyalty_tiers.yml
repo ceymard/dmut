@@ -1,0 +1,14 @@
+# yaml-embedded-languages: sql
+__namespace: hotel
+
+hotel.loyalty_tiers:
+  sql:
+    - |
+      create table hotel.loyalty_tiers (
+        id bigint generated always as identity primary key,
+        name text not null unique,
+        min_points integer not null default 0
+      );
+
+  meta:
+    - comment on table hotel.loyalty_tiers is 'Loyalty program tiers, looked up by name - deliberately a lookup table rather than an enum.';

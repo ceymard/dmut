@@ -75,13 +75,44 @@ var auto_create = seq("create",
 		seq(
 			c(either("function", "aggregate", "procedure"), id, "("),
 			zero_or_more(seq(
-				opt(either("in", "inout", "out", "variadic")),
-				c(id),
-				opt(c(zero_or_more(not("default", "=", ",", ")")))),
+				capture("mode", opt(either("in", "inout", "out", "variadic"))),
+				capture("pname", id),
+				capture("ptype", opt(zero_or_more(not("default", "=", ",", ")")))),
 				opt(either("=", "default"), zero_or_more(either(balanced_any("(", ")"), not(")", ",")))),
 				// until(either(",", ")")),
-				c(opt(",")),
-			)),
+				opt(","),
+			).Produce(produceFunc(func(st state, old_results []result) state {
+				// Postgres identifies a function/procedure to DROP by its IN,
+				// INOUT and VARIADIC parameter types only - an OUT parameter
+				// isn't part of that signature, so it must be left out of the
+				// generated DROP argument list.
+				mode := ""
+				for _, r := range old_results {
+					if r.group == "mode" {
+						mode = strings.ToLower(r.value.Value)
+					}
+				}
+				if mode == "out" {
+					return st
+				}
+				hasPrev := false
+				for _, r := range st.results {
+					if r.group == "param_sep" {
+						hasPrev = true
+						break
+					}
+				}
+				if hasPrev {
+					st.addResult("", lexer.Token{Value: ",", Pos: lexer.Position{Offset: -1}})
+				}
+				for _, r := range old_results {
+					if r.group == "pname" || r.group == "ptype" {
+						st.addResult("", r.value)
+					}
+				}
+				st.addResult("param_sep", lexer.Token{Value: "", Pos: lexer.Position{Offset: -1}})
+				return st
+			}))),
 			c(")"),
 		),
 
@@ -332,7 +363,7 @@ var auto_grant = seq(
 var default_privileges = seq(
 	c("alter", "default", "privileges", "in", "schema", id),
 	str("grant").Produce("revoke"),
-	c(id, "on"),
+	c(until("on"), "on"),
 	c(until("to")),
 	str("to").Produce("from"),
 	c(id),

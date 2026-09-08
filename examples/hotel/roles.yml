@@ -1,0 +1,13 @@
+# yaml-embedded-languages: sql
+__namespace: hotel
+
+# Lets an unauthenticated client (e.g. rel's own "~anonymous" role, see
+# docs/http/authentication.md in the rel project) read and write this schema.
+# Roles have no auto-down and no dedicated yaml key: create them in a plain
+# `sql` block, same as any other object.
+#
+# Not named `hotel.roles`: a role is cluster-wide, not an object that lives
+# in the `hotel` schema, so it's kept flat - same reasoning as `extensions`.
+roles:
+  sql:
+    - create role "~anonymous";

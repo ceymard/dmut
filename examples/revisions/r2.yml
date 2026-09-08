@@ -1,0 +1,59 @@
+# yaml-embedded-languages: sql
+#
+# Revision 2 adds full-text search over `description` as a child mutation -
+# an ALTER TABLE ADD COLUMN, kept separate from the table's own definition
+# exactly like examples/hotel/properties.yml's `description_search` child.
+#
+# `new_sql` on the parent declares what the *next* revision will inherit as
+# the recorded truth for `properties`: the column folded straight into
+# CREATE TABLE, as if it had been there from the start. `new_sql: []` on the
+# child says the opposite - once r3 lands, this child mutation has nothing
+# left to contribute and drops out of the graph (see README, "To retire a
+# mutation in a new revision").
+
+__namespace: revisions
+__revision: 2
+
+properties:
+  # What a brand-new database ends up with once revision 3 also exists. Must
+  # match revision 3's `sql` for `properties` exactly (including the index,
+  # not just the table) - otherwise the hash won't match and revision 3 will
+  # needlessly drop and recreate the table instead of leaving it alone.
+  new_sql:
+    - |
+      create table properties (
+        id serial primary key,
+        name text not null,
+        description text,
+        description_search tsvector
+          generated always as (to_tsvector('english', coalesce(description, ''))) stored
+      );
+    - create index properties_description_search_idx on properties using gin (description_search);
+
+  # What actually still has to run to bring a database that's sitting at
+  # revision 1 up to date - unchanged from r1.yml, since the column is added
+  # by the child mutation below instead.
+  sql:
+    - |
+      create table properties (
+        id serial primary key,
+        name text not null,
+        description text
+      );
+
+  children:
+    description_search:
+      new_sql: []
+
+      sql:
+        - |
+          alter table properties add column description_search tsvector
+            generated always as (to_tsvector('english', coalesce(description, ''))) stored;
+        - create index properties_description_search_idx on properties using gin (description_search);
+
+  meta:
+    - up: |
+        insert into properties (name, description) values
+          ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),
+          ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.');
+      down: delete from properties where name in ('Seaside Inn', 'Mountain Lodge');

@@ -35,6 +35,14 @@
   down: DROP FUNCTION f(a1 integer, a2 text, a3 text[]);
 - up: CREATE FUNCTION f(a1 integer, a2 text DEFAULT api.default_expr(), a3 text[] = 'bar') RETURNS void AS $$ $$ LANGUAGE sql;
   down: DROP FUNCTION f(a1 integer, a2 text, a3 text[]);
+- up: CREATE FUNCTION f(full_name text, OUT first_name text, OUT last_name text) AS $$ $$ LANGUAGE sql;
+  down: DROP FUNCTION f(full_name text);
+- up: CREATE FUNCTION f(OUT first_name text, full_name text, OUT last_name text) AS $$ $$ LANGUAGE sql;
+  down: DROP FUNCTION f(full_name text);
+- up: CREATE FUNCTION f(OUT first_name text, OUT last_name text) AS $$ $$ LANGUAGE sql;
+  down: DROP FUNCTION f();
+- up: CREATE FUNCTION f(a1 integer, INOUT a2 text, VARIADIC a3 text[]) AS $$ $$ LANGUAGE sql;
+  down: DROP FUNCTION f(a1 integer, a2 text, a3 text[]);
 # CreatePolicyOrTriggerStmt
 - up: CREATE POLICY p ON t USING (true);
   down: DROP POLICY p ON t;
@@ -116,5 +124,7 @@
   down: REVOKE SELECT ON ALL SEQUENCES IN SCHEMA pgmq FROM pg_monitor;
 - up: ALTER DEFAULT PRIVILEGES IN SCHEMA pgmq GRANT SELECT ON TABLES TO pg_monitor;
   down: ALTER DEFAULT PRIVILEGES IN SCHEMA pgmq REVOKE SELECT ON TABLES FROM pg_monitor;
+- up: ALTER DEFAULT PRIVILEGES IN SCHEMA pgmq GRANT SELECT, INSERT, UPDATE ON TABLES TO pg_monitor;
+  down: ALTER DEFAULT PRIVILEGES IN SCHEMA pgmq REVOKE SELECT, INSERT, UPDATE ON TABLES FROM pg_monitor;
 - up: CREATE INDEX IF NOT EXISTS idx_topic_bindings_covering ON pgmq.topic_bindings (pattern) INCLUDE (queue_name, compiled_regex);
   down: DROP INDEX pgmq.idx_topic_bindings_covering;

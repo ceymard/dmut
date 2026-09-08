@@ -1,0 +1,49 @@
+# yaml-embedded-languages: sql
+__namespace: hotel
+
+hotel.bookings:
+  needs: [hotel.guests, hotel.rooms, extensions, hotel.types.booking_status]
+
+  sql:
+    - |
+      create table hotel.bookings (
+        id uuid primary key default gen_random_uuid(),
+        guest_id bigint not null references hotel.guests (id),
+        room_id bigint not null references hotel.rooms (id),
+        stay tstzrange not null,
+        status hotel.booking_status not null default 'confirmed',
+        created_at timestamptz not null default now(),
+
+        -- no two bookings may claim the same room for overlapping periods;
+        -- needs btree_gist for the "=" operator class on room_id (bigint) to be
+        -- usable inside a GiST exclusion constraint at all
+        exclude using gist (room_id with =, stay with &&)
+      );
+
+  meta:
+    - comment on table hotel.bookings is 'A guest''s reservation of a room for a period. UUID-keyed (unlike most other tables here) since bookings are the kind of entity a real system would expose externally by id.';
+
+    # Computed column: derived purely from the row's own `stay` range.
+    - |
+      create function hotel.booking_nights(booking hotel.bookings) returns integer
+      language sql immutable strict as $$
+        select extract(day from upper(booking.stay) - lower(booking.stay))::integer
+      $$;
+    - comment on function hotel.booking_nights(hotel.bookings) is 'Computed column : length of stay, in nights.';
+
+    # Default argument value (on_date defaults to current_date). Qualified with
+    # the function's own name (rooms_available.property_id) because the parameter
+    # shares a name with the column it filters on.
+    - |
+      create function hotel.rooms_available(property_id bigint, on_date date default current_date)
+      returns setof hotel.rooms
+      language sql stable as $$
+        select r.* from hotel.rooms r
+        where r.property_id = rooms_available.property_id
+        and not exists (
+          select 1 from hotel.bookings b
+          where b.room_id = r.id
+          and b.stay @> on_date::timestamptz
+          and b.status in ('confirmed', 'checked_in')
+        )
+      $$;
