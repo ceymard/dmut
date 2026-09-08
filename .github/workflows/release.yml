@@ -22,6 +22,8 @@ jobs:
             arch: amd64
           - os: darwin
             arch: arm64
+          - os: windows
+            arch: amd64
     steps:
       - uses: actions/checkout@v4
 
@@ -35,14 +37,23 @@ jobs:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: 0
         run: |
-          out="dmut-${{ matrix.os }}-${{ matrix.arch }}"
-          go build -ldflags "-s -w" -o "$out" .
-          tar -czf "${out}.tar.gz" "$out"
+          name="dmut-${{ matrix.os }}-${{ matrix.arch }}"
+          bin="dmut"
+          if [ "${{ matrix.os }}" = "windows" ]; then bin="dmut.exe"; fi
+          go build -ldflags "-s -w" -o "$bin" .
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            zip "${name}.zip" "$bin"
+          else
+            tar -czf "${name}.tar.gz" "$bin"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: dmut-${{ matrix.os }}-${{ matrix.arch }}
-          path: dmut-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+          path: |
+            dmut-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+            dmut-${{ matrix.os }}-${{ matrix.arch }}.zip
+          if-no-files-found: ignore
 
   release:
     needs: build
@@ -56,5 +67,7 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.tar.gz
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
           generate_release_notes: true
