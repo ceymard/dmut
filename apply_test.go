@@ -314,6 +314,197 @@ func TestFullModeCascadesOnFailure(t *testing.T) {
 	}
 }
 
+// A three-level dependency chain: transactions -> cards -> accounts, each with a
+// real foreign key on the one before it. Retyping accounts.balance forces a
+// tail-only down of accounts, blocked by cards' FK - and rebuilding cards in full is
+// itself blocked by charges' FK on cards, so full mode's cascade has to actually
+// recurse two levels deep, not stop at the immediate dependent.
+const threeLevelChain = `api:
+  core:
+    - create schema api;
+
+api.accounts:
+  core:
+    - |
+      create table api.accounts (
+        id serial primary key,
+        balance int
+      );
+
+api.cards:
+  needs: [api.accounts]
+  core:
+    - |
+      create table api.cards (
+        id serial primary key,
+        account_id int references api.accounts (id)
+      );
+
+api.charges:
+  needs: [api.cards]
+  core:
+    - |
+      create table api.charges (
+        id serial primary key,
+        card_id int references api.cards (id)
+      );
+`
+
+const threeLevelChainRetyped = `api:
+  core:
+    - create schema api;
+
+api.accounts:
+  core:
+    - |
+      create table api.accounts (
+        id serial primary key,
+        balance bigint
+      );
+
+api.cards:
+  needs: [api.accounts]
+  core:
+    - |
+      create table api.cards (
+        id serial primary key,
+        account_id int references api.accounts (id)
+      );
+
+api.charges:
+  needs: [api.cards]
+  core:
+    - |
+      create table api.charges (
+        id serial primary key,
+        card_id int references api.cards (id)
+      );
+`
+
+// full mode must rebuild every level of the dependency chain, not just the direct
+// dependent - dropping accounts is blocked by cards' FK, and dropping cards (to
+// rebuild it) is in turn blocked by charges' FK on cards, so ExpandForFullRebuild's
+// walk has to actually recurse.
+func TestFullModeCascadesTwoLevelsDeep(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": threeLevelChain}))
+	exec(t, uri, "insert into api.accounts (balance) values (100);")
+
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": threeLevelChainRetyped})}, Full: true}.Run()
+	if err != nil {
+		t.Fatalf("expected full mode to rebuild both levels of dependents, got: %v", err)
+	}
+
+	if !exists(t, uri, "select 1 from information_schema.columns where table_name = 'accounts' and column_name = 'balance' and data_type = 'bigint'") {
+		t.Error("expected balance to have been retyped to bigint")
+	}
+	if !tableExists(t, uri, "cards") {
+		t.Error("expected the first-level dependent to have been rebuilt")
+	}
+	if !tableExists(t, uri, "charges") {
+		t.Error("expected the second-level dependent (grandchild) to have been rebuilt too, not left orphaned")
+	}
+}
+
+// api.accounts' target definition is simply broken SQL, so both the tail-only
+// attempt *and* full mode's expanded rebuild fail to re-up it. There is no third
+// attempt: the whole apply must abort and roll back exactly as cleanly as default
+// mode does, leaving the database completely untouched by either attempt.
+const withDependentBrokenRetype = `api:
+  core:
+    - create schema api;
+
+api.accounts:
+  core:
+    - |
+      create table api.accounts (
+        id serial primary key,
+        balance not_a_real_type
+      );
+
+api.transactions:
+  needs: [api.accounts]
+  core:
+    - |
+      create table api.transactions (
+        id serial primary key,
+        account_id int references api.accounts (id)
+      );
+`
+
+func TestFullModeAbortsWhenTheRebuildAlsoFails(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": withDependent}))
+	exec(t, uri, "insert into api.accounts (balance) values (100);")
+
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": withDependentBrokenRetype})}, Full: true}.Run()
+	if err == nil {
+		t.Fatal("expected the apply to fail - the rebuild's target definition is broken SQL")
+	}
+
+	if !exists(t, uri, "select 1 from information_schema.columns where table_name = 'accounts' and column_name = 'balance' and data_type = 'integer'") {
+		t.Error("expected the original (int) column to survive a fully-aborted apply")
+	}
+	if got := queryInt(t, uri, "select count(*) from api.accounts"); got != 1 {
+		t.Errorf("expected the pre-existing row to survive a clean rollback, found %d rows", got)
+	}
+}
+
+// Two indexes; the first one is removed, shifting the second into its slot. simple
+// mode must refuse this exactly like an edit at the tail would, even though the
+// surviving index's own text never changed - it's the position that changed.
+const withTwoIndexes = `api:
+  core:
+    - create schema api;
+
+api.users:
+  core:
+    - |
+      create table api.users (
+        id serial primary key,
+        name text not null
+      );
+    - create index users_name_idx on api.users (name);
+    - create index users_extra_idx on api.users ((name || '!'));
+  glue:
+    - grant select on table api.users to public;
+`
+
+const withMiddleIndexRemoved = `api:
+  core:
+    - create schema api;
+
+api.users:
+  core:
+    - |
+      create table api.users (
+        id serial primary key,
+        name text not null
+      );
+    - create index users_extra_idx on api.users ((name || '!'));
+  glue:
+    - grant select on table api.users to public;
+`
+
+func TestSimpleModeRefusesRemovalFromTheMiddle(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": withTwoIndexes}))
+	exec(t, uri, "insert into api.users (name) values ('someone');")
+
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": withMiddleIndexRemoved})}, Simple: true}.Run()
+	requireErrorContaining(t, err, "simple mode")
+
+	if !exists(t, uri, "select 1 from pg_indexes where indexname = 'users_name_idx'") {
+		t.Error("simple mode must not have touched the table at all - users_name_idx should still be there")
+	}
+	if got := queryInt(t, uri, "select count(*) from api.users"); got != 1 {
+		t.Errorf("simple mode must not have touched the data, found %d rows", got)
+	}
+}
+
 // Removing a mutation downs it, and everything that depended on it.
 func TestRemovingAMutationDownsIt(t *testing.T) {
 	uri := testdb(t)
@@ -741,5 +932,298 @@ func TestRevisionModeOverridesCliSimple(t *testing.T) {
 	}
 	if !tableExists(t, uri, "transactions") {
 		t.Error("expected the dependent table to have been rebuilt, not left dropped")
+	}
+}
+
+// override: may name a mutation that never appears in mutations: at all - per
+// WithOverrides' own doc comment this "orphan" case is allowed and must still be
+// recorded, so a later apply already knows about it. But it's never executed, and
+// the second test pass assumes what it tests is already physically up (see
+// TestMutationSet's own doc comment) - so an orphan override only actually works
+// for adopting something that already exists (created out of band here, standing in
+// for e.g. a table some other process manages), the same spirit as the --override
+// CLI flag's TestOverrideAdoptsExistingObjects, just scoped to one mutation.
+func TestOrphanOverrideAdoptsAnAlreadyExistingObject(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"r1.yml": "__revision: 1\n" + basic}))
+
+	exec(t, uri, "create table api.audit_log (id serial primary key, action text not null);")
+	exec(t, uri, "insert into api.audit_log (action) values ('seeded out of band');")
+
+	dir := mutationDir(t, map[string]string{
+		"r2.yml": `__revision: 2
+
+mutations:
+  api:
+    core:
+      - create schema api;
+
+  api.users:
+    core:
+      - |
+        create table api.users (
+          id serial primary key,
+          name text not null
+        );
+    glue:
+      - grant select on table api.users to public;
+
+override:
+  api.audit_log:
+    core:
+      - create table api.audit_log (id serial primary key, action text not null);
+`,
+	})
+
+	mustApply(t, uri, dir)
+
+	if got := queryInt(t, uri, "select count(*) from api.audit_log"); got != 1 {
+		t.Errorf("the orphan override must never execute - the pre-existing row must survive untouched, found %d rows", got)
+	}
+	if got := savedMutations(t, uri, ""); got != 3 {
+		t.Errorf("expected api, api.users and the orphan api.audit_log all recorded, got %d", got)
+	}
+}
+
+// The other side of the same coin: an orphan override for something that was never
+// physically created at all (no out-of-band adoption, nothing in mutations: either)
+// cannot pass the second test pass - there's nothing there for it to verify
+// reversibility against - and must fail loudly rather than silently recording
+// bookkeeping for an object that doesn't exist.
+func TestOrphanOverrideForNonExistentObjectFailsLoudly(t *testing.T) {
+	uri := testdb(t)
+
+	dir := mutationDir(t, map[string]string{
+		"r2.yml": `__revision: 2
+
+mutations:
+  api:
+    core:
+      - create schema api;
+
+  api.users:
+    core:
+      - |
+        create table api.users (
+          id serial primary key,
+          name text not null
+        );
+    glue:
+      - grant select on table api.users to public;
+
+override:
+  api.audit_log:
+    core:
+      - create table api.audit_log (id serial primary key, action text not null);
+`,
+	})
+
+	err := apply(t, uri, dir)
+	requireErrorContaining(t, err, "does not exist")
+
+	if got := savedMutations(t, uri, ""); got != 0 {
+		t.Errorf("a failed apply must not have recorded anything, got %d rows", got)
+	}
+}
+
+// When the same name is named in both delete: and override:, delete: must win (per
+// WithOverrides' doc comment) - the mutation disappears from tracking entirely,
+// despite an override being provided for it, and the physical object is never
+// touched either way.
+func TestDeleteWinsOverOverrideForTheSameName(t *testing.T) {
+	uri := testdb(t)
+
+	dir := mutationDir(t, map[string]string{
+		"r1.yml": "__revision: 1\n" + basic,
+		"r2.yml": `__revision: 2
+
+delete: [api.users]
+
+mutations:
+  api:
+    core:
+      - create schema api;
+
+  api.users:
+    core:
+      - |
+        create table api.users (
+          id serial primary key,
+          name text not null
+        );
+    glue:
+      - grant select on table api.users to public;
+
+override:
+  api.users:
+    core:
+      - create table api.users (id serial primary key, name text not null, extra text);
+`,
+	})
+
+	mustApply(t, uri, dir+"/r1.yml")
+	mustApply(t, uri, dir)
+
+	if !tableExists(t, uri, "users") {
+		t.Error("the physical table must still be there - delete: never downs anything")
+	}
+	if got := savedMutations(t, uri, ""); got != 1 {
+		t.Errorf("expected only api left tracked - delete: must win over the override for the same name, got %d", got)
+	}
+}
+
+// The mirror of TestRevisionModeOverridesCliSimple: a revision can also *tighten*
+// safety, not just loosen it. mode: simple refuses a retype that CLI -f would
+// otherwise happily cascade-rebuild through.
+const withDependentRetypedSimpleMode = `mode: simple
+
+mutations:
+  api:
+    core:
+      - create schema api;
+
+  api.accounts:
+    core:
+      - |
+        create table api.accounts (
+          id serial primary key,
+          balance bigint
+        );
+
+  api.transactions:
+    needs: [api.accounts]
+    core:
+      - |
+        create table api.transactions (
+          id serial primary key,
+          account_id int references api.accounts (id)
+        );
+`
+
+func TestRevisionModeSimpleOverridesCliFull(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": withDependent}))
+	exec(t, uri, "insert into api.accounts (balance) values (100);")
+
+	err := ApplyCmd{
+		Uri:   uri,
+		Paths: []string{mutationDir(t, map[string]string{"a.yml": withDependentRetypedSimpleMode})},
+		Full:  true,
+	}.Run()
+	requireErrorContaining(t, err, "simple mode")
+
+	if !exists(t, uri, "select 1 from information_schema.columns where table_name = 'accounts' and column_name = 'balance' and data_type = 'integer'") {
+		t.Error("mode: simple must have refused before touching anything - balance should still be int")
+	}
+	if got := queryInt(t, uri, "select count(*) from api.accounts"); got != 1 {
+		t.Errorf("expected the pre-existing row to survive, found %d rows", got)
+	}
+}
+
+// A broken override (its down is a lie, exactly like TestAMutationThatCannotBeDownedIsRefused)
+// on an already-adopted object is caught by RunMutations' second test pass
+// ("performing tests with override"), which actually exercises the override-swapped
+// set - not just the first pass against what really ran. Without that second pass, a
+// bad override would be recorded silently and only bite whenever some future
+// revision inherited it.
+func TestBrokenOverrideIsCaughtBySecondTestPass(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"r1.yml": "__revision: 1\n" + basic}))
+	if got := savedMutations(t, uri, ""); got != 2 {
+		t.Fatalf("expected 2 mutations recorded after r1, got %d", got)
+	}
+
+	// Adopted from elsewhere, same as TestOrphanOverrideAdoptsAnAlreadyExistingObject -
+	// otherwise the second pass would fail on "does not exist" before the lying down
+	// statement ever gets a chance to matter.
+	exec(t, uri, "create table api.lying (id int);")
+
+	dir := mutationDir(t, map[string]string{
+		"r2.yml": `__revision: 2
+
+mutations:
+  api:
+    core:
+      - create schema api;
+
+  api.users:
+    core:
+      - |
+        create table api.users (
+          id serial primary key,
+          name text not null
+        );
+    glue:
+      - grant select on table api.users to public;
+
+override:
+  api.lying:
+    core:
+      - up: create table api.lying (id int);
+        down: select 1;
+`,
+	})
+
+	err := apply(t, uri, dir)
+	requireErrorContaining(t, err, "already exists")
+
+	if got := savedMutations(t, uri, ""); got != 2 {
+		t.Errorf("a failed apply must not have recorded the broken override, got %d rows", got)
+	}
+}
+
+// A bare rename (parent.old_name -> parent.new_name, same effect, no delete:/
+// override:) is not a squash - it's the natural first mistake someone makes reaching
+// for "consolidate this," so it's worth pinning down exactly what actually happens:
+// the old name goes down in full and the new name comes up as brand new, just like
+// any other obsolete+new pair, with no special-casing for the rename "intent".
+func TestRenamingAChildMutationIsNotASquash(t *testing.T) {
+	uri := testdb(t)
+
+	dir1 := mutationDir(t, map[string]string{"a.yml": `api:
+  core:
+    - create schema api;
+
+api.users:
+  core:
+    - create table api.users (id serial primary key, name text not null);
+
+api.users.legacy_flag:
+  needs: [api.users]
+  core:
+    - alter table api.users add column legacy_flag boolean not null default false;
+`})
+	mustApply(t, uri, dir1)
+	exec(t, uri, "insert into api.users (name) values ('someone');")
+
+	dir2 := mutationDir(t, map[string]string{"a.yml": `api:
+  core:
+    - create schema api;
+
+api.users:
+  core:
+    - create table api.users (id serial primary key, name text not null);
+
+api.users.retired_flag:
+  needs: [api.users]
+  core:
+    - alter table api.users add column retired_flag boolean not null default false;
+`})
+	mustApply(t, uri, dir2)
+
+	if columnExists(t, uri, "users", "legacy_flag") {
+		t.Error("the old name should have gone down in full, like any other obsolete mutation")
+	}
+	if !columnExists(t, uri, "users", "retired_flag") {
+		t.Error("the new name should have come up as brand new")
+	}
+	if got := queryInt(t, uri, "select count(*) from api.users"); got != 1 {
+		t.Errorf("api.users itself was untouched, so the row should survive the rename of its sibling, found %d rows", got)
+	}
+	if got := savedMutations(t, uri, ""); got != 3 {
+		t.Errorf("expected api, api.users and api.users.retired_flag tracked (legacy_flag gone), got %d", got)
 	}
 }

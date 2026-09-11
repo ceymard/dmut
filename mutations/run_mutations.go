@@ -206,9 +206,38 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	}
 
 	if local.OverrideMutations != nil {
-		runner.Logger().Println(au.BrightGreen("🧪"), "performing tests with override")
-		if err := TestMutationSet(runner, save_set); err != nil {
-			return err
+		// Test only what override: actually changed (its entries that survived
+		// delete:, sourced from save_set so they carry the swapped-in content), not
+		// the whole of save_set - TestMutationSet assumes everything it's given is
+		// already fully up in the database, which delete: deliberately violates: it
+		// untracks a mutation without downing its physical object, so testing the
+		// rest of save_set (e.g. a parent schema untouched by override:) as one
+		// block can spuriously fail on a delete:'d-but-still-physical sibling that
+		// isn't even part of what's being verified here (a real bug this comment
+		// used to not warn about - see the "delete + unrelated override" test).
+		changed_set := NewMutationSet(local.Namespace, local.Revision, local.File)
+		for override := range local.OverrideMutations.AllMutations() {
+			if _, ok := save_set.GetMutation(override.Name); !ok {
+				continue // delete: named this one too, and delete: wins
+			}
+			// Copy from the raw override entry, not save_set's already-resolved
+			// copy: save_set's Needs may carry an auto-added implicit-parent name
+			// (e.g. "api" for "api.audit_log") from being resolved inside the full
+			// save_set - re-resolving that Needs value inside this narrower
+			// changed_set fails ("asks for dependency api which was not found")
+			// unless that parent happens to be in changed_set too. The raw
+			// override entry's Needs is exactly what was declared, unresolved.
+			cp := *override
+			changed_set.AddMutation(&cp)
+		}
+		if changed_set.Size() > 0 {
+			if err := changed_set.ResolveDependencies(); err != nil {
+				return err
+			}
+			runner.Logger().Println(au.BrightGreen("🧪"), "performing tests with override")
+			if err := TestMutationSet(runner, changed_set); err != nil {
+				return err
+			}
 		}
 	}
 	runner.Logger().Println(au.BrightGreen("✓"), "tests passed")
