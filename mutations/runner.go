@@ -21,6 +21,7 @@ type Executor interface {
 	GetDBMutationsFromDb(namespace string) (*MutationSet, error)
 
 	ClearMutations(namespace string) error
+	DeleteMutations(namespace string, names []string) error
 	SaveMutations(mutations *MutationSet) error
 
 	Run(runnable *Runnable) error

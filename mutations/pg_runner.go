@@ -157,6 +157,18 @@ func (r *PgRunner) ClearMutations(namespace string) error {
 	return wrapPgError(err, sql)
 }
 
+// DeleteMutations removes bookkeeping for specific mutations, unlike ClearMutations
+// which wipes an entire namespace - this is what a revision's `delete:` key uses to
+// untrack named mutations without running a down for them.
+func (r *PgRunner) DeleteMutations(namespace string, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	sql := `DELETE FROM __dmut__.mutations WHERE namespace = $1 AND name = ANY($2)`
+	err := r.exec(nil, sql, namespace, names)
+	return wrapPgError(err, sql)
+}
+
 func (r *PgRunner) Commit() error {
 	r.logger.Println(au.BrightGreen("💾"), "committing")
 	return r.exec(nil, `COMMIT`)

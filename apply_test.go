@@ -609,3 +609,38 @@ func TestRevisionsAreNotReplayed(t *testing.T) {
 		t.Error("re-applying an up-to-date database must not touch its data")
 	}
 }
+
+// DeleteMutations (the primitive a revision's delete: key uses) removes bookkeeping
+// for specific mutations only - unlike ClearMutations (namespace-wide) - and, crucially,
+// never touches the physical object it was tracking.
+func TestDeleteMutationsRemovesOnlyNamedRows(t *testing.T) {
+	uri := testdb(t)
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": basic}))
+
+	if got := savedMutations(t, uri, ""); got != 2 {
+		t.Fatalf("expected 2 mutations recorded before delete, got %d", got)
+	}
+
+	runner, err := mutations.NewPgRunner(uri, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runner.Close()
+
+	if err := runner.Begin(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.DeleteMutations("", []string{"api.users"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := savedMutations(t, uri, ""); got != 1 {
+		t.Errorf("expected 1 mutation left after deleting api.users, got %d", got)
+	}
+	if !tableExists(t, uri, "users") {
+		t.Error("DeleteMutations must not have touched the physical table, only bookkeeping")
+	}
+}
