@@ -1,10 +1,10 @@
 # yaml-embedded-languages: sql
 #
-# Revision 3 ships the consolidated definition r2 promised via `new_sql`:
+# Revision 3 ships the consolidated definition r2 promised via `override`:
 # `description_search` is now part of the table's own CREATE TABLE, and the
-# child mutation from r2 simply isn't restated here - it has no `new_sql`,
-# `meta`, `needs` etc. left in the recorded state (r2 set `new_sql: []` on
-# it), so it quietly drops out of the graph instead of being downed.
+# child mutation from r2 simply isn't restated here - r2's `delete` already
+# retired it from tracking, so it quietly drops out of the graph instead of
+# being downed.
 #
 # The `do $$ ... $$` block below is a unit test for the revision itself: it
 # fails the mutation (and the whole apply) if the two rows inserted back in

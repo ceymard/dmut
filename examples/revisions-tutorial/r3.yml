@@ -1,10 +1,9 @@
 # yaml-embedded-languages: sql
 #
-# Revision 3 ships the consolidated definition r2 promised via `new_sql`.
+# Revision 3 ships the consolidated definition r2 promised via `override`.
 # None of the five child mutations from r1/r2 are restated here - they don't
-# need to be. r2 set `new_sql: []` on all of them, so their recorded state
-# once revision 3 lands is empty, and they simply drop out of the graph
-# instead of being downed one by one.
+# need to be. r2's `delete` already retired all of them from tracking, so
+# they simply drop out of the graph instead of being downed one by one.
 #
 # The `do $$ ... $$` block is a unit test for the revision itself: it fails
 # the whole apply if the two rows seeded back in r1 didn't survive the trip
@@ -16,7 +15,7 @@ __namespace: crm
 __revision: 3
 
 customers:
-  # Byte-for-byte what r2.yml promised via `new_sql` - including the seed
+  # Byte-for-byte what r2.yml promised via `override` - including the seed
   # data, which had to move here too since a fresh database applying
   # revision 3 directly never has a `full_name` column to seed through.
   core:

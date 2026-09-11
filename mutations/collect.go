@@ -157,8 +157,7 @@ func (y *yamlWriter) stringList(depth int, key string, values []string) {
 	y.line(strings.Repeat(indent, depth) + key + ": [" + strings.Join(quoted, ", ") + "]")
 }
 
-// statements writes a sql/meta/new_sql block. emit_empty keeps `key: []` in the
-// output, which new_sql needs to mean "this mutation is retired".
+// statements writes a core/glue block. emit_empty keeps `key: []` in the output.
 func (y *yamlWriter) statements(depth int, key string, stmts []MutationStatement, emit_empty bool) {
 	if len(stmts) == 0 {
 		if emit_empty {
