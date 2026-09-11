@@ -45,6 +45,7 @@ func (ms *MutationSet) readDocument(node ast.Node) error {
 			overrideShaped = true
 		}
 	}
+	ms.OverrideShaped = overrideShaped
 
 	for _, mapping := range map_node.Values {
 		key_node := mapping.Key

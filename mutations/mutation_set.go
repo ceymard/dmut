@@ -30,6 +30,13 @@ type MutationSet struct {
 	// executed - a separate set, not part of ms's own dependency graph, since these
 	// never run for real.
 	OverrideMutations *MutationSet
+	// OverrideShaped records whether the source document declared any of
+	// mode/delete/override/mutations at the top level (see readDocument) - unlike
+	// Mode/Delete/OverrideMutations, this stays true even when a document declares
+	// only `mutations:` and nothing else, which would otherwise be indistinguishable
+	// from a plain flat-keyed revision after parsing. Collect uses this to decide
+	// whether to nest mutations under `mutations:` and re-emit mode/delete/override.
+	OverrideShaped bool
 }
 
 // WithOverrides returns a new set where every mutation named in OverrideMutations has

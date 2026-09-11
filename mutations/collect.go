@@ -52,27 +52,50 @@ func Collect(namespaces *MutationNamespace, w io.Writer) error {
 			}
 			out.fieldInt(0, "__revision", revision)
 
-			var names []string
-			for mut := range set.AllMutations() {
-				names = append(names, mut.Name)
-			}
-			sort.Strings(names)
-
-			// TODO(phase 4, collect -r): this doesn't yet re-emit mode/delete/override
-			// for an override-shaped revision - only mutations: round-trips today.
-			for _, name := range names {
-				mut, _ := set.GetMutation(name)
+			if set.OverrideShaped {
+				if set.Mode != "" {
+					out.field(0, "mode", set.Mode)
+				}
+				if len(set.Delete) > 0 {
+					out.stringList(0, "delete", set.Delete)
+				}
+				if set.OverrideMutations != nil && set.OverrideMutations.Size() > 0 {
+					out.blank()
+					out.line("override:")
+					emitMutationBodies(out, 1, set.OverrideMutations)
+				}
 				out.blank()
-				out.line(yamlKey(name) + ":")
-				out.stringList(1, "needs", mut.declaredNeeds(set, mut.Needs))
-				out.statements(1, "core", mut.Core, mut.Core != nil)
-				out.stringList(1, "glue_needs", mut.declaredNeeds(set, mut.GlueNeeds))
-				out.statements(1, "glue", mut.Glue, mut.Glue != nil)
+				out.line("mutations:")
+				emitMutationBodies(out, 1, set)
+			} else {
+				emitMutationBodies(out, 0, set)
 			}
 		}
 	}
 
 	return out.err
+}
+
+// emitMutationBodies writes every mutation in set, sorted by name, at the given
+// indentation depth - depth 0 for a plain (flat-keyed) revision, depth 1 when nested
+// under mutations: or override: in an override-shaped one.
+func emitMutationBodies(out *yamlWriter, depth int, set *MutationSet) {
+	var names []string
+	for mut := range set.AllMutations() {
+		names = append(names, mut.Name)
+	}
+	sort.Strings(names)
+
+	pad := strings.Repeat(indent, depth)
+	for _, name := range names {
+		mut, _ := set.GetMutation(name)
+		out.blank()
+		out.line(pad + yamlKey(name) + ":")
+		out.stringList(depth+1, "needs", mut.declaredNeeds(set, mut.Needs))
+		out.statements(depth+1, "core", mut.Core, mut.Core != nil)
+		out.stringList(depth+1, "glue_needs", mut.declaredNeeds(set, mut.GlueNeeds))
+		out.statements(depth+1, "glue", mut.Glue, mut.Glue != nil)
+	}
 }
 
 // declaredNeeds strips the dependencies that ResolveDependencies derived from the

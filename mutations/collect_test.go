@@ -111,16 +111,20 @@ func TestCollectSkipsDmutNamespace(t *testing.T) {
 	}
 }
 
-// collect does not yet preserve mode/delete/override when re-serializing an
-// override-shaped revision - only mutations: round-trips today (see the TODO in
-// collect.go). This is a known, deliberate gap for this phase, not an oversight -
-// closing it belongs to `collect -r` (specs/changes.md, "Changes to collect"). This
-// test exists so that gap can't regress silently *and* so it gets noticed (and
-// rewritten) the moment it's actually closed.
-func TestCollectDoesNotYetPreserveOverrideShape(t *testing.T) {
+// collect faithfully re-serializes an override-shaped revision: its delete: and
+// override: blocks must survive, and its mutations must be nested under mutations:
+// rather than promoted back to flat top-level keys - otherwise replacing test-r2.yml
+// with its own collected output would silently lose the delete/override bookkeeping.
+func TestCollectPreservesOverrideShape(t *testing.T) {
 	got := collect(t, "../test/revision")
-	if strings.Contains(got, "override:") || strings.Contains(got, "delete:") {
-		t.Errorf("collect started preserving override-shaped revisions - update this test (and the TODO in collect.go) now that it round-trips:\n%s", got)
+	if !strings.Contains(got, "delete: [test.add_column_age]") {
+		t.Errorf("collect dropped the delete: block for revision 2:\n%s", got)
+	}
+	if !strings.Contains(got, "override:") {
+		t.Errorf("collect dropped the override: block for revision 2:\n%s", got)
+	}
+	if !strings.Contains(got, "mutations:") {
+		t.Errorf("collect did not nest revision 2's mutations under mutations::\n%s", got)
 	}
 }
 
