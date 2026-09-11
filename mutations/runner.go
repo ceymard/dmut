@@ -19,6 +19,7 @@ type Executor interface {
 	ReleaseSavepoint(name string) error
 
 	GetDBMutationsFromDb(namespace string) (*MutationSet, error)
+	GetDBNamespaces() ([]string, error)
 
 	ClearMutations(namespace string) error
 	DeleteMutations(namespace string, names []string) error

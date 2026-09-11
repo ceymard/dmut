@@ -231,6 +231,49 @@ func (r *PgRunner) exec(mutation *Mutation, sql string, args ...interface{}) err
 	return err
 }
 
+// GetDBNamespaces lists every distinct namespace recorded in __dmut__.mutations,
+// excluding __dmut__ itself - used by `collect -r` when sourcing a revision shell
+// from a live database with no local files to already know the namespace from.
+func (r *PgRunner) GetDBNamespaces() ([]string, error) {
+	var (
+		db     = r.conn
+		exists bool
+	)
+
+	sql := `SELECT EXISTS (
+		SELECT 1
+		FROM pg_catalog.pg_namespace
+		WHERE nspname = '__dmut__'
+	)`
+	if err := db.QueryRow(context.Background(), sql).Scan(&exists); err != nil {
+		return nil, wrapPgError(err, sql)
+	}
+	if !exists {
+		return nil, nil
+	}
+
+	sql = `SELECT DISTINCT namespace FROM __dmut__.mutations WHERE namespace != $1 ORDER BY namespace`
+	rows, err := db.Query(context.Background(), sql, DmutNamespace)
+	if err != nil {
+		return nil, wrapPgError(err, sql)
+	}
+	defer rows.Close()
+
+	var namespaces []string
+	for rows.Next() {
+		var ns string
+		if err := rows.Scan(&ns); err != nil {
+			return nil, wrapPgError(err, sql)
+		}
+		namespaces = append(namespaces, ns)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, wrapPgError(err, sql)
+	}
+
+	return namespaces, nil
+}
+
 // get the mutations already in the database
 func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) {
 	var (
