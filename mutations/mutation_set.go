@@ -17,6 +17,20 @@ type MutationSet struct {
 	Revision     int
 	File         string
 	HasOverrides bool // has NewSql or NewNeeds
+
+	// Mode, Delete and OverrideMutations are only meaningful on an override-shaped
+	// revision (one that declared mode/delete/override/mutations - see readDocument).
+	// Mode, when non-empty, is the apply mode ("default"|"full"|"simple") this
+	// revision must run under, overriding whatever the CLI invocation was given.
+	Mode string
+	// Delete is the names of mutations to drop from dmut's tracking table without
+	// running a down for them.
+	Delete []string
+	// OverrideMutations holds the revision's `override:` block: mutations recorded
+	// as this revision's new truth for their Core/Glue/Needs/GlueNeeds, but never
+	// executed - a separate set, not part of ms's own dependency graph, since these
+	// never run for real.
+	OverrideMutations *MutationSet
 }
 
 func (ms *MutationSet) AsNewMutationSet() *MutationSet {

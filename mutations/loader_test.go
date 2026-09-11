@@ -554,3 +554,88 @@ func TestDmutOwnMutationsAreAlwaysLoaded(t *testing.T) {
 		t.Errorf("the %s namespace should always be loaded", DmutNamespace)
 	}
 }
+
+// An override-shaped revision (any of mode/delete/override/mutations present) parses
+// mode, delete and override, and applies mutations: through the normal path - dependency
+// resolution, hashing, everything - exactly like a plain revision's flat mutation names.
+func TestOverrideShapedRevisionParses(t *testing.T) {
+	s := set(t, mustLoad(t, map[string]string{
+		"r2.yml": `__revision: 2
+mode: full
+delete: [x.old_child]
+
+override:
+  x:
+    core:
+      - create table x (id int, name text);
+
+mutations:
+  x:
+    core:
+      - create table x (id int);
+  x.add_name:
+    needs: [x]
+    core:
+      - alter table x add column name text;
+`,
+	}), "")
+
+	if s.Mode != "full" {
+		t.Errorf("expected mode 'full', got %q", s.Mode)
+	}
+	if len(s.Delete) != 1 || s.Delete[0] != "x.old_child" {
+		t.Errorf("expected delete: [x.old_child], got %v", s.Delete)
+	}
+
+	x := mutation(t, s, "x")
+	if len(x.Core) != 1 || x.Core[0].Up != "create table x (id int);" {
+		t.Errorf("expected mutations: to be what actually runs, got %+v", x.Core)
+	}
+
+	child := mutation(t, s, "x.add_name")
+	if !hasParent(child, "x", false) {
+		t.Error("expected x.add_name to depend on x, resolved the normal way")
+	}
+
+	if s.OverrideMutations == nil {
+		t.Fatal("expected an OverrideMutations set")
+	}
+	overriddenX := mutation(t, s.OverrideMutations, "x")
+	if len(overriddenX.Core) != 1 || overriddenX.Core[0].Up != "create table x (id int, name text);" {
+		t.Errorf("expected override: to hold the recorded-but-unexecuted definition, got %+v", overriddenX.Core)
+	}
+}
+
+// A revision declaring mode/delete/override/mutations can't also have a flat top-level
+// mutation name - it would be ambiguous with the reserved keys (and defeats the point of
+// reserving them: a mutation named e.g. "delete" must never collide).
+func TestOverrideShapedRevisionRefusesFlatMutationNames(t *testing.T) {
+	refuses(t, "must nest its mutation definitions under 'mutations:'", map[string]string{
+		"r2.yml": "__revision: 2\nmode: full\nx:\n  core:\n    - create schema x;\n",
+	})
+}
+
+func TestUnknownModeIsRefused(t *testing.T) {
+	refuses(t, "unknown mode", map[string]string{
+		"r2.yml": "__revision: 2\nmode: yolo\nmutations:\n  x:\n    core:\n      - create schema x;\n",
+	})
+}
+
+// A plain revision (none of mode/delete/override/mutations present) is completely
+// unaffected - flat top-level mutation names still work exactly as before.
+func TestPlainRevisionIsUnaffectedByOverrideShape(t *testing.T) {
+	s := set(t, mustLoad(t, map[string]string{
+		"r1.yml": "__revision: 1\nx:\n  core:\n    - create schema x;\n",
+	}), "")
+
+	x := mutation(t, s, "x")
+	if len(x.Core) != 1 {
+		t.Errorf("expected a plain revision to load its mutation normally, got %+v", x.Core)
+	}
+	if s.Mode != "" {
+		t.Errorf("expected no mode on a plain revision, got %q", s.Mode)
+	}
+	if s.OverrideMutations != nil {
+		t.Error("expected no OverrideMutations on a plain revision")
+	}
+}
