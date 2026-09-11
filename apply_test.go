@@ -644,3 +644,102 @@ func TestDeleteMutationsRemovesOnlyNamedRows(t *testing.T) {
 		t.Error("DeleteMutations must not have touched the physical table, only bookkeeping")
 	}
 }
+
+// A revision's delete: key untracks a mutation without running a down for it - the
+// physical object is left completely alone, and a fresh database given only the
+// revision that deletes it never tries to reach back and build what it names.
+func TestRevisionDeleteDoesNotDownThePhysicalObject(t *testing.T) {
+	uri := testdb(t)
+
+	dir := mutationDir(t, map[string]string{
+		"r1.yml": "__revision: 1\n" + basic,
+		// api.users must still be restated in mutations: - each revision is
+		// self-contained, not a diff against the one before, so omitting it here
+		// would down it via the ordinary "absent locally" path, which is exactly
+		// what this test needs to *not* happen. delete: is what untracks it while
+		// leaving it fully present and unchanged.
+		"r2.yml": `__revision: 2
+delete: [api.users]
+
+mutations:
+  api:
+    core:
+      - create schema api;
+
+  api.users:
+    core:
+      - |
+        create table api.users (
+          id serial primary key,
+          name text not null
+        );
+    glue:
+      - grant select on table api.users to public;
+`,
+	})
+
+	// Reach revision 1 for real first (a fresh apply otherwise skips straight to the
+	// highest revision - not what this test is exercising).
+	mustApply(t, uri, dir+"/r1.yml")
+	mustApply(t, uri, dir)
+
+	if !tableExists(t, uri, "users") {
+		t.Error("delete: must not have downed the physical table")
+	}
+	if got := savedMutations(t, uri, ""); got != 1 {
+		t.Errorf("expected only api left tracked after deleting api.users, got %d", got)
+	}
+}
+
+const withDependentRetypedFullMode = `mode: full
+
+mutations:
+  api:
+    core:
+      - create schema api;
+
+  api.accounts:
+    core:
+      - |
+        create table api.accounts (
+          id serial primary key,
+          balance bigint
+        );
+
+  api.transactions:
+    needs: [api.accounts]
+    core:
+      - |
+        create table api.transactions (
+          id serial primary key,
+          account_id int references api.accounts (id)
+        );
+`
+
+// A revision's own mode: wins outright over whatever the CLI invocation asked for -
+// this is how a reviewed, committed revision carries destructive intent through an
+// automated pipeline that otherwise always runs -s (specs/changes.md, "Apply changes").
+func TestRevisionModeOverridesCliSimple(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": withDependent}))
+
+	// Simple mode alone would refuse this outright (the same failure
+	// TestDefaultModeDoesNotCascadeOnFailure exercises) - but the revision declares
+	// mode: full itself, which must win over the CLI's -s.
+	err := ApplyCmd{
+		Uri:    uri,
+		Paths:  []string{mutationDir(t, map[string]string{"a.yml": withDependentRetypedFullMode})},
+		Simple: true,
+	}.Run()
+	if err != nil {
+		t.Fatalf("expected the revision's own mode: full to override -s, got: %v", err)
+	}
+
+	if !exists(t, uri, "select 1 from information_schema.columns where table_name = 'accounts' and column_name = 'balance' and data_type = 'bigint'") {
+		t.Error("expected balance to have been retyped to bigint")
+	}
+	if !tableExists(t, uri, "transactions") {
+		t.Error("expected the dependent table to have been rebuilt, not left dropped")
+	}
+}
