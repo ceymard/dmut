@@ -13,6 +13,14 @@ type MutationRunnerOptions struct {
 	Override bool
 	All      bool
 
+	// Full and Simple select dmut apply's execution mode (see specs/changes.md,
+	// "Apply changes"). Neither set is the default mode: down the old segment and
+	// up the new one directly, but don't pursue dependent downing if a statement
+	// fails. They're mutually exclusive - callers (see command_apply.go) validate
+	// that before constructing these options.
+	Full   bool
+	Simple bool
+
 	// Output, when set, replaces the PgRunner's default os.Stdout as the
 	// destination for dmut's own progress/notice log lines — lets an
 	// embedding application (anything driving dmut as a library rather
@@ -35,6 +43,8 @@ func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
 		o.Commit = o.Commit || other.Commit
 		o.Override = o.Override || other.Override
 		o.All = o.All || other.All
+		o.Full = o.Full || other.Full
+		o.Simple = o.Simple || other.Simple
 		if other.Output != nil {
 			o.Output = other.Output
 		}
