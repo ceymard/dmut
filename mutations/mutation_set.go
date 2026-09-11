@@ -350,3 +350,52 @@ func (ms *MutationSet) GetLCPDelta(other *MutationSet, dir IterationDirection) (
 
 	return to_down, to_up, any_real_down
 }
+
+// ExpandForFullRebuild builds a down/up pair that fully rebuilds every named mutation and
+// everything depending on it, leaves first - used by `full` apply mode when a tail-only
+// GetLCPDelta attempt fails: names is every mutation whose down was attempted (see
+// RunMutations), and this reruns them (and their dependents) in full rather than by tail,
+// exactly like the cascade branch in GetLCPDelta for an obsolete mutation, just seeded from
+// "this attempt failed" instead of "this mutation vanished."
+func (ms *MutationSet) ExpandForFullRebuild(names []string, other *MutationSet, dir IterationDirection) (
+	to_down *RunnableMap,
+	to_up *RunnableMap,
+) {
+	to_down = NewRunnableMap()
+	to_up = NewRunnableMap()
+
+	var down_dir = IterationDirection{Down: true, Meta: dir.Meta}
+	var up_dir = IterationDirection{Down: false, Meta: dir.Meta}
+
+	// Collect every affected mutation (each seed plus its dependents, recursively) in
+	// down order - dependents before the thing they depend on - using the recorded/
+	// distant graph, since that's what's actually being torn down.
+	var affected []string
+	seen := hashset.New[string]()
+	for _, name := range names {
+		other_mut, ok := other.GetMutation(name)
+		if !ok {
+			continue
+		}
+		for dep := range other_mut.IterateDependencies(down_dir) {
+			to_down.Put(dep.Name, dep.Runnable(down_dir))
+			if !seen.Contains(dep.Name) {
+				seen.Add(dep.Name)
+				affected = append(affected, dep.Name)
+			}
+		}
+	}
+
+	// Rebuild in the reverse of down order: a dependents-before-self sequence,
+	// reversed, is exactly the self-before-dependents order rebuilding needs (a table
+	// must exist before another table's foreign key can reference it, etc). Mutations
+	// no longer present locally are simply gone, not rebuilt.
+	for i := len(affected) - 1; i >= 0; i-- {
+		name := affected[i]
+		if local_mut, ok := ms.GetMutation(name); ok {
+			to_up.Put(name, local_mut.Runnable(up_dir))
+		}
+	}
+
+	return to_down, to_up
+}

@@ -109,12 +109,41 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 				return err
 			}
 
-			if err := sql_down.Run(runner); err != nil {
-				return err
-			}
+			if options.Full {
+				// Try the tail-only attempt first, without downing dependants. If it
+				// fails, roll back to before it and rebuild every mutation that needed
+				// a down - and everything depending on it, leaves first - in full
+				// rather than by tail, then retry once. No further retry: a second
+				// failure aborts the whole apply exactly like default mode.
+				if err := runner.SavePoint("core_attempt"); err != nil {
+					return err
+				}
+				attempt_err := sql_down.Run(runner)
+				if attempt_err == nil {
+					attempt_err = sql_up.Run(runner)
+				}
+				if attempt_err != nil {
+					if err := runner.RollbackToSavepoint("core_attempt"); err != nil {
+						return err
+					}
+					expanded_down, expanded_up := local.ExpandForFullRebuild(sql_down.Keys(), distant, ITER_SQL)
+					if err := expanded_down.Run(runner); err != nil {
+						return err
+					}
+					if err := expanded_up.Run(runner); err != nil {
+						return err
+					}
+				} else if err := runner.ReleaseSavepoint("core_attempt"); err != nil {
+					return err
+				}
+			} else {
+				if err := sql_down.Run(runner); err != nil {
+					return err
+				}
 
-			if err := sql_up.Run(runner); err != nil {
-				return err
+				if err := sql_up.Run(runner); err != nil {
+					return err
+				}
 			}
 
 			if err := meta_up.Run(runner); err != nil {

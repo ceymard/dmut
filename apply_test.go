@@ -217,6 +217,103 @@ api.users:
 	}
 }
 
+// A schema with a table that has a dependent: another table whose foreign key
+// references it. Changing the parent's core forces a tail-only down of just the
+// parent, which Postgres refuses ("cannot drop table ... because other objects
+// depend on it") since the dependent's foreign key is still there - the exact
+// family of failure `full` mode's cascade-and-retry exists for.
+const withDependent = `api:
+  core:
+    - create schema api;
+
+api.accounts:
+  core:
+    - |
+      create table api.accounts (
+        id serial primary key,
+        balance int
+      );
+
+api.transactions:
+  needs: [api.accounts]
+  core:
+    - |
+      create table api.transactions (
+        id serial primary key,
+        account_id int references api.accounts (id)
+      );
+`
+
+const withDependentRetyped = `api:
+  core:
+    - create schema api;
+
+api.accounts:
+  core:
+    - |
+      create table api.accounts (
+        id serial primary key,
+        balance bigint
+      );
+
+api.transactions:
+  needs: [api.accounts]
+  core:
+    - |
+      create table api.transactions (
+        id serial primary key,
+        account_id int references api.accounts (id)
+      );
+`
+
+// default mode must not cascade to a dependent on its own - it tries the tail-only
+// down, Postgres refuses because of the dependent's foreign key, and the whole apply
+// aborts with that error, leaving the database untouched.
+func TestDefaultModeDoesNotCascadeOnFailure(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": withDependent}))
+	exec(t, uri, "insert into api.accounts (balance) values (100);")
+
+	err := apply(t, uri, mutationDir(t, map[string]string{"a.yml": withDependentRetyped}))
+	requireErrorContaining(t, err, "depend")
+
+	if !columnExists(t, uri, "accounts", "balance") {
+		t.Error("the table should still be there at all")
+	}
+	if got := queryInt(t, uri, "select count(*) from api.accounts"); got != 1 {
+		t.Errorf("default mode must not have touched the data, found %d rows", got)
+	}
+}
+
+// full mode must fall back to rebuilding the dependent (and the mutation whose tail
+// attempt failed) in full when the tail-only attempt is blocked, succeeding where
+// default mode aborts.
+func TestFullModeCascadesOnFailure(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": withDependent}))
+	exec(t, uri, "insert into api.accounts (balance) values (100);")
+
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": withDependentRetyped})}, Full: true}.Run()
+	if err != nil {
+		t.Fatalf("expected full mode to rebuild past the dependent, got: %v", err)
+	}
+
+	if !exists(t, uri, "select 1 from information_schema.columns where table_name = 'accounts' and column_name = 'balance' and data_type = 'bigint'") {
+		t.Error("expected balance to have been retyped to bigint")
+	}
+	if !tableExists(t, uri, "transactions") {
+		t.Error("expected the dependent table to have been rebuilt, not left dropped")
+	}
+	// A full rebuild tears the table down and recreates it, so the row inserted
+	// before the apply does not survive - that's the actual trade-off `full` mode
+	// makes, documented here rather than left implicit.
+	if got := queryInt(t, uri, "select count(*) from api.accounts"); got != 0 {
+		t.Errorf("expected the full rebuild to have lost the pre-existing row, found %d", got)
+	}
+}
+
 // Removing a mutation downs it, and everything that depended on it.
 func TestRemovingAMutationDownsIt(t *testing.T) {
 	uri := testdb(t)
