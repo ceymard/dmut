@@ -79,6 +79,37 @@ func TestCommonPrefixLenIgnoresWhitespaceAndComments(t *testing.T) {
 	}
 }
 
+// Inserting a brand-new statement in the middle is a different shape from editing one
+// in place: everything positionally after the insertion point shifts, so even a
+// statement whose *text* is byte-identical on both sides (it just moved one slot to
+// the right) must still be swept into both tails - the LCP diff has no way to notice
+// "this is actually still here, just later," and re-running it in place (rather than
+// detecting a no-op) is the only sound thing it can do without a general diff.
+func TestCommonPrefixLenInsertionInTheMiddleShiftsEverythingAfter(t *testing.T) {
+	old := stmts(
+		"create table t (id int);",
+		"alter table t add column bar text;",
+	)
+	new_ := stmts(
+		"create table t (id int);",
+		"alter table t add column foo text;", // newly inserted
+		"alter table t add column bar text;", // byte-identical to old[1], just shifted
+	)
+
+	got := commonPrefixLen(old, new_)
+	if got != 1 {
+		t.Fatalf("expected the prefix to stop right before the insertion, got %d", got)
+	}
+	old_tail := old[got:]
+	new_tail := new_[got:]
+	if len(old_tail) != 1 {
+		t.Errorf("expected the old tail to still cover the shifted statement, got %d", len(old_tail))
+	}
+	if len(new_tail) != 2 {
+		t.Errorf("expected the new tail to cover both the insertion and the shifted statement, got %d", len(new_tail))
+	}
+}
+
 func TestCommonPrefixLenEmptyLists(t *testing.T) {
 	if got := commonPrefixLen(nil, nil); got != 0 {
 		t.Errorf("expected 0 for two empty lists, got %d", got)
