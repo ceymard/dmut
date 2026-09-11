@@ -44,19 +44,27 @@ are worth calling out that don't show up in the smaller worked example:
 --8<-- "examples/revisions-tutorial/r2.yml"
 ```
 
-This file changes nothing about what runs against a database already sitting at revision 1 -
-`core`, `needs` and `children` are restated exactly as they are in `r1.yml`, because a revision
-restates every mutation it consists of, not a diff against the one before. The only additions are
-`new_sql` on `customers` (the fully consolidated table, plus the same seed data reshaped to the
-final column names) and `new_sql: []` on every one of the five children, retiring them.
+This revision declares `delete` and `override` (see [Squash revisions](index.md)), which makes it
+*override-shaped* - mutation definitions have to live nested under `mutations:` instead of as flat
+top-level keys. `mutations:` here changes nothing about what runs against a database already
+sitting at revision 1 - `core`, `needs` and `children` are restated exactly as they are in `r1.yml`,
+because a revision restates every mutation it consists of, not a diff against the one before.
 
-`customers`'s `new_sql` has to match revision 3's actual `core` byte-for-byte after whitespace
-normalization - dmut hashes the whole list, so a database that already has revision 2's `new_sql`
+The two additions are `override.customers` (the fully consolidated table, plus the same seed data
+reshaped to the final column names - kept in `core`, not `glue`, matching where it actually lives;
+see r1.yml's comment on why) and `delete`, listing all five children by name to retire them from
+tracking once revision 3 lands - they already ran for real via `mutations:`, so once their combined
+effect is folded into `customers`'s override, they no longer need separate rows.
+
+`customers`'s `override.core` has to match revision 3's actual `core` byte-for-byte after whitespace
+normalization - dmut hashes the whole list, so a database that already has revision 2's override
 recorded and a database that lands on revision 3 directly need to agree on exactly what they built.
 It's produced by mentally replaying every child's effect against the original `CREATE TABLE`:
 `full_name` gone, `first_name`/`last_name`/`marketing_opt_in` added, `signed_up_at` renamed to
 `created_at`, and `phone` never shows up at all, because it was both added and dropped inside this
-same revision.
+same revision. `override` replaces a mutation's recorded `core` *and* `glue` *and* `needs` wholesale,
+so leaving anything out doesn't fail loudly - it just makes the *recorded* version of that block
+empty.
 
 ## Revision 3: the file that stays
 
@@ -64,9 +72,9 @@ same revision.
 --8<-- "examples/revisions-tutorial/r3.yml"
 ```
 
-None of the five child mutations are restated here - they don't need to be. Revision 2 already told
-dmut their recorded state becomes empty once revision 3 lands, so they quietly drop out of the
-dependency graph instead of being downed one at a time. This is also the file worth keeping in the
+None of the five child mutations are restated here - they don't need to be. Revision 2's `delete`
+already told dmut they drop out of tracking once revision 3 lands - not downed, just forgotten,
+since their effect lives on inside `customers`'s override. This is also the file worth keeping in the
 repository long after `r1.yml` and `r2.yml` could be deleted: it's the one a brand-new database
 actually applies, and the one that reads like the table always looked this way.
 
@@ -80,20 +88,25 @@ around.
 Three things stood out while building this, worth naming plainly rather than leaving implicit:
 
 1. **Revision 2 is mostly a copy of revision 1.** For five children, that's five blocks of `core`
-   (and one `needs`) duplicated verbatim, with only a one-line `new_sql: []` added to each. That
-   duplication is deliberate - "each revision must be self-contained" is the whole safety property
-   that lets dmut apply any single revision on its own - but it does mean a table with many
+   (and one `needs`) duplicated verbatim under `mutations:`, with only a `delete` entry added for
+   each. That duplication is deliberate - "each revision must be self-contained" is the whole safety
+   property that lets dmut apply any single revision on its own - but it does mean a table with many
    incremental children turns revision 2 into a large, mostly-unchanged file. There is no
    "inherit `core` from the previous revision unless overridden" shortcut.
-2. **`new_sql` must be produced by hand, and only checked by exact-match hashing at apply time.**
-   Nothing statically checks that revision 2's `new_sql` for `customers` actually matches what
-   revision 3 will declare - dmut discovers a mismatch by hashing, at the moment revision 3 is
-   applied on top of a database that already carries revision 2's `new_sql`, which forces an
-   unwanted drop-and-recreate instead of raising a clear "these don't match" error ahead of time.
-   For a five-child table, mentally replaying every child's effect to write that `new_sql` by hand
-   is exactly the kind of bookkeeping a person gets wrong. `dmut test -a` catches it (a changed hash
-   shows up as an unexpected `↓`/`↑` on `customers·core` in the revision 2 → 3 transition), but only
-   after the fact, in CI, not while writing the file.
+2. **`override` must be produced by hand, and only checked by exact-match hashing at apply time.**
+   Splitting `override` into its own top-level block (rather than a per-mutation `new_sql` field)
+   makes it visually obvious *which* mutations are being redefined, and the reserved-key parsing
+   catches some mistakes immediately - a typo'd mutation name under `mutations:` colliding with
+   `mode`/`delete`/`override`/`mutations` is now a parse error, not a silent extra mutation. But the
+   core limitation named here is unchanged: nothing statically checks that revision 2's
+   `override.customers` actually matches what revision 3's `mutations.customers` will declare - dmut
+   still discovers a mismatch by hashing, at the moment revision 3 is applied on top of a database
+   that already carries revision 2's override, which still forces an unwanted drop-and-recreate
+   instead of raising a clear "these don't match" error ahead of time. For a five-child table,
+   mentally replaying every child's effect to write that `override` by hand is exactly the kind of
+   bookkeeping a person gets wrong. `dmut test -a` catches it (a changed hash shows up as an
+   unexpected `↓`/`↑` on `customers·core` in the revision 2 → 3 transition), but only after the fact,
+   in CI, not while writing the file.
 3. **`glue` always running after all `core` is a real, load-bearing gotcha here, not a footnote.**
    The seed data in this tutorial could not live in `glue` the way it does in the smaller worked
    example, because `split_name`'s `DROP COLUMN full_name` is itself `core`, and *all* `core` in the

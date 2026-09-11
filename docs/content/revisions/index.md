@@ -16,25 +16,50 @@ You can consolidate by folding those changes back into the original table defini
 - **Manual rewrite**: update mutations so each `CREATE TABLE ...` includes all columns, then back
   up data, reapply mutations, and restore data. This is manageable in development but awkward in
   production when many databases or large datasets are involved.
-- **Revisions**: use `__revision` and, in revisioned files, `new_needs` / `new_sql`. When a
-  revision is applied, the current `needs` and `core` run as usual, but the values stored in the
-  database are the `new_` ones — so the recorded source of truth becomes your cleaned-up set. New
-  or empty databases are then seeded from that tidy definition.
+- **Revisions**: use `__revision` and, in revisioned files, `delete` / `override`. `mutations:`
+  still runs for real against a database coming from an earlier revision, but `override:` is what
+  gets *recorded* as that revision's definition instead — so a database that starts fresh, or
+  jumps straight to a later revision, is seeded from your cleaned-up set rather than replaying the
+  original history of `ALTER TABLE`s. See [Squash revisions](#squash-revisions) below.
 
 See the [worked example](worked-example.md) for all of this against a real (throwaway) Postgres
 database, or the [tutorial](tutorial.md) for a messier, more realistic table with several
 children accumulated over time - new columns, a dropped one, a rename - consolidated the same way.
 
-## `new_sql` and `new_needs` are transitory
+## Squash revisions
 
-They are only ever read when a *later* revision is applied on top: dmut reaches for the stored
-`new_` values precisely when the database's revision is lower than the one being applied. So they
-come in pairs — write `new_sql` in revision `n` only when you are shipping revision `n+1` that
-contains the consolidated definitions those `new_` values describe.
+A revision file becomes *override-shaped* the moment it declares any of `mode`, `delete`,
+`override`, or `mutations` at the top level. Once it is, mutation definitions can no longer sit as
+flat top-level keys — they have to live nested under `mutations:` instead, so a mutation name can
+never collide with one of these four reserved words.
 
-A revision carrying `new_sql` with nothing after it is a half-finished job: nothing will ever read
-what it stored. Once revision `n+1` exists and your databases have moved past `n`, the `new_`
-blocks in `n` have done their work and the file can eventually be dropped.
+- **`mutations:`** is what actually runs, for real, against a database sitting at an earlier
+  revision — written exactly like a plain (non-override-shaped) revision file, same `core`/`glue`/
+  `needs`/`children` shape, same apply engine, same full/simple/default mode rules.
+- **`override:`** is what gets *recorded* in place of the mutations named there — never executed,
+  only saved, through the same load/normalise pipeline as an ordinary mutation so its hash matches
+  what a later plain apply of the equivalent consolidated definition would compute. It replaces a
+  mutation's `core`, `glue`, `needs`, and `glue_needs` wholesale, not just `core` — leave out a
+  block you want kept and the recording of it becomes empty, not merely stale.
+- **`delete:`** untracks named mutations without downing them — bookkeeping only. To actually down
+  something as well as forget it, omit it from `mutations:` instead; that already downs it the
+  normal way. `delete:` is for the case where a child mutation's *effect* is being folded into a
+  parent's `override:`, so it doesn't need separate tracking any more, but nothing about the
+  physical object should change.
+- **`mode:`** (`default`, `full`, or `simple`) overrides whatever the CLI invocation asked for —
+  this is how a reviewed, committed revision carries destructive intent through an automated
+  pipeline that otherwise always runs `-s`.
+
+Apply order for an override-shaped revision: `mutations:` runs for real; on success, `delete:`
+names are dropped from bookkeeping and `override:` entries are saved in their place; then the
+usual test pass runs — twice, actually, once against what really ran and once against the
+override-swapped recording, so a mistake in `override:` (e.g. it doesn't round-trip) is caught now
+rather than inherited by some future revision.
+
+A mutation named in both `mutations:` and `override:` behaves as you'd expect: it runs for real via
+`mutations:`, then what gets recorded is the `override:` version instead. A mutation disappears
+from `__dmut__.mutations` entirely only when it has no `core`, `glue`, `needs`, or `glue_needs` at
+all — `delete:` alone doesn't erase a row's *history*, it just stops tracking it going forward.
 
 ## Revisions in your mutation files
 
@@ -59,10 +84,9 @@ You do not need to keep every revision file in the codebase. In practice, keep a
 revision — or a minimal file that only sets `__revision` so new databases get the right revision
 number — or the lowest revision that you know is still in production.
 
-To retire a mutation in a new revision, set `new_sql: []`. It is then recorded with an empty `core`,
-so the following revision downs it as a no-op and it drops out of the graph. A mutation disappears
-from `__dmut__.mutations` entirely only when it has no `core`, `glue`, `needs`, `glue_needs`,
-`new_sql` and `new_needs` at all.
+To retire a mutation in a new (plain, non-override-shaped) revision, simply omit it — an absent
+mutation is downed the normal way. Inside an override-shaped revision, use `delete:` instead if the
+physical object should survive (see [Squash revisions](#squash-revisions) above).
 
 Use clear names for revision files, e.g. `<namespace>-r<revision>.yml` or `r<revision>.yml` — the
 [worked example](worked-example.md) uses `r1.yml`, `r2.yml`, `r3.yml`.
