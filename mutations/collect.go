@@ -173,6 +173,11 @@ func (y *yamlWriter) stringList(depth int, key string, values []string) {
 	if len(values) == 0 {
 		return
 	}
+	y.stringListForce(depth, key, values)
+}
+
+// stringListForce writes key: [...] even when values is empty, unlike stringList.
+func (y *yamlWriter) stringListForce(depth int, key string, values []string) {
 	var quoted []string
 	for _, v := range values {
 		quoted = append(quoted, yamlScalar(v))
