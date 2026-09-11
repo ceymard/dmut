@@ -4,7 +4,7 @@ __namespace: hotel
 hotel.room_types:
   needs: [hotel.properties]
 
-  sql:
+  core:
     - |
       create table hotel.room_types (
         id bigint generated always as identity primary key,
@@ -15,5 +15,5 @@ hotel.room_types:
         unique (property_id, name)
       );
 
-  meta:
+  glue:
     - comment on table hotel.room_types is 'A category of room offered by a property (e.g. Deluxe, Suite), with its own base price and capacity.';

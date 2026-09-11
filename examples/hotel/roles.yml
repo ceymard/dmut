@@ -9,5 +9,5 @@ __namespace: hotel
 # Not named `hotel.roles`: a role is cluster-wide, not an object that lives
 # in the `hotel` schema, so it's kept flat - same reasoning as `extensions`.
 roles:
-  sql:
+  core:
     - create role "~anonymous";

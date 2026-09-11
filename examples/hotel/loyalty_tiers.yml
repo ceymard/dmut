@@ -2,7 +2,7 @@
 __namespace: hotel
 
 hotel.loyalty_tiers:
-  sql:
+  core:
     - |
       create table hotel.loyalty_tiers (
         id bigint generated always as identity primary key,
@@ -10,5 +10,5 @@ hotel.loyalty_tiers:
         min_points integer not null default 0
       );
 
-  meta:
+  glue:
     - comment on table hotel.loyalty_tiers is 'Loyalty program tiers, looked up by name - deliberately a lookup table rather than an enum.';

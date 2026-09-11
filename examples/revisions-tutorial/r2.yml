@@ -1,0 +1,94 @@
+# yaml-embedded-languages: sql
+#
+# Revision 2 changes nothing about what actually runs against a database
+# sitting at revision 1 - every `core`, `needs` and `children` block below is
+# restated byte-for-byte from r1.yml, because "each revision must be
+# self-contained" (see the docs). The only new thing is `new_sql`: what a
+# database jumping straight from nothing to revision 3 will get for
+# `customers`, and `new_sql: []` on every child, which tells dmut those five
+# mutations have nothing left to contribute once revision 3 lands and should
+# quietly drop out of the graph instead of being downed.
+#
+# `customers`'s `new_sql` has to match revision 3's actual `core` for
+# `customers` exactly (dmut hashes the whole list) - it is, deliberately,
+# the mechanical result of applying every child mutation's own change to the
+# base table by hand: `full_name` gone, `first_name`/`last_name`/
+# `marketing_opt_in` added, `signed_up_at` renamed to `created_at`, `phone`
+# never shows up at all (added and dropped within this same revision).
+
+__namespace: crm
+__revision: 2
+
+customers:
+  # What a brand-new database ends up with once revision 3 also exists - the
+  # seed data has to move from `full_name` to `first_name`/`last_name` here
+  # too, since that's the only column shape `new_sql` ever creates.
+  new_sql:
+    - |
+      create table customers (
+        id serial primary key,
+        first_name text,
+        last_name text,
+        email text not null unique,
+        created_at timestamptz not null default now(),
+        marketing_opt_in boolean not null default false
+      );
+    - up: |
+        insert into customers (first_name, last_name, email) values
+          ('Jane', 'Cooper', 'jane@example.com'),
+          ('Wade', 'Warren', 'wade@example.com');
+      down: delete from customers where email in ('jane@example.com', 'wade@example.com');
+
+  # Unchanged from r1.yml - still what actually runs to bring a revision-1
+  # database up to date, since every column change below still happens via
+  # the child mutations, not here.
+  core:
+    - |
+      create table customers (
+        id serial primary key,
+        full_name text not null,
+        email text not null unique,
+        signed_up_at timestamptz not null default now()
+      );
+    - up: |
+        insert into customers (full_name, email) values
+          ('Jane Cooper', 'jane@example.com'),
+          ('Wade Warren', 'wade@example.com');
+      down: delete from customers where email in ('jane@example.com', 'wade@example.com');
+
+  children:
+    phone:
+      new_sql: []
+      core:
+        - alter table customers add column phone text;
+
+    marketing_opt_in:
+      new_sql: []
+      core:
+        - alter table customers add column marketing_opt_in boolean not null default false;
+
+    split_name:
+      new_sql: []
+      core:
+        - alter table customers add column first_name text;
+        - alter table customers add column last_name text;
+        - up: |
+            update customers set
+              first_name = split_part(full_name, ' ', 1),
+              last_name = nullif(split_part(full_name, ' ', 2), '');
+            alter table customers drop column full_name;
+          down: |
+            alter table customers add column full_name text;
+            update customers set full_name = trim(coalesce(first_name, '') || ' ' || coalesce(last_name, ''));
+
+    retire_phone:
+      new_sql: []
+      needs: [customers.phone]
+      core:
+        - up: alter table customers drop column phone;
+          down: alter table customers add column phone text;
+
+    rename_signup:
+      new_sql: []
+      core:
+        - alter table customers rename column signed_up_at to created_at;

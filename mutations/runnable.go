@@ -22,18 +22,18 @@ func (r *Runnable) DisplayName() string {
 
 func (r *Runnable) Size() int {
 	if r.Direction.Meta {
-		return len(r.Mutation.Meta)
+		return len(r.Mutation.Glue)
 	} else {
-		return len(r.Mutation.Sql)
+		return len(r.Mutation.Core)
 	}
 }
 
 func (r *Runnable) Statements() iter.Seq2[int, string] {
 	var stmts []MutationStatement
 	if r.Direction.Meta {
-		stmts = r.Mutation.Meta
+		stmts = r.Mutation.Glue
 	} else {
-		stmts = r.Mutation.Sql
+		stmts = r.Mutation.Core
 	}
 
 	return func(yield func(int, string) bool) {

@@ -4,7 +4,7 @@ __namespace: test
 __revision: 3
 
 test:
-  sql:
+  core:
     - |
       create table test (
         id serial primary key,
@@ -12,7 +12,7 @@ test:
         age integer not null default 0
       );
 
-  meta:
+  glue:
     - |
       create view test_view as select age from test;
 

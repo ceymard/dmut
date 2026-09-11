@@ -17,12 +17,13 @@ You can consolidate by folding those changes back into the original table defini
   up data, reapply mutations, and restore data. This is manageable in development but awkward in
   production when many databases or large datasets are involved.
 - **Revisions**: use `__revision` and, in revisioned files, `new_needs` / `new_sql`. When a
-  revision is applied, the current `needs` and `sql` run as usual, but the values stored in the
+  revision is applied, the current `needs` and `core` run as usual, but the values stored in the
   database are the `new_` ones — so the recorded source of truth becomes your cleaned-up set. New
   or empty databases are then seeded from that tidy definition.
 
 See the [worked example](worked-example.md) for all of this against a real (throwaway) Postgres
-database.
+database, or the [tutorial](tutorial.md) for a messier, more realistic table with several
+children accumulated over time - new columns, a dropped one, a rename - consolidated the same way.
 
 ## `new_sql` and `new_needs` are transitory
 
@@ -58,9 +59,9 @@ You do not need to keep every revision file in the codebase. In practice, keep a
 revision — or a minimal file that only sets `__revision` so new databases get the right revision
 number — or the lowest revision that you know is still in production.
 
-To retire a mutation in a new revision, set `new_sql: []`. It is then recorded with an empty `sql`,
+To retire a mutation in a new revision, set `new_sql: []`. It is then recorded with an empty `core`,
 so the following revision downs it as a no-op and it drops out of the graph. A mutation disappears
-from `__dmut__.mutations` entirely only when it has no `sql`, `meta`, `needs`, `meta_needs`,
+from `__dmut__.mutations` entirely only when it has no `core`, `glue`, `needs`, `glue_needs`,
 `new_sql` and `new_needs` at all.
 
 Use clear names for revision files, e.g. `<namespace>-r<revision>.yml` or `r<revision>.yml` — the
@@ -73,6 +74,6 @@ and dmut makes no attempt at comparing database states: it applies, or it downs.
 tests every time to catch the most common errors, it cannot catch them all. The responsibility
 falls on the developer to make sure the revisions they write make sense.
 
-You can use `meta` blocks to write unit tests in `do $$ begin ... end $$ language plpgsql`
+You can use `glue` blocks to write unit tests in `do $$ begin ... end $$ language plpgsql`
 statements, since a `raise` will fail the mutation. The [worked example](worked-example.md) uses
 exactly this to assert that no data was lost across a revision.

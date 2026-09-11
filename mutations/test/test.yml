@@ -1,22 +1,22 @@
 # yaml-embedded-languages: sql
 
 pgcrypto:
-  sql:
+  core:
     - create extension pgcrypto;
 
 roles:
   # Roles are put in SQL, because their presence is as defining as a table for the meta blocks.
   # It therefore makes sense to have them in their own mutation, in the sql block, upon which no other sql mutation will depend.
   # Being in sql means that it will be available for the meta blocks to use.
-  sql:
+  core:
     - create role "@admin";
     - create role "@active";
 
 auth:
-  sql:
+  core:
     - create schema auth;
 
-  meta:
+  glue:
     # @admins are always active
     - |
       grant "@active" to "@admin";
@@ -30,14 +30,14 @@ auth:
 # The auth.passwords table is a way to store
 auth.passwords:
   needs: [pgcrypto]
-  sql:
+  core:
     - |
       create table auth.passwords (
         username text not null primary key,
         password text not null
       );
 
-  meta:
+  glue:
     # password triggers to make sure the password is always hashed
     - |
       create function auth.update_password() returns trigger as $$
@@ -69,11 +69,11 @@ auth.passwords:
 
 # Our main schema
 api:
-  sql:
+  core:
     - |
       create schema api;
 
-  meta:
+  glue:
     # No one should be able to execute anything on this schema without explicit grants.
     - up: |
         ALTER DEFAULT PRIVILEGES IN SCHEMA api
@@ -82,7 +82,7 @@ api:
       grant usage on schema api to "@active";
 
 api.users:
-  sql:
+  core:
     - |
       CREATE TABLE api.users (
         id uuid PRIMARY KEY,
@@ -100,11 +100,11 @@ api.users:
   children:
     # We want to add a column to the users table, because the mutations are already live in another database.
     region:
-      sql:
+      core:
         - |
           alter table api.users add column region text not null default 'us-east-1';
 
-  meta:
+  glue:
     - |
       alter table api.users
         alter column id set default gen_random_uuid()

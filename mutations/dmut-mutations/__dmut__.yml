@@ -3,12 +3,12 @@
 __namespace: __dmut__
 
 dmut:
-  sql:
+  core:
     - |
       create schema __dmut__;
 
 dmut.mutations:
-  sql:
+  core:
     - |
       create type __dmut__.mutation_statement as (
         up text,
@@ -24,10 +24,10 @@ dmut.mutations:
 
         needs text[] not null,
         new_needs text[],
-        meta_needs text[] not null,
-        sql __dmut__.mutation_statement[] not null,
+        glue_needs text[] not null,
+        core __dmut__.mutation_statement[] not null,
         new_sql __dmut__.mutation_statement[],
-        meta __dmut__.mutation_statement[] not null,
+        glue __dmut__.mutation_statement[] not null,
 
         ts timestamp with time zone not null default now(),
 

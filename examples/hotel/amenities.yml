@@ -2,12 +2,12 @@
 __namespace: hotel
 
 hotel.amenities:
-  sql:
+  core:
     - |
       create table hotel.amenities (
         id bigint generated always as identity primary key,
         name text not null unique
       );
 
-  meta:
+  glue:
     - comment on table hotel.amenities is 'A catalog of amenities a property can offer (pool, gym, parking, ...).';

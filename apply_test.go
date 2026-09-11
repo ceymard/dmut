@@ -9,17 +9,17 @@ import (
 // A small schema with no roles in it : roles are cluster-wide and would collide
 // between tests sharing the same postgres.
 const basic = `api:
-  sql:
+  core:
     - create schema api;
 
 api.users:
-  sql:
+  core:
     - |
       create table api.users (
         id serial primary key,
         name text not null
       );
-  meta:
+  glue:
     - grant select on table api.users to public;
 `
 
@@ -62,18 +62,18 @@ func TestChangingSqlLosesTheData(t *testing.T) {
 	exec(t, uri, "insert into api.users (name) values ('someone');")
 
 	changed := `api:
-  sql:
+  core:
     - create schema api;
 
 api.users:
-  sql:
+  core:
     - |
       create table api.users (
         id serial primary key,
         name text not null,
         email text
       );
-  meta:
+  glue:
     - grant select on table api.users to public;
 `
 	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": changed}))
@@ -94,17 +94,17 @@ func TestChangingMetaKeepsTheData(t *testing.T) {
 	exec(t, uri, "insert into api.users (name) values ('someone');")
 
 	changed := `api:
-  sql:
+  core:
     - create schema api;
 
 api.users:
-  sql:
+  core:
     - |
       create table api.users (
         id serial primary key,
         name text not null
       );
-  meta:
+  glue:
     - grant select, insert on table api.users to public;
 `
 	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": changed}))
@@ -114,13 +114,47 @@ api.users:
 	}
 }
 
+// Appending a statement to core (e.g. a create index after a create table) must not
+// down the table it applies to - this is the whole point of the longest-common-prefix
+// diff (see specs/changes.md, "Why").
+func TestAppendingCoreDoesNotDropTheTable(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": basic}))
+	exec(t, uri, "insert into api.users (name) values ('someone');")
+
+	appended := `api:
+  core:
+    - create schema api;
+
+api.users:
+  core:
+    - |
+      create table api.users (
+        id serial primary key,
+        name text not null
+      );
+    - create index users_name_idx on api.users (name);
+  glue:
+    - grant select on table api.users to public;
+`
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": appended}))
+
+	if got := queryInt(t, uri, "select count(*) from api.users"); got != 1 {
+		t.Errorf("a pure append must not drop the table, found %d rows", got)
+	}
+	if !exists(t, uri, "select 1 from pg_indexes where indexname = 'users_name_idx'") {
+		t.Error("the appended index should have been created")
+	}
+}
+
 // Removing a mutation downs it, and everything that depended on it.
 func TestRemovingAMutationDownsIt(t *testing.T) {
 	uri := testdb(t)
 
 	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": basic}))
 	mustApply(t, uri, mutationDir(t, map[string]string{
-		"a.yml": "api:\n  sql:\n    - create schema api;\n",
+		"a.yml": "api:\n  core:\n    - create schema api;\n",
 	}))
 
 	if tableExists(t, uri, "users") {
@@ -157,7 +191,7 @@ func TestAMutationThatCannotBeDownedIsRefused(t *testing.T) {
 	// The down does not actually drop the table, so re-upping it fails.
 	err := apply(t, uri, mutationDir(t, map[string]string{
 		"a.yml": `x:
-  sql:
+  core:
     - up: create table lying (id int);
       down: select 1;
 `,
@@ -176,12 +210,12 @@ func TestABrokenStatementRollsEverythingBack(t *testing.T) {
 
 	err := apply(t, uri, mutationDir(t, map[string]string{
 		"a.yml": `good:
-  sql:
+  core:
     - create schema good;
 
 bad:
   needs: [good]
-  sql:
+  core:
     - create table good.t (id nonexistent_type);
 `,
 	}))
@@ -267,7 +301,7 @@ func TestOverrideCannotBootstrapDmut(t *testing.T) {
 const other_namespace = `__namespace: other
 
 blog:
-  sql:
+  core:
     - create schema blog;
 `
 

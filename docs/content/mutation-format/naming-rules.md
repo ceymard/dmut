@@ -1,7 +1,7 @@
 # Naming rules and children
 
 Dmut understands `.` separators in mutation names. A mutation named `parent1.parent2.child`
-automatically depends on `parent1` and `parent1.parent2` if they exist, for both `sql` and `meta`.
+automatically depends on `parent1` and `parent1.parent2` if they exist, for both `core` and `glue`.
 It will **not** depend on `parent1.unrelated`.
 
 Mutations declared under `children:` are named `<parent>.<child>` and therefore pick up that

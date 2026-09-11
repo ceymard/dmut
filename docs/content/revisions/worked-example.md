@@ -33,17 +33,17 @@ Two things are declared here that only matter for *later*:
 
 - `properties`'s `new_sql` describes what a **brand-new** database will get once revision 3 also
   exists: the column and its index folded directly into `CREATE TABLE`, as if they'd always been
-  there. It has to match revision 3's actual `sql` for `properties` byte-for-byte (including the
-  index, not just the table) — dmut hashes the whole `sql` list, so a database that's already
+  there. It has to match revision 3's actual `core` for `properties` byte-for-byte (including the
+  index, not just the table) — dmut hashes the whole `core` list, so a database that's already
   received the `new_sql` value in revision 2 and a database that jumps straight to revision 3's
-  `sql` need to land on the exact same hash, or dmut treats them as different definitions and
+  `core` need to land on the exact same hash, or dmut treats them as different definitions and
   drops/recreates the table for no reason.
 - `properties.description_search`'s `new_sql: []` says that by revision 3, this child mutation
   will have nothing left to contribute — it's being retired.
 
 Applying revision 2 against a database that already has revision 1 only runs the *actual* new
 thing: the child mutation's `ALTER TABLE ADD COLUMN` and its index. `properties` itself doesn't
-move at all, because its own `sql` (not `new_sql`) is unchanged from revision 1.
+move at all, because its own `core` (not `new_sql`) is unchanged from revision 1.
 
 ## Revision 3: consolidating
 
@@ -53,29 +53,29 @@ move at all, because its own `sql` (not `new_sql`) is unchanged from revision 1.
 
 `properties.description_search` isn't mentioned here at all — it doesn't need to be. Its `new_sql`
 in revision 2 already told dmut what its recorded state becomes once revision 3 lands: empty, with
-nothing left to down. `properties`'s own `sql` here is exactly what revision 2 promised via
+nothing left to down. `properties`'s own `core` here is exactly what revision 2 promised via
 `new_sql`, so — for a database that walked through revision 2 first — nothing physically changes at
 all when revision 3 is applied. The `do $$ ... $$` block is the payoff: it runs inside the same
 transaction as everything else and fails the whole apply if the two rows from revision 1 didn't
 survive, or if full-text search over the now-consolidated column doesn't work.
 
 Running `dmut test -v -a examples/revisions` against a fresh throwaway database shows this
-directly — the log for the revision 2 → 3 transition contains no `↓`/`↑` for `properties·sql` at
-all, only the `meta` (the reinserted data statement, and the `do $$` check, both restated as
+directly — the log for the revision 2 → 3 transition contains no `↓`/`↑` for `properties·core` at
+all, only the `glue` (the reinserted data statement, and the `do $$` check, both restated as
 required):
 
 ```
 → applying mutations for namespace revisions revision 2
-↑ revisions properties.description_search·sql
+↑ revisions properties.description_search·core
 using new_* mutations from previous revision
 → applying mutations for namespace revisions revision 3
-↓ revisions properties·meta
-↑ revisions properties·meta
+↓ revisions properties·glue
+↑ revisions properties·glue
 notice   revision check passed: 2 properties, full text search still works
 ```
 
 A **fresh** database only ever sees the final, consolidated shape — `dmut test examples/revisions`
-(without `-a`) applies revision 3 directly, and `properties·sql` is exactly the consolidated
+(without `-a`) applies revision 3 directly, and `properties·core` is exactly the consolidated
 `CREATE TABLE` plus its index, in one step, with no intermediate `ALTER TABLE` in sight.
 
 ## Running it yourself

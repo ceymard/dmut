@@ -63,9 +63,9 @@ func Collect(namespaces *MutationNamespace, w io.Writer) error {
 				out.blank()
 				out.line(yamlKey(name) + ":")
 				out.stringList(1, "needs", mut.declaredNeeds(set, mut.Needs))
-				out.statements(1, "sql", mut.Sql, mut.Sql != nil)
-				out.stringList(1, "meta_needs", mut.declaredNeeds(set, mut.MetaNeeds))
-				out.statements(1, "meta", mut.Meta, mut.Meta != nil)
+				out.statements(1, "core", mut.Core, mut.Core != nil)
+				out.stringList(1, "glue_needs", mut.declaredNeeds(set, mut.GlueNeeds))
+				out.statements(1, "glue", mut.Glue, mut.Glue != nil)
 				out.stringList(1, "new_needs", mut.declaredNeeds(set, mut.NewNeeds))
 				// new_sql is meaningful when empty : it retires a mutation.
 				out.statements(1, "new_sql", mut.NewSql, mut.NewSql != nil)

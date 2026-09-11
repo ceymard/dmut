@@ -64,8 +64,22 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 			distant = distant.AsNewMutationSet()
 		}
 
-		sql_down, sql_up := local.GetMutationsDelta(distant, ITER_SQL)
-		meta_down, meta_up := local.GetMutationsDelta(distant, ITER_META)
+		sql_down, sql_up, core_any_real_down := local.GetLCPDelta(distant, ITER_SQL)
+
+		// If any core statement needed a real down (not just an append), all glue in
+		// the namespace is downed and re-upped wholesale, exactly as before - only the
+		// trigger condition changed (a real down, not merely "core differs at all").
+		// Otherwise glue gets the same longest-common-prefix treatment as core, so an
+		// isolated function/grant edit doesn't force a rebuild of unrelated glue.
+		var meta_down, meta_up *RunnableMap
+		if core_any_real_down {
+			var fake_empty_local_set *MutationSet = nil
+			_, meta_up = local.GetMutationsDelta(nil, ITER_META)
+			meta_down, _ = fake_empty_local_set.GetMutationsDelta(distant, ITER_META)
+		} else {
+			meta_down, meta_up, _ = local.GetLCPDelta(distant, ITER_META)
+		}
+
 		has_changes = sql_up.Size() != 0 || meta_up.Size() != 0 || sql_down.Size() != 0 || meta_down.Size() != 0
 
 		if !has_changes {
@@ -73,12 +87,6 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 			runner.Logger().Println(au.BrightGreen("≡"), "no changes to apply for namespace", au.BrightMagenta(local.Namespace).String(), "revision", au.BrightGreen(local.Revision).String())
 		} else {
 			runner.Logger().Println(au.BrightGreen("→"), "applying mutations for namespace", au.BrightMagenta(local.Namespace).String(), "revision", au.BrightGreen(local.Revision).String())
-
-			if sql_down.Size() > 0 {
-				var fake_empty_local_set *MutationSet = nil
-				_, meta_up = local.GetMutationsDelta(nil, ITER_META)
-				meta_down, _ = fake_empty_local_set.GetMutationsDelta(distant, ITER_META)
-			}
 
 			// 1. Start by downing the meta
 			if err := meta_down.Run(runner); err != nil {

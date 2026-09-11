@@ -120,7 +120,7 @@ func (ms *MutationSet) ResolveDependencies() error {
 			if parent, ok := ms.Map.Get(parent_name); ok {
 
 				mut.Needs = append(mut.Needs, parent.Name)
-				mut.MetaNeeds = append(mut.MetaNeeds, parent.Name)
+				mut.GlueNeeds = append(mut.GlueNeeds, parent.Name)
 				mut.SqlParents.Add(parent)
 				mut.MetaParents.Add(parent)
 			}
@@ -135,7 +135,7 @@ func (ms *MutationSet) ResolveDependencies() error {
 			}
 		}
 
-		for _, parent_name := range mut.MetaNeeds {
+		for _, parent_name := range mut.GlueNeeds {
 			if parent, ok := ms.Map.Get(parent_name); !ok {
 				return oops.In("mutations").With("mutation", mut.Name).With("meta_dependency", parent_name).Errorf("%s asks for meta dependency %s which was not found", mut.Name, parent_name)
 			} else {
@@ -225,4 +225,128 @@ func (ms *MutationSet) GetMutationsDelta(other *MutationSet, dir IterationDirect
 	}
 
 	return to_down, to_up
+}
+
+// GetLCPDelta computes down/up runnables for one direction (core when !dir.Meta, glue when
+// dir.Meta) using a longest-common-prefix diff of each mutation's own statement array,
+// instead of treating any change as reason to down/up the whole mutation - see
+// specs/changes.md, "New algorithm".
+//
+// A mutation absent from the local set entirely is still fully obsolete: it, and everything
+// depending on it, is downed in full - unrelated to the LCP tail logic, since there's no
+// incoming version to reconcile against. Likewise, a mutation forced down as collateral of a
+// vanished dependency is downed and re-upped in full, not by its own tail, since nothing
+// partial survives a full teardown of something it depended on.
+//
+// any_real_down reports whether any mutation needed a non-empty old tail (as opposed to a
+// pure append or a brand-new mutation) - callers use this to decide whether glue needs the
+// old whole-mutation teardown instead of this same LCP treatment (see RunMutations).
+func (ms *MutationSet) GetLCPDelta(other *MutationSet, dir IterationDirection) (
+	to_down *RunnableMap,
+	to_up *RunnableMap,
+	any_real_down bool,
+) {
+	to_down = NewRunnableMap()
+	to_up = NewRunnableMap()
+
+	var down_dir = IterationDirection{Down: true, Meta: dir.Meta}
+	var up_dir = IterationDirection{Down: false, Meta: dir.Meta}
+
+	statementsOf := func(mut *Mutation) []MutationStatement {
+		if mut == nil {
+			return nil
+		}
+		if dir.Meta {
+			return mut.Glue
+		}
+		return mut.Core
+	}
+	withStatements := func(mut *Mutation, stmts []MutationStatement) *Mutation {
+		cp := *mut
+		if dir.Meta {
+			cp.Glue = stmts
+		} else {
+			cp.Core = stmts
+		}
+		return &cp
+	}
+
+	cascaded := hashset.New[string]()
+
+	// Obsolete mutations (gone entirely from the local set) still down in full,
+	// cascading to everything that depends on them - unrelated to the LCP tail logic
+	// below, since there's no incoming version to reconcile against. IterateDependencies
+	// yields dependents before the mutation itself, which is already correct leaves-
+	// first order.
+	for mut := range other.AllMutations() {
+		if _, ok := ms.GetMutation(mut.Name); ok {
+			continue
+		}
+		for dep := range mut.IterateDependencies(down_dir) {
+			to_down.Put(dep.Name, dep.Runnable(down_dir))
+			cascaded.Add(dep.Name)
+		}
+	}
+
+	// Diff every mutation present on both sides (and not already claimed by a cascade
+	// above) by longest common prefix - only statements after the first divergence
+	// need downing (from what's recorded) or upping (from what's incoming). This pass
+	// only computes *what* each mutation needs; insertion into to_down/to_up (which
+	// determines execution order) happens below, in dependency order rather than
+	// ms.AllMutations()'s unspecified map order - a schema must always come up before
+	// what's declared in it, and go down only after.
+	type tail struct {
+		old, new         []MutationStatement
+		other_mut, local *Mutation
+	}
+	tails := make(map[string]tail)
+	for local := range ms.AllMutations() {
+		if cascaded.Contains(local.Name) {
+			continue
+		}
+		other_mut, _ := other.GetMutation(local.Name)
+
+		old_list := statementsOf(other_mut)
+		new_list := statementsOf(local)
+		prefix := commonPrefixLen(old_list, new_list)
+		old_tail := old_list[prefix:]
+		new_tail := new_list[prefix:]
+		if len(old_tail) == 0 && len(new_tail) == 0 {
+			continue
+		}
+		if len(old_tail) > 0 {
+			any_real_down = true
+		}
+		tails[local.Name] = tail{old_tail, new_tail, other_mut, local}
+	}
+
+	// IterateDependencies(up_dir) yields ancestors before self; IterateDependencies
+	// (down_dir) yields dependents before self. Walking every local mutation's own
+	// chain guarantees the right relative order regardless of which mutation the
+	// outer loop happens to reach first - by the time any mutation is inserted, every
+	// mutation before it in the chain already was, on an earlier iteration if not this
+	// one.
+	for local := range ms.AllMutations() {
+		for dep := range local.IterateDependencies(up_dir) {
+			if _, done := to_up.Get(dep.Name); done {
+				continue
+			}
+			if t, ok := tails[dep.Name]; ok && len(t.new) > 0 {
+				to_up.Put(dep.Name, withStatements(t.local, t.new).Runnable(up_dir))
+			} else if cascaded.Contains(dep.Name) && len(statementsOf(dep)) > 0 {
+				// Downed in full as collateral above: needs a full rebuild, not a tail.
+				to_up.Put(dep.Name, dep.Runnable(up_dir))
+			}
+		}
+		for dep := range local.IterateDependencies(down_dir) {
+			if _, done := to_down.Get(dep.Name); done {
+				continue
+			}
+			if t, ok := tails[dep.Name]; ok && len(t.old) > 0 {
+				to_down.Put(dep.Name, withStatements(t.other_mut, t.old).Runnable(down_dir))
+			}
+		}
+	}
+
+	return to_down, to_up, any_real_down
 }

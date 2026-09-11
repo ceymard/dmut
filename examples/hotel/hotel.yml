@@ -29,10 +29,10 @@ __namespace: hotel
 # that gap by applying to anything the same role creates afterward, with no
 # dmut involvement needed at all.
 hotel:
-  sql:
+  core:
     - create schema hotel;
 
-  meta:
+  glue:
     - grant usage on schema hotel to "~anonymous";
     - grant select, insert, update, delete on all tables in schema hotel to "~anonymous";
     - grant usage on all sequences in schema hotel to "~anonymous";
@@ -42,7 +42,7 @@ hotel:
     - alter default privileges in schema hotel grant execute on functions to "~anonymous";
 
 hotel.types.address:
-  sql:
+  core:
     - |
       create type hotel.address as (
         street text,
@@ -53,7 +53,7 @@ hotel.types.address:
       );
 
 hotel.types.card_summary:
-  sql:
+  core:
     - |
       create type hotel.card_summary as (
         brand text,
@@ -63,13 +63,13 @@ hotel.types.card_summary:
       );
 
 hotel.types.room_status:
-  sql:
+  core:
     - create type hotel.room_status as enum ('clean', 'dirty', 'maintenance', 'out_of_order');
 
 hotel.types.booking_status:
-  sql:
+  core:
     - create type hotel.booking_status as enum ('confirmed', 'cancelled', 'checked_in', 'checked_out');
 
 hotel.types.payment_status:
-  sql:
+  core:
     - create type hotel.payment_status as enum ('pending', 'completed', 'refunded', 'failed');

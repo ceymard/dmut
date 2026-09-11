@@ -16,7 +16,7 @@ It features the following:
   data in the databases already running.
 - **Namespaces**: several independent sets of mutations on the same database, so teams can work
   without stepping on each other.
-- **A distinction between "heavy" (`sql`) and "lightweight" (`meta`) statements**, so redeploying
+- **A distinction between "heavy" (`core`) and "lightweight" (`glue`) statements**, so redeploying
   functions, grants and policies never touches your tables.
 
 Whenever a mutation changes, its dependents are recursively undone first, then it is undone,
@@ -142,12 +142,12 @@ Failure at any step halts the process and nothing is applied.
 - Read the mutations already applied from `__dmut__.mutations` for that namespace.
 - Compute the delta. A mutation is obsolete if it no longer exists locally or if its hash
   changed. Obsolete mutations are downed along with everything that depends on them, recursively.
-- Down the obsolete `meta`, down the obsolete `sql`, up the new `sql`, then up the new `meta`.
-  If *any* `sql` had to be downed, *all* `meta` in the namespace is downed and re-upped, since
+- Down the obsolete `glue`, down the obsolete `core`, up the new `core`, then up the new `glue`.
+  If *any* `core` had to be downed, *all* `glue` in the namespace is downed and re-upped, since
   meta may depend on any object the sql touched.
 - Record the new state in `__dmut__.mutations`.
-- Test, when anything changed: down all `meta`, then replay each mutation's `meta` chain
-  up-then-down on its own; then down all `sql` and do the same for `sql`. This runs against the
+- Test, when anything changed: down all `glue`, then replay each mutation's `glue` chain
+  up-then-down on its own; then down all `core` and do the same for `core`. This runs against the
   target database behind savepoints and is rolled back afterwards, so no data is lost — but every
   mutation must be cleanly downable or the whole apply aborts.
 - Commit, or roll back if `-d` was given.
@@ -170,10 +170,10 @@ __revision: 1
 __namespace: some-name
 
 mutation_name:
-  # optional, names of the mutations whose `sql` must run before this one
+  # optional, names of the mutations whose `core` must run before this one
   needs: [optional, parent, mutation, names]
 
-  sql:
+  core:
     - a statement whose down dmut can infer on its own
     - up: the sql that brings this mutation up
       down: the sql that undoes it
@@ -183,55 +183,55 @@ mutation_name:
   # it automatically depends on `mutation_name` (see "Naming rules").
   children:
     child_name:
-      sql:
+      core:
         - alter table ... add ...
 
-  # optional, names of the mutations whose `meta` must run before this one.
-  # There is no need to name mutations whose *sql* must run before: all `sql` always runs
-  # before any `meta`.
-  meta_needs: [mutation, names]
+  # optional, names of the mutations whose `glue` must run before this one.
+  # There is no need to name mutations whose *core* must run before: all `core` always runs
+  # before any `glue`.
+  glue_needs: [mutation, names]
 
-  # Lightweight statements, same syntax as `sql`
-  meta:
+  # Lightweight statements, same syntax as `core`
+  glue:
     - grant select on table ... to ...
 
   # optional, only meaningful in a file that sets `__revision`: replaces `needs` in what gets stored
   new_needs: [new, parents]
 
-  # optional, only meaningful in a file that sets `__revision`: replaces `sql` in what gets stored
+  # optional, only meaningful in a file that sets `__revision`: replaces `core` in what gets stored
   new_sql:
-    - statement that replaces what is in `sql`
+    - statement that replaces what is in `core`
 ```
 
-There is no key for roles. Create them in a `sql` block of their own mutation — since all `sql`
-runs before any `meta`, they will exist by the time grants and policies reference them:
+There is no key for roles. Create them in a `core` block of their own mutation — since all `core`
+runs before any `glue`, they will exist by the time grants and policies reference them:
 
 ```yaml
 roles:
-  sql:
+  core:
     - create role "@admin";
     - create role "@active";
 ```
 
 Keys other than the ones above are rejected with an error.
 
-## Why the distinction between sql and meta
+## Why the distinction between core and glue
 
-`sql` blocks contain the physical description of your data — "*what*" will be accessed and
-modified — whereas `meta` blocks describe "*how*" (and *by whom*) it is accessed. Changes in the
-`sql` block can be heavy and lead to loss of data or long processing times. `meta` changes are
+`core` blocks contain the physical description of your data — "*what*" will be accessed and
+modified — whereas `glue` blocks describe "*how*" (and *by whom*) it is accessed. Changes in the
+`core` block can be heavy and lead to loss of data or long processing times. `glue` changes are
 mostly code and will thus be pretty fast.
 
 The two are hashed separately, so editing a function or a grant never causes a table to be
 dropped.
 
-Meta could be separate mutations (as in earlier dmut versions), but that approach gets messy:
-dependency graphs and naming conventions are hard to agree on. Keeping meta next to the objects
-it manages is simpler, and all `sql` runs before any meta, so objects and roles are guaranteed to
-exist when meta references them. The split also encourages thinking in terms of heavy (sql) vs
-light (meta) changes.
+Glue could be separate mutations (as in earlier dmut versions), but that approach gets messy:
+dependency graphs and naming conventions are hard to agree on. Keeping glue next to the objects
+it manages is simpler, and all `core` runs before any glue, so objects and roles are guaranteed to
+exist when glue references them. The split also encourages thinking in terms of heavy (core) vs
+light (glue) changes.
 
-### What goes in `sql`
+### What goes in `core`
 
 Statements whose down would lose data or take a long time:
 
@@ -244,7 +244,7 @@ Statements whose down would lose data or take a long time:
 - `ALTER TABLE <table> ADD COLUMN ...`
 - `ALTER TABLE <table> ADD CONSTRAINT ...`
 
-### What goes in `meta`
+### What goes in `glue`
 
 Lightweight statements that describe behaviour and can be de-applied and re-applied often:
 
@@ -330,7 +330,7 @@ refused rather than split across silos.
 ## Naming rules
 
 Dmut understands `.` separators in mutation names. A mutation named `parent1.parent2.child`
-automatically depends on `parent1` and `parent1.parent2` if they exist, for both `sql` and `meta`.
+automatically depends on `parent1` and `parent1.parent2` if they exist, for both `core` and `glue`.
 It will **not** depend on `parent1.unrelated`.
 
 Mutations declared under `children:` are named `<parent>.<child>` and therefore pick up that
@@ -343,7 +343,7 @@ Dependency cycles are detected at load time and reported with the offending path
 
 ## Changes
 
-A mutation is considered different when its `name` or the content of its `sql` or `meta` changes.
+A mutation is considered different when its `name` or the content of its `core` or `glue` changes.
 The `down` half of a statement counts too: editing only an explicit `down:` will trigger a
 de-apply.
 
@@ -362,7 +362,7 @@ Mutations can be namespaced by setting `__namespace: <string>` at the toplevel o
 They act as silos; namespaced mutations will not touch mutations from other namespaces, and may be
 applied completely independently.
 
-`needs` and `meta_needs` cannot cross a namespace — naming a mutation from another namespace is a
+`needs` and `glue_needs` cannot cross a namespace — naming a mutation from another namespace is a
 load-time error. Dmut cannot see through raw SQL, though, so make absolutely sure that no code from
 a namespace references objects created in another. Namespaces are explicitly made for completely
 independent code and structures that live in the same database but never interact.
@@ -393,7 +393,7 @@ You can consolidate by folding those changes back into the original table defini
   production when many databases or large datasets are involved.
 
 - **Revisions**: use `__revision` and, in revisioned files, `new_needs` / `new_sql`. When a
-  revision is applied, the current `needs` and `sql` run as usual, but the values stored in the
+  revision is applied, the current `needs` and `core` run as usual, but the values stored in the
   database are the `new_` ones — so the recorded source of truth becomes your cleaned-up set. New
   or empty databases are then seeded from that tidy definition.
 
@@ -432,9 +432,9 @@ You do not need to keep every revision file in the codebase. In practice, keep a
 revision — or a minimal file that only sets `__revision` so new databases get the right revision
 number — or the lowest revision that you know is still in production.
 
-To retire a mutation in a new revision, set `new_sql: []`. It is then recorded with an empty `sql`,
+To retire a mutation in a new revision, set `new_sql: []`. It is then recorded with an empty `core`,
 so the following revision downs it as a no-op and it drops out of the graph. A mutation disappears
-from `__dmut__.mutations` entirely only when it has no `sql`, `meta`, `needs`, `meta_needs`,
+from `__dmut__.mutations` entirely only when it has no `core`, `glue`, `needs`, `glue_needs`,
 `new_sql` and `new_needs` at all.
 
 Use clear names for revision files, e.g. `<namespace>-r<revision>.yml` or `r<revision>.yml`.
@@ -446,7 +446,7 @@ and dmut makes no attempt at comparing database states: it applies, or it downs.
 tests every time to catch the most common errors, it cannot catch them all. The responsibility
 falls on the developer to make sure the revisions they write make sense.
 
-You can use `meta` blocks to write unit tests in `do $$ begin ... end $$ language plpgsql`
+You can use `glue` blocks to write unit tests in `do $$ begin ... end $$ language plpgsql`
 statements, since a `raise` will fail the mutation. `test/revision/test-r3.yml` uses this to assert
 that no data was lost across a revision.
 
@@ -466,7 +466,7 @@ that no data was lost across a revision.
 - **Every mutation must be downable.** The test phase downs and re-ups everything; a mutation that
   cannot be undone will fail the whole apply, not just itself.
 
-- `needs` and `meta_needs` may not cross a namespace or a revision.
+- `needs` and `glue_needs` may not cross a namespace or a revision.
 
 - **Write `new_sql` only alongside the next revision.** See
   [`new_sql` and `new_needs` are transitory](#new_sql-and-new_needs-are-transitory).

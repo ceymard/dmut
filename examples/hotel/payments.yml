@@ -4,7 +4,7 @@ __namespace: hotel
 hotel.payments:
   needs: [hotel.bookings, hotel.payment_methods, hotel.types.payment_status]
 
-  sql:
+  core:
     - |
       create table hotel.payments (
         id uuid primary key default gen_random_uuid(),
@@ -16,7 +16,7 @@ hotel.payments:
         paid_at timestamptz
       );
 
-  meta:
+  glue:
     - comment on table hotel.payments is 'A charge (or refund) against a booking.';
 
     # Computed column, deliberately NOT a pure function of the row's own columns -

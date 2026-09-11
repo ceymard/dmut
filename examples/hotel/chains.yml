@@ -2,12 +2,12 @@
 __namespace: hotel
 
 hotel.chains:
-  sql:
+  core:
     - |
       create table hotel.chains (
         id bigint generated always as identity primary key,
         name text not null unique
       );
 
-  meta:
+  glue:
     - comment on table hotel.chains is 'A hotel group operating one or more properties under a shared brand.';

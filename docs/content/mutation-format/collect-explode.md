@@ -30,14 +30,14 @@ __namespace: revisions
 __revision: 2
 
 properties:
-  sql:
+  core:
     - |-
       create table properties (
         id serial primary key,
         name text not null,
         description text
       );
-  meta:
+  glue:
     - up: |-
         insert into properties (name, description) values
           ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),
@@ -57,7 +57,7 @@ properties:
       create index properties_description_search_idx on properties using gin (description_search);
 
 properties.description_search:
-  sql:
+  core:
     - |-
       alter table properties add column description_search tsvector
         generated always as (to_tsvector('english', coalesce(description, ''))) stored;

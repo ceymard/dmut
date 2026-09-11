@@ -16,7 +16,7 @@ __namespace: revisions
 __revision: 3
 
 properties:
-  sql:
+  core:
     - |
       create table properties (
         id serial primary key,
@@ -27,7 +27,7 @@ properties:
       );
     - create index properties_description_search_idx on properties using gin (description_search);
 
-  meta:
+  glue:
     - up: |
         insert into properties (name, description) values
           ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),

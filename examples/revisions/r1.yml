@@ -13,7 +13,7 @@ __namespace: revisions
 __revision: 1
 
 properties:
-  sql:
+  core:
     - |
       create table properties (
         id serial primary key,
@@ -21,7 +21,7 @@ properties:
         description text
       );
 
-  meta:
+  glue:
     - up: |
         insert into properties (name, description) values
           ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),

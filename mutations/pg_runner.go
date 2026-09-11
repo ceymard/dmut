@@ -210,7 +210,7 @@ func (r *PgRunner) exec(mutation *Mutation, sql string, args ...interface{}) err
 		oo := oops.In("pg")
 
 		if mutation != nil {
-			oo = oo.With("mutation", mutation.Name).With("file", mutation.File).With("namespace", mutation.Namespace).With("needs", mutation.Needs).With("meta_needs", mutation.MetaNeeds)
+			oo = oo.With("mutation", mutation.Name).With("file", mutation.File).With("namespace", mutation.Namespace).With("needs", mutation.Needs).With("glue_needs", mutation.GlueNeeds)
 
 		}
 		err = oo.Wrap(err)
@@ -307,9 +307,9 @@ func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
 			name,
 			needs,
 			new_needs,
-			meta_needs,
-			meta,
-			sql,
+			glue_needs,
+			glue,
+			core,
 			new_sql
 		)
 		SELECT
@@ -319,12 +319,12 @@ func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
 			name,
 			coalesce(needs, '{}'::text[]),
 			new_needs,
-			coalesce(meta_needs, '{}'::text[]),
-			coalesce(meta, '{}'::__dmut__.mutation_statement[]),
-			coalesce(sql, '{}'::__dmut__.mutation_statement[]),
+			coalesce(glue_needs, '{}'::text[]),
+			coalesce(glue, '{}'::__dmut__.mutation_statement[]),
+			coalesce(core, '{}'::__dmut__.mutation_statement[]),
 			new_sql
 		FROM json_populate_recordset(NULL::__dmut__.mutations, $1::json)
-		ON CONFLICT (namespace, name) DO UPDATE SET file = excluded.file, needs = excluded.needs, meta_needs = excluded.meta_needs, meta = excluded.meta, sql = excluded.sql, new_sql = excluded.new_sql`
+		ON CONFLICT (namespace, name) DO UPDATE SET file = excluded.file, needs = excluded.needs, glue_needs = excluded.glue_needs, glue = excluded.glue, core = excluded.core, new_sql = excluded.new_sql`
 
 	if err := r.exec(nil, sql, muts_json, mutations.Namespace, mutations.Revision); err != nil {
 		return wrapPgError(err, sql)

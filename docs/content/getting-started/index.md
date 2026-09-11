@@ -22,7 +22,7 @@ A minimal mutation file looks like this:
 ```yaml
 # yaml-embedded-languages: sql
 greeting:
-  sql:
+  core:
     - |
       create table greeting (
         id serial primary key,
@@ -41,7 +41,7 @@ mutation is now applied, and — since something changed — replays it down-the
 savepoint to make sure it's actually reversible, before committing.
 
 Change the file (add a column, drop it, rename something) and apply again: dmut sees the hash of
-`greeting`'s `sql` changed, downs it (`DROP TABLE greeting`, inferred automatically — see
+`greeting`'s `core` changed, downs it (`DROP TABLE greeting`, inferred automatically — see
 [Automatic down statements](../mutation-format/auto-down.md)) and re-creates it from the new
 definition. **This drops the table and any data in it.** That's fine in development; see
 [Revisions](../revisions/index.md) for how to change a schema in production without losing data.

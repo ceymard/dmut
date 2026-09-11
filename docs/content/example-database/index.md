@@ -22,7 +22,7 @@ grant in `examples/hotel/` corresponds to something in that original `schema.sql
   each one covers.
 - **[Walkthrough](walkthrough.md)** — how the schema is actually laid out as mutations: dotting
   every mutation under `hotel.` to get the schema dependency for free, `needs` for the dependencies
-  that aren't free, `children` for generated columns, and a real case where ordering among `meta`
+  that aren't free, `children` for generated columns, and a real case where ordering among `glue`
   blocks looks like it matters and turns out not to.
 
 ## It's a real, running database

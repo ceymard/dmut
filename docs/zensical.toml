@@ -17,7 +17,7 @@ nav = [
   ] },
   { "Mutation format" = [
       { "Overview" = "mutation-format/index.md" },
-      { "sql vs meta" = "mutation-format/sql-vs-meta.md" },
+      { "core vs glue" = "mutation-format/core-vs-glue.md" },
       { "Automatic down statements" = "mutation-format/auto-down.md" },
       { "Naming rules and children" = "mutation-format/naming-rules.md" },
       { "Namespaces" = "mutation-format/namespaces.md" },
@@ -26,6 +26,7 @@ nav = [
   { "Revisions" = [
       { "Overview" = "revisions/index.md" },
       { "Worked example" = "revisions/worked-example.md" },
+      { "Tutorial: consolidating years of ALTER TABLE" = "revisions/tutorial.md" },
   ] },
   { "Example database" = [
       { "Overview" = "example-database/index.md" },

@@ -4,7 +4,7 @@ __namespace: hotel
 hotel.reviews:
   needs: [hotel.guests, hotel.properties, hotel.bookings]
 
-  sql:
+  core:
     - |
       create table hotel.reviews (
         id bigint generated always as identity primary key,
@@ -19,13 +19,13 @@ hotel.reviews:
   # A second, independent FTS corpus from properties.description_search.
   children:
     comment_search:
-      sql:
+      core:
         - |
           alter table hotel.reviews add column comment_search tsvector
             generated always as (to_tsvector('english', coalesce(comment, ''))) stored;
         - create index reviews_comment_search_idx on hotel.reviews using gin (comment_search);
 
-  meta:
+  glue:
     - comment on table hotel.reviews is 'A guest''s review of a property, optionally tied to the specific booking it followed.';
 
     # Computed column, aggregate over an incoming relation.

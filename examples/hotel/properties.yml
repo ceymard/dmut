@@ -4,7 +4,7 @@ __namespace: hotel
 hotel.properties:
   needs: [hotel.chains]
 
-  sql:
+  core:
     - |
       create table hotel.properties (
         id bigint generated always as identity primary key,
@@ -23,13 +23,13 @@ hotel.properties:
   # without touching the table's own definition.
   children:
     description_search:
-      sql:
+      core:
         - |
           alter table hotel.properties add column description_search tsvector
             generated always as (to_tsvector('english', coalesce(description, ''))) stored;
         - create index properties_description_search_idx on hotel.properties using gin (description_search);
 
-  meta:
+  glue:
     - comment on table hotel.properties is 'A single hotel property belonging to a chain.';
 
     # Table-valued/SETOF function: a joinable/selectable node in its own right,

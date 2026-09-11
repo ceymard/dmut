@@ -4,13 +4,13 @@ __namespace: test
 __revision: 1
 
 test:
-  sql:
+  core:
     - |
       create table test (
         id serial primary key,
         name text not null
       );
 
-  meta:
+  glue:
     - up: |
         insert into test (name) values ('test1');

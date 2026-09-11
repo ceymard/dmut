@@ -4,7 +4,7 @@ __namespace: hotel
 hotel.booking_guests:
   needs: [hotel.bookings, hotel.guests]
 
-  sql:
+  core:
     - |
       create table hotel.booking_guests (
         booking_id uuid not null references hotel.bookings (id),
@@ -12,5 +12,5 @@ hotel.booking_guests:
         primary key (booking_id, guest_id)
       );
 
-  meta:
+  glue:
     - comment on table hotel.booking_guests is 'Many-to-many: every guest actually staying on a booking, beyond just the primary booker on hotel.bookings.guest_id.';

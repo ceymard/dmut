@@ -12,7 +12,7 @@ test:
         age integer not null default 0
       );
 
-  sql:
+  core:
     - |
       create table test (
         id serial primary key,
@@ -22,7 +22,7 @@ test:
   children:
     add_column_age:
       new_sql: []
-      sql:
+      core:
         - |
           alter table test add column age integer not null default 0;
 

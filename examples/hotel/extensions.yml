@@ -7,5 +7,5 @@ __namespace: hotel
 # Not named `hotel.extensions`: an extension isn't scoped to any one schema
 # either, so it's kept flat - same reasoning as `roles`.
 extensions:
-  sql:
+  core:
     - create extension btree_gist;

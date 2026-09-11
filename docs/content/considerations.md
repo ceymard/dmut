@@ -19,7 +19,7 @@ icon: material/alert-decagram
   cannot be undone will fail the whole apply, not just itself. See [Automatic down statements](mutation-format/auto-down.md) for the handful of statements where "downable" means writing an
   explicit `down` yourself.
 
-- `needs` and `meta_needs` may not cross a [namespace](mutation-format/namespaces.md) or a
+- `needs` and `glue_needs` may not cross a [namespace](mutation-format/namespaces.md) or a
   [revision](revisions/index.md).
 
 - **Write `new_sql` only alongside the next revision.** See [Revisions: `new_sql` and `new_needs`

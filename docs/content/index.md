@@ -21,9 +21,9 @@ It features the following:
   data in the databases already running. See [Revisions](revisions/index.md).
 - **Namespaces** — several independent sets of mutations on the same database, so teams can work
   without stepping on each other. See [Namespaces](mutation-format/namespaces.md).
-- **A distinction between "heavy" (`sql`) and "lightweight" (`meta`) statements**, so redeploying
+- **A distinction between "heavy" (`core`) and "lightweight" (`glue`) statements**, so redeploying
   functions, grants and policies never touches your tables. See
-  [sql vs meta](mutation-format/sql-vs-meta.md).
+  [core vs glue](mutation-format/core-vs-glue.md).
 
 Whenever a mutation changes, its dependents are recursively undone first, then it is undone, then
 it is redone and its dependents are re-run as well.
@@ -44,8 +44,8 @@ available while it runs.
 
 - **[Getting started](getting-started/index.md)** — install dmut, write your first mutation, and
   understand what actually happens on `apply`.
-- **[Mutation format](mutation-format/index.md)** — the full yaml structure: `sql`/`meta`,
-  `needs`/`meta_needs`, `children`, auto-down, namespaces.
+- **[Mutation format](mutation-format/index.md)** — the full yaml structure: `core`/`glue`,
+  `needs`/`glue_needs`, `children`, auto-down, namespaces.
 - **[Revisions](revisions/index.md)** — how to consolidate years of incremental changes without
   losing data, walked through with a real worked example.
 - **[Example database](example-database/index.md)** — a hotel-booking schema, deep enough in

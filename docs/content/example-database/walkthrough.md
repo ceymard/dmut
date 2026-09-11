@@ -20,10 +20,10 @@ uses, named `hotel.types.address`, `hotel.types.card_summary`, and so on. There'
 `hotel.types` mutation anywhere; dotted-name auto-dependency only needs the segments that actually
 exist as mutations, so `hotel.types.address` depends on `hotel` directly.
 
-`hotel`'s own `meta` is where the blanket grant to an unauthenticated role lives — right next to the
-schema it governs, which is exactly what `meta` is for: the "how it's accessed" half of an object,
+`hotel`'s own `glue` is where the blanket grant to an unauthenticated role lives — right next to the
+schema it governs, which is exactly what `glue` is for: the "how it's accessed" half of an object,
 kept with that object's own mutation rather than off in a mutation of its own. It's covered in
-detail in [sql vs meta](../mutation-format/sql-vs-meta.md#meta-doesnt-always-rerun-when-youd-expect):
+detail in [core vs glue](../mutation-format/core-vs-glue.md#glue-doesnt-always-rerun-when-youd-expect):
 each `grant ... on all X in schema hotel` is paired with an `alter default privileges` statement so
 that a table, sequence or function added by some future mutation is covered automatically, without
 anyone having to remember to touch this mutation again.
@@ -45,11 +45,11 @@ as a whole depends on.
 ```
 
 `description_search` is a stored generated column plus its GIN index, kept as a `children` entry
-rather than folded into `hotel.properties`'s own `sql`. That's not a revisions concern here
+rather than folded into `hotel.properties`'s own `core`. That's not a revisions concern here
 (there's only one revision in this example) — it's kept separate because it's the kind of thing
 you might want to alter or drop independently of the table itself later, and `search_properties`,
-the `meta` function right below it, depends on the column existing. Since all `sql` (children
-included) runs before any `meta`, that dependency is automatic and needs no `meta_needs`.
+the `glue` function right below it, depends on the column existing. Since all `core` (children
+included) runs before any `glue`, that dependency is automatic and needs no `glue_needs`.
 
 ## Computed columns: `hotel.guests`
 
@@ -66,8 +66,8 @@ dmut builds the right `DROP FUNCTION` signature around `OUT` parameters.
 
 `hotel.room_types`, `hotel.rooms`, `hotel.amenities`, `hotel.property_amenities`,
 `hotel.payment_methods`, `hotel.bookings`, `hotel.booking_guests`, `hotel.payments`,
-`hotel.reviews`, `hotel.rate_plans`, `hotel.staff` and `roles` follow the same shape: a `sql` block
-for the table (or, for `roles`, the role itself), a `meta` block for comments, computed-column
+`hotel.reviews`, `hotel.rate_plans`, `hotel.staff` and `roles` follow the same shape: a `core` block
+for the table (or, for `roles`, the role itself), a `glue` block for comments, computed-column
 functions, and anything else lightweight — each one dotted under `hotel` except `roles` itself, for
 the reason above. Browse them directly in [`examples/hotel/`](
 https://github.com/ceymard/dmut/tree/main/examples/hotel) — every one of them is real, tested

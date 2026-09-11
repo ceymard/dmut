@@ -104,7 +104,7 @@ func hasParent(mut *Mutation, name string, meta bool) bool {
 func TestUnknownKeysAreRefused(t *testing.T) {
 	// `roles` was a key in dmut before 1.0 and is the one people will try first.
 	refuses(t, "unknown key 'roles'", map[string]string{
-		"a.yml": "x:\n  roles: [admin]\n  sql:\n    - create schema x;\n",
+		"a.yml": "x:\n  roles: [admin]\n  core:\n    - create schema x;\n",
 	})
 	refuses(t, "unknown key 'up'", map[string]string{
 		"a.yml": "x:\n  up:\n    - create schema x;\n",
@@ -114,7 +114,7 @@ func TestUnknownKeysAreRefused(t *testing.T) {
 func TestStatementsMayBeStringsOrPairs(t *testing.T) {
 	s := set(t, mustLoad(t, map[string]string{
 		"a.yml": `x:
-  sql:
+  core:
     - create schema x;
     - up: create table x.t (id int);
       down: drop table x.t;
@@ -122,20 +122,20 @@ func TestStatementsMayBeStringsOrPairs(t *testing.T) {
 	}), "")
 
 	mut := mutation(t, s, "x")
-	if len(mut.Sql) != 2 {
-		t.Fatalf("expected 2 statements, got %d", len(mut.Sql))
+	if len(mut.Core) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(mut.Core))
 	}
-	if mut.Sql[0].Down != "DROP schema x;" {
-		t.Errorf("expected an inferred down, got %q", mut.Sql[0].Down)
+	if mut.Core[0].Down != "DROP schema x;" {
+		t.Errorf("expected an inferred down, got %q", mut.Core[0].Down)
 	}
-	if mut.Sql[1].Down != "drop table x.t;" {
-		t.Errorf("expected the explicit down to be kept, got %q", mut.Sql[1].Down)
+	if mut.Core[1].Down != "drop table x.t;" {
+		t.Errorf("expected the explicit down to be kept, got %q", mut.Core[1].Down)
 	}
 }
 
 func TestStatementsThatCannotBeUndoneAreRefused(t *testing.T) {
 	refuses(t, "can't generate undo statement", map[string]string{
-		"a.yml": "x:\n  sql:\n    - update t set a = 1;\n",
+		"a.yml": "x:\n  core:\n    - update t set a = 1;\n",
 	})
 }
 
@@ -145,16 +145,16 @@ func TestStatementsThatCannotBeUndoneAreRefused(t *testing.T) {
 func TestDottedNamesDependOnTheirAncestors(t *testing.T) {
 	s := set(t, mustLoad(t, map[string]string{
 		"a.yml": `a:
-  sql:
+  core:
     - create schema a;
 a.b:
-  sql:
+  core:
     - create table a.t (id int);
 a.b.c:
-  sql:
+  core:
     - create index i on a.t (id);
 a.unrelated:
-  sql:
+  core:
     - create table a.u (id int);
 `,
 	}), "")
@@ -176,11 +176,11 @@ a.unrelated:
 func TestChildrenBecomeDottedMutations(t *testing.T) {
 	s := set(t, mustLoad(t, map[string]string{
 		"a.yml": `parent:
-  sql:
+  core:
     - create table t (id int);
   children:
     child:
-      sql:
+      core:
         - alter table t add column name text;
 `,
 	}), "")
@@ -193,24 +193,24 @@ func TestChildrenBecomeDottedMutations(t *testing.T) {
 
 func TestMissingDependencyIsRefused(t *testing.T) {
 	refuses(t, "asks for dependency", map[string]string{
-		"a.yml": "x:\n  needs: [nope]\n  sql:\n    - create schema x;\n",
+		"a.yml": "x:\n  needs: [nope]\n  core:\n    - create schema x;\n",
 	})
 	refuses(t, "asks for meta dependency", map[string]string{
-		"a.yml": "x:\n  meta_needs: [nope]\n  sql:\n    - create schema x;\n",
+		"a.yml": "x:\n  glue_needs: [nope]\n  core:\n    - create schema x;\n",
 	})
 }
 
 func TestDependenciesCannotCrossNamespaces(t *testing.T) {
 	refuses(t, "asks for dependency", map[string]string{
-		"a.yml": "__namespace: one\nx:\n  sql:\n    - create schema x;\n",
-		"b.yml": "__namespace: two\ny:\n  needs: [x]\n  sql:\n    - create schema y;\n",
+		"a.yml": "__namespace: one\nx:\n  core:\n    - create schema x;\n",
+		"b.yml": "__namespace: two\ny:\n  needs: [x]\n  core:\n    - create schema y;\n",
 	})
 }
 
 func TestDependenciesCannotCrossRevisions(t *testing.T) {
 	refuses(t, "asks for dependency", map[string]string{
-		"a.yml": "__revision: 1\nx:\n  sql:\n    - create schema x;\n",
-		"b.yml": "__revision: 2\ny:\n  needs: [x]\n  sql:\n    - create schema y;\n",
+		"a.yml": "__revision: 1\nx:\n  core:\n    - create schema x;\n",
+		"b.yml": "__revision: 2\ny:\n  needs: [x]\n  core:\n    - create schema y;\n",
 	})
 }
 
@@ -218,15 +218,15 @@ func TestCyclesAreRefused(t *testing.T) {
 	refuses(t, "cycle", map[string]string{
 		"a.yml": `x:
   needs: [z]
-  sql:
+  core:
     - create schema x;
 y:
   needs: [x]
-  sql:
+  core:
     - create schema y;
 z:
   needs: [y]
-  sql:
+  core:
     - create schema z;
 `,
 	})
@@ -255,15 +255,15 @@ func TestCycleErrorReportsTheExactLoop(t *testing.T) {
 	_, err := load(t, map[string]string{
 		"a.yml": `x:
   needs: [z]
-  sql:
+  core:
     - create schema x;
 y:
   needs: [x]
-  sql:
+  core:
     - create schema y;
 z:
   needs: [y]
-  sql:
+  core:
     - create schema z;
 `,
 	})
@@ -290,19 +290,19 @@ func TestCyclePathExcludesUnrelatedMutations(t *testing.T) {
 	_, err := load(t, map[string]string{
 		"a.yml": `x:
   needs: [z]
-  sql:
+  core:
     - create schema x;
 y:
   needs: [x]
-  sql:
+  core:
     - create schema y;
 z:
   needs: [y]
-  sql:
+  core:
     - create schema z;
 unrelated:
   needs: [x]
-  sql:
+  core:
     - create schema unrelated;
 `,
 	})
@@ -322,22 +322,22 @@ unrelated:
 // you edited might never run.
 func TestDuplicateNamesAcrossFilesAreRefused(t *testing.T) {
 	refuses(t, "duplicate mutation name", map[string]string{
-		"a.yml": "x:\n  sql:\n    - create schema x;\n",
-		"b.yml": "x:\n  sql:\n    - create schema other;\n",
+		"a.yml": "x:\n  core:\n    - create schema x;\n",
+		"b.yml": "x:\n  core:\n    - create schema other;\n",
 	})
 }
 
 func TestDuplicateNamesInOneFileAreRefused(t *testing.T) {
 	refuses(t, "already defined", map[string]string{
-		"a.yml": "x:\n  sql:\n    - create schema one;\nx:\n  sql:\n    - create schema two;\n",
+		"a.yml": "x:\n  core:\n    - create schema one;\nx:\n  core:\n    - create schema two;\n",
 	})
 }
 
 // The same name in two namespaces is fine : they are separate silos.
 func TestSameNameInTwoNamespacesIsFine(t *testing.T) {
 	ns := mustLoad(t, map[string]string{
-		"a.yml": "__namespace: one\nx:\n  sql:\n    - create schema x1;\n",
-		"b.yml": "__namespace: two\nx:\n  sql:\n    - create schema x2;\n",
+		"a.yml": "__namespace: one\nx:\n  core:\n    - create schema x1;\n",
+		"b.yml": "__namespace: two\nx:\n  core:\n    - create schema x2;\n",
 	})
 
 	for _, name := range []string{"one", "two"} {
@@ -350,9 +350,9 @@ func TestSameNameInTwoNamespacesIsFine(t *testing.T) {
 
 func TestFilesAreGroupedByNamespace(t *testing.T) {
 	ns := mustLoad(t, map[string]string{
-		"a.yml":     "__namespace: one\nx:\n  sql:\n    - create schema x;\n",
-		"sub/b.yml": "__namespace: one\ny:\n  sql:\n    - create schema y;\n",
-		"c.yml":     "__namespace: two\nz:\n  sql:\n    - create schema z;\n",
+		"a.yml":     "__namespace: one\nx:\n  core:\n    - create schema x;\n",
+		"sub/b.yml": "__namespace: one\ny:\n  core:\n    - create schema y;\n",
+		"c.yml":     "__namespace: two\nz:\n  core:\n    - create schema z;\n",
 	})
 
 	one := set(t, ns, "one")
@@ -370,15 +370,15 @@ func TestUnrevisionedFilesAreTheNextRevision(t *testing.T) {
 	}{
 		{
 			name:  "no revision at all is revision 1",
-			files: map[string]string{"a.yml": "x:\n  sql:\n    - create schema x;\n"},
+			files: map[string]string{"a.yml": "x:\n  core:\n    - create schema x;\n"},
 			want:  1,
 		},
 		{
 			name: "unrevisioned files come after the highest revision",
 			files: map[string]string{
-				"r1.yml": "__revision: 1\nx:\n  sql:\n    - create schema x;\n",
-				"r2.yml": "__revision: 2\nx:\n  sql:\n    - create schema x;\n",
-				"a.yml":  "y:\n  sql:\n    - create schema y;\n",
+				"r1.yml": "__revision: 1\nx:\n  core:\n    - create schema x;\n",
+				"r2.yml": "__revision: 2\nx:\n  core:\n    - create schema x;\n",
+				"a.yml":  "y:\n  core:\n    - create schema y;\n",
 			},
 			want: 3,
 		},
@@ -398,15 +398,15 @@ func TestUnrevisionedFilesAreTheNextRevision(t *testing.T) {
 
 func TestRevisionGapsAreRefused(t *testing.T) {
 	refuses(t, "not continuous", map[string]string{
-		"r1.yml": "__revision: 1\nx:\n  sql:\n    - create schema x;\n",
-		"r3.yml": "__revision: 3\nx:\n  sql:\n    - create schema x;\n",
+		"r1.yml": "__revision: 1\nx:\n  core:\n    - create schema x;\n",
+		"r3.yml": "__revision: 3\nx:\n  core:\n    - create schema x;\n",
 	})
 }
 
 func TestRevisionsAreSeparateSets(t *testing.T) {
 	ns := mustLoad(t, map[string]string{
-		"r1.yml": "__revision: 1\nx:\n  sql:\n    - create schema x;\n",
-		"r2.yml": "__revision: 2\nx:\n  sql:\n    - create schema x;\n  new_sql:\n    - create schema x2;\n",
+		"r1.yml": "__revision: 1\nx:\n  core:\n    - create schema x;\n",
+		"r2.yml": "__revision: 2\nx:\n  core:\n    - create schema x;\n  new_sql:\n    - create schema x2;\n",
 	})
 
 	seq, _ := ns.Map.Get("")
@@ -425,7 +425,7 @@ func TestRevisionsAreSeparateSets(t *testing.T) {
 // is no cleaned-up definition for the next revision to inherit.
 func TestEmptyNewSqlIsNotAnOverride(t *testing.T) {
 	ns := mustLoad(t, map[string]string{
-		"r1.yml": "__revision: 1\nx:\n  sql:\n    - create schema x;\n  new_sql: []\n",
+		"r1.yml": "__revision: 1\nx:\n  core:\n    - create schema x;\n  new_sql: []\n",
 	})
 
 	seq, _ := ns.Map.Get("")
@@ -439,11 +439,11 @@ func TestNewValuesReplaceTheOldOnes(t *testing.T) {
 	s := set(t, mustLoad(t, map[string]string{
 		"r1.yml": `__revision: 1
 base:
-  sql:
+  core:
     - create schema base;
 x:
   needs: [base]
-  sql:
+  core:
     - create schema x;
   new_needs: []
   new_sql:
@@ -452,8 +452,8 @@ x:
 	}), "")
 
 	replaced := mutation(t, s.AsNewMutationSet(), "x")
-	if len(replaced.Sql) != 1 || replaced.Sql[0].Up != "create schema x2;" {
-		t.Errorf("expected new_sql to replace sql, got %+v", replaced.Sql)
+	if len(replaced.Core) != 1 || replaced.Core[0].Up != "create schema x2;" {
+		t.Errorf("expected new_sql to replace sql, got %+v", replaced.Core)
 	}
 	if len(replaced.NewSql) != 0 {
 		t.Error("the new set should not carry new_sql any more")
@@ -465,28 +465,28 @@ x:
 
 func TestCommentsAndWhitespaceDoNotChangeTheHash(t *testing.T) {
 	a := mutation(t, set(t, mustLoad(t, map[string]string{
-		"a.yml": "x:\n  sql:\n    - create schema x;\n",
+		"a.yml": "x:\n  core:\n    - create schema x;\n",
 	}), ""), "x")
 
 	b := mutation(t, set(t, mustLoad(t, map[string]string{
-		"a.yml": "x:\n  sql:\n    - |\n      -- a comment\n      create    schema\n      x; /* and another */\n",
+		"a.yml": "x:\n  core:\n    - |\n      -- a comment\n      create    schema\n      x; /* and another */\n",
 	}), ""), "x")
 
-	if a.SqlHash() != b.SqlHash() {
+	if a.CoreHash() != b.CoreHash() {
 		t.Error("comments and whitespace should not change the hash of a mutation")
 	}
 }
 
 func TestChangingOnlyTheDownChangesTheHash(t *testing.T) {
 	a := mutation(t, set(t, mustLoad(t, map[string]string{
-		"a.yml": "x:\n  sql:\n    - up: create schema x;\n      down: drop schema x;\n",
+		"a.yml": "x:\n  core:\n    - up: create schema x;\n      down: drop schema x;\n",
 	}), ""), "x")
 
 	b := mutation(t, set(t, mustLoad(t, map[string]string{
-		"a.yml": "x:\n  sql:\n    - up: create schema x;\n      down: drop schema x cascade;\n",
+		"a.yml": "x:\n  core:\n    - up: create schema x;\n      down: drop schema x cascade;\n",
 	}), ""), "x")
 
-	if a.SqlHash() == b.SqlHash() {
+	if a.CoreHash() == b.CoreHash() {
 		t.Error("the down of a statement is part of what makes a mutation different")
 	}
 }
@@ -494,31 +494,31 @@ func TestChangingOnlyTheDownChangesTheHash(t *testing.T) {
 func TestSqlAndMetaAreHashedApart(t *testing.T) {
 	files := func(meta string) map[string]string {
 		return map[string]string{
-			"a.yml": "x:\n  sql:\n    - create table t (id int);\n  meta:\n    - " + meta + "\n",
+			"a.yml": "x:\n  core:\n    - create table t (id int);\n  glue:\n    - " + meta + "\n",
 		}
 	}
 
 	a := mutation(t, set(t, mustLoad(t, files("grant select on table t to public;")), ""), "x")
 	b := mutation(t, set(t, mustLoad(t, files("grant insert on table t to public;")), ""), "x")
 
-	if a.MetaHash() == b.MetaHash() {
+	if a.GlueHash() == b.GlueHash() {
 		t.Error("changing meta should change the meta hash")
 	}
-	if a.SqlHash() != b.SqlHash() {
+	if a.CoreHash() != b.CoreHash() {
 		t.Error("changing meta must not change the sql hash")
 	}
 }
 
 func TestRenamingChangesTheHash(t *testing.T) {
 	a := mutation(t, set(t, mustLoad(t, map[string]string{
-		"a.yml": "x:\n  sql:\n    - create schema s;\n",
+		"a.yml": "x:\n  core:\n    - create schema s;\n",
 	}), ""), "x")
 
 	b := mutation(t, set(t, mustLoad(t, map[string]string{
-		"a.yml": "y:\n  sql:\n    - create schema s;\n",
+		"a.yml": "y:\n  core:\n    - create schema s;\n",
 	}), ""), "y")
 
-	if a.SqlHash() == b.SqlHash() {
+	if a.CoreHash() == b.CoreHash() {
 		t.Error("the name of a mutation is part of its hash")
 	}
 }
@@ -528,11 +528,11 @@ func TestRenamingChangesTheHash(t *testing.T) {
 
 func TestOnlyYamlFilesAreRead(t *testing.T) {
 	ns := mustLoad(t, map[string]string{
-		"a.yml":      "x:\n  sql:\n    - create schema x;\n",
-		"b.yaml":     "y:\n  sql:\n    - create schema y;\n",
+		"a.yml":      "x:\n  core:\n    - create schema x;\n",
+		"b.yaml":     "y:\n  core:\n    - create schema y;\n",
 		"notes.txt":  "this is not yaml at all",
 		"README.md":  "# neither is this",
-		"sub/c.yaml": "z:\n  sql:\n    - create schema z;\n",
+		"sub/c.yaml": "z:\n  core:\n    - create schema z;\n",
 	})
 
 	s := set(t, ns, "")
@@ -547,7 +547,7 @@ func TestOnlyYamlFilesAreRead(t *testing.T) {
 // dmut needs its own bookkeeping mutations wherever it is pointed.
 func TestDmutOwnMutationsAreAlwaysLoaded(t *testing.T) {
 	ns := mustLoad(t, map[string]string{
-		"a.yml": "x:\n  sql:\n    - create schema x;\n",
+		"a.yml": "x:\n  core:\n    - create schema x;\n",
 	})
 
 	if _, ok := ns.Map.Get(DmutNamespace); !ok {

@@ -63,7 +63,7 @@ func hashes(t *testing.T, paths ...string) map[string][2]string {
 		for revision, set := range seq.Revisions {
 			for mut := range set.AllMutations() {
 				key := ns + "/" + strconv.Itoa(revision) + "/" + mut.Name
-				res[key] = [2]string{mut.SqlHash(), mut.MetaHash()}
+				res[key] = [2]string{mut.CoreHash(), mut.GlueHash()}
 			}
 		}
 	}
@@ -136,12 +136,12 @@ func TestReadMultipleDocumentsPerFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`
 __namespace: one
 a:
-  sql:
+  core:
     - create schema a;
 ---
 __namespace: two
 b:
-  sql:
+  core:
     - create schema b;
 `), 0644); err != nil {
 		t.Fatal(err)

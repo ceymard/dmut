@@ -4,7 +4,7 @@ __namespace: hotel
 hotel.guests:
   needs: [hotel.loyalty_tiers, hotel.types.address]
 
-  sql:
+  core:
     - |
       create table hotel.guests (
         id bigint generated always as identity primary key,
@@ -18,7 +18,7 @@ hotel.guests:
         created_at timestamptz not null default now()
       );
 
-  meta:
+  glue:
     - comment on table hotel.guests is 'A person who can book a room.';
     - comment on column hotel.guests.billing_address is 'Composite-typed column (hotel.address), not a join to a separate table - a guest only ever has one current billing address.';
 

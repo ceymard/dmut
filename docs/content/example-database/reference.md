@@ -56,7 +56,7 @@ anything that actually lives inside the schema.
 
 | Mutation | File | What it covers |
 |---|---|---|
-| `hotel` / `hotel.types.*` | `hotel.yml` | `create schema hotel`, two composite types (`address`, `card_summary`) and three enums (`room_status`, `booking_status`, `payment_status`) — flat, dotted, no grouping mutation — plus, in `hotel`'s own `meta`, the blanket grants to `~anonymous` (see [sql vs meta](../mutation-format/sql-vs-meta.md#meta-doesnt-always-rerun-when-youd-expect)) |
+| `hotel` / `hotel.types.*` | `hotel.yml` | `create schema hotel`, two composite types (`address`, `card_summary`) and three enums (`room_status`, `booking_status`, `payment_status`) — flat, dotted, no grouping mutation — plus, in `hotel`'s own `glue`, the blanket grants to `~anonymous` (see [core vs glue](../mutation-format/core-vs-glue.md#glue-doesnt-always-rerun-when-youd-expect)) |
 | `extensions` | `extensions.yml` | `btree_gist`, needed by `hotel.bookings`' GiST exclusion constraint — not dotted under `hotel`, since an extension isn't scoped to one schema |
 | `roles` | `roles.yml` | The `~anonymous` role — not dotted under `hotel` either, since a role is cluster-wide |
 | `hotel.chains` | `chains.yml` | Hotel groups |

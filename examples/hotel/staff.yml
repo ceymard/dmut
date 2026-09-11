@@ -4,7 +4,7 @@ __namespace: hotel
 hotel.staff:
   needs: [hotel.properties]
 
-  sql:
+  core:
     - |
       create table hotel.staff (
         id bigint generated always as identity primary key,
@@ -14,5 +14,5 @@ hotel.staff:
         role text not null
       );
 
-  meta:
+  glue:
     - comment on table hotel.staff is 'Property staff, self-referencing via manager_id.';

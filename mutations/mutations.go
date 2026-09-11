@@ -25,9 +25,9 @@ func (dir IterationDirection) UpOrDown() string {
 }
 
 func (dir IterationDirection) MetaOrSql() string {
-	meta_or_sql := au.BrightYellow("sql").String()
+	meta_or_sql := au.BrightYellow("core").String()
 	if dir.Meta {
-		meta_or_sql = au.BrightBlue("meta").String()
+		meta_or_sql = au.BrightBlue("glue").String()
 	}
 	return meta_or_sql
 }
@@ -49,9 +49,9 @@ type Mutation struct {
 	Namespace string `json:"namespace"`
 
 	Needs     []string            `json:"needs,omitempty"`
-	Sql       []MutationStatement `json:"sql,omitempty"`
-	MetaNeeds []string            `json:"meta_needs,omitempty"`
-	Meta      []MutationStatement `json:"meta,omitempty"`
+	Core      []MutationStatement `json:"core,omitempty"`
+	GlueNeeds []string            `json:"glue_needs,omitempty"`
+	Glue      []MutationStatement `json:"glue,omitempty"`
 
 	//
 	NewNeeds []string            `json:"new_needs"`
@@ -72,7 +72,7 @@ func (mut *Mutation) NameComponents() []string {
 }
 
 func (mut *Mutation) ShouldBeSaved() bool {
-	return len(mut.NewSql) > 0 || len(mut.NewNeeds) > 0 || len(mut.Sql) > 0 || len(mut.Needs) > 0 || len(mut.Meta) > 0 || len(mut.MetaNeeds) > 0
+	return len(mut.NewSql) > 0 || len(mut.NewNeeds) > 0 || len(mut.Core) > 0 || len(mut.Needs) > 0 || len(mut.Glue) > 0 || len(mut.GlueNeeds) > 0
 }
 
 func parseStringList(value ast.Node) (list []string, err error) {
@@ -108,23 +108,23 @@ func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation,
 			} else {
 				mut.Needs = list
 			}
-		case "sql":
+		case "core":
 			if list, err := parseStatements(value); err != nil {
 				return nil, err
 			} else {
-				mut.Sql = list
+				mut.Core = list
 			}
-		case "meta":
+		case "glue":
 			if list, err := parseStatements(value); err != nil {
 				return nil, err
 			} else {
-				mut.Meta = list
+				mut.Glue = list
 			}
-		case "meta_needs":
+		case "glue_needs":
 			if list, err := parseStringList(value); err != nil {
 				return nil, err
 			} else {
-				mut.MetaNeeds = list
+				mut.GlueNeeds = list
 			}
 		case "new_needs":
 			if list, err := parseStringList(value); err != nil {
@@ -174,13 +174,13 @@ func (mut *Mutation) AsNewMutation() *Mutation {
 		File:      mut.File,
 		Namespace: mut.Namespace,
 		Needs:     mut.Needs,
-		Sql:       mut.Sql,
-		MetaNeeds: mut.MetaNeeds,
-		Meta:      mut.Meta,
+		Core:      mut.Core,
+		GlueNeeds: mut.GlueNeeds,
+		Glue:      mut.Glue,
 	}
 
 	if mut.NewSql != nil {
-		mut2.Sql = mut.NewSql
+		mut2.Core = mut.NewSql
 		mut2.NewSql = nil
 	}
 	if mut.NewNeeds != nil {
@@ -195,26 +195,54 @@ func (mut *Mutation) DisplayName() string {
 	return au.BrightMagenta(mut.set.Namespace).String() + " " + mut.Name
 }
 
-func (mut *Mutation) SqlHash() string {
+func (mut *Mutation) CoreHash() string {
 	digest := NewDigestBuffer()
 	digest.WriteString(mut.Name)
-	digest.AddStatements(mut.Sql...)
+	digest.AddStatements(mut.Core...)
 	return digest.Digest()
 }
 
-func (mut *Mutation) MetaHash() string {
+func (mut *Mutation) GlueHash() string {
 	digest := NewDigestBuffer()
 	digest.WriteString(mut.Name)
-	digest.AddStatements(mut.Meta...)
+	digest.AddStatements(mut.Glue...)
 	return digest.Digest()
 }
 
 func (mut *Mutation) Hash(dir IterationDirection) string {
 	if dir.Meta {
-		return mut.MetaHash()
+		return mut.GlueHash()
 	} else {
-		return mut.SqlHash()
+		return mut.CoreHash()
 	}
+}
+
+// normalizedStatement is a code-equivalence fingerprint of a single statement's up and
+// down text (whitespace/comments ignored, per DigestBuffer.AddStatement), suitable for
+// direct comparison between two statements - see commonPrefixLen.
+func normalizedStatement(stmt MutationStatement) string {
+	dg := NewDigestBuffer()
+	_ = dg.AddStatement(stmt.Up)
+	_ = dg.AddStatement(stmt.Down)
+	return dg.String()
+}
+
+// commonPrefixLen returns the length of the longest common prefix of old and new,
+// comparing statements by code-equivalence (see normalizedStatement) rather than exact
+// string identity, and stopping at the first divergence - not a general diff. This is
+// deliberate: everything after the first point of divergence is swept into scope even if
+// individually unchanged, since a later statement can depend on what an earlier one
+// produced (see specs/changes.md, "New algorithm").
+func commonPrefixLen(old, new []MutationStatement) int {
+	n := len(old)
+	if len(new) < n {
+		n = len(new)
+	}
+	i := 0
+	for i < n && normalizedStatement(old[i]) == normalizedStatement(new[i]) {
+		i++
+	}
+	return i
 }
 
 func (mut *Mutation) IterateDependencies(dir IterationDirection) iter.Seq[*Mutation] {

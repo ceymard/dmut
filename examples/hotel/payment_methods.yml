@@ -4,7 +4,7 @@ __namespace: hotel
 hotel.payment_methods:
   needs: [hotel.guests, hotel.types.card_summary]
 
-  sql:
+  core:
     - |
       create table hotel.payment_methods (
         id bigint generated always as identity primary key,
@@ -13,5 +13,5 @@ hotel.payment_methods:
         is_default boolean not null default false
       );
 
-  meta:
+  glue:
     - comment on table hotel.payment_methods is 'A guest''s saved payment method. Only ever stores a non-reversible summary (brand/last4/expiry) - never a full card number, even in test fixtures.';

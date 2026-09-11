@@ -33,7 +33,7 @@ properties:
   # What actually still has to run to bring a database that's sitting at
   # revision 1 up to date - unchanged from r1.yml, since the column is added
   # by the child mutation below instead.
-  sql:
+  core:
     - |
       create table properties (
         id serial primary key,
@@ -45,13 +45,13 @@ properties:
     description_search:
       new_sql: []
 
-      sql:
+      core:
         - |
           alter table properties add column description_search tsvector
             generated always as (to_tsvector('english', coalesce(description, ''))) stored;
         - create index properties_description_search_idx on properties using gin (description_search);
 
-  meta:
+  glue:
     - up: |
         insert into properties (name, description) values
           ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),

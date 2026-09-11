@@ -4,7 +4,7 @@ __namespace: hotel
 hotel.bookings:
   needs: [hotel.guests, hotel.rooms, extensions, hotel.types.booking_status]
 
-  sql:
+  core:
     - |
       create table hotel.bookings (
         id uuid primary key default gen_random_uuid(),
@@ -20,7 +20,7 @@ hotel.bookings:
         exclude using gist (room_id with =, stay with &&)
       );
 
-  meta:
+  glue:
     - comment on table hotel.bookings is 'A guest''s reservation of a room for a period. UUID-keyed (unlike most other tables here) since bookings are the kind of entity a real system would expose externally by id.';
 
     # Computed column: derived purely from the row's own `stay` range.
