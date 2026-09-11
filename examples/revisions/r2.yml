@@ -4,56 +4,75 @@
 # an ALTER TABLE ADD COLUMN, kept separate from the table's own definition
 # exactly like examples/hotel/properties.yml's `description_search` child.
 #
-# `new_sql` on the parent declares what the *next* revision will inherit as
-# the recorded truth for `properties`: the column folded straight into
-# CREATE TABLE, as if it had been there from the start. `new_sql: []` on the
-# child says the opposite - once r3 lands, this child mutation has nothing
-# left to contribute and drops out of the graph (see README, "To retire a
-# mutation in a new revision").
+# `override` declares what the *next* revision will inherit as the recorded
+# truth for `properties`: the column folded straight into CREATE TABLE, as
+# if it had been there from the start. It has to match revision 3's actual
+# `core` for `properties` exactly (including the index, not just the table)
+# - dmut hashes the whole list, so a database that already has revision 2's
+# override recorded and a database that jumps straight to revision 3's core
+# need to land on the exact same hash, or dmut treats them as different
+# definitions and drops/recreates the table for no reason.
+#
+# `delete` retires the child mutation once revision 3 lands: it already ran
+# for real via `mutations` below, so once its column is folded into
+# `properties`'s override, it no longer needs separate tracking.
+#
+# override replaces a mutation's recorded core *and* glue *and* needs
+# wholesale, not just core - so the seed-data insert below has to be restated
+# here too, or the recorded glue becomes empty and revision 3 (whose glue
+# still has that insert) would see it as new and run it again, duplicating
+# the seeded rows. This is unlike the old new_sql mechanism, which only ever
+# replaced sql/core and left meta/glue alone - override is more complete, but
+# that means restating everything you want kept, not just the schema.
 
 __namespace: revisions
 __revision: 2
 
-properties:
-  # What a brand-new database ends up with once revision 3 also exists. Must
-  # match revision 3's `sql` for `properties` exactly (including the index,
-  # not just the table) - otherwise the hash won't match and revision 3 will
-  # needlessly drop and recreate the table instead of leaving it alone.
-  new_sql:
-    - |
-      create table properties (
-        id serial primary key,
-        name text not null,
-        description text,
-        description_search tsvector
-          generated always as (to_tsvector('english', coalesce(description, ''))) stored
-      );
-    - create index properties_description_search_idx on properties using gin (description_search);
+delete: [properties.description_search]
 
-  # What actually still has to run to bring a database that's sitting at
-  # revision 1 up to date - unchanged from r1.yml, since the column is added
-  # by the child mutation below instead.
-  core:
-    - |
-      create table properties (
-        id serial primary key,
-        name text not null,
-        description text
-      );
+override:
+  properties:
+    core:
+      - |
+        create table properties (
+          id serial primary key,
+          name text not null,
+          description text,
+          description_search tsvector
+            generated always as (to_tsvector('english', coalesce(description, ''))) stored
+        );
+      - create index properties_description_search_idx on properties using gin (description_search);
+    glue:
+      - up: |
+          insert into properties (name, description) values
+            ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),
+            ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.');
+        down: delete from properties where name in ('Seaside Inn', 'Mountain Lodge');
 
-  children:
-    description_search:
-      new_sql: []
+mutations:
+  properties:
+    # What actually still has to run to bring a database that's sitting at
+    # revision 1 up to date - unchanged from r1.yml, since the column is added
+    # by the child mutation below instead.
+    core:
+      - |
+        create table properties (
+          id serial primary key,
+          name text not null,
+          description text
+        );
 
-      core:
-        - |
-          alter table properties add column description_search tsvector
-            generated always as (to_tsvector('english', coalesce(description, ''))) stored;
-        - create index properties_description_search_idx on properties using gin (description_search);
+    children:
+      description_search:
+        core:
+          - |
+            alter table properties add column description_search tsvector
+              generated always as (to_tsvector('english', coalesce(description, ''))) stored;
+          - create index properties_description_search_idx on properties using gin (description_search);
 
-  glue:
-    - up: |
-        insert into properties (name, description) values
-          ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),
-          ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.');
-      down: delete from properties where name in ('Seaside Inn', 'Mountain Lodge');
+    glue:
+      - up: |
+          insert into properties (name, description) values
+            ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),
+            ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.');
+        down: delete from properties where name in ('Seaside Inn', 'Mountain Lodge');

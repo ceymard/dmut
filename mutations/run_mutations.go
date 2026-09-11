@@ -5,6 +5,7 @@ import (
 
 	au "github.com/logrusorgru/aurora"
 	"github.com/samber/oops"
+	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
 
 type MutationRunnerOptions struct {
@@ -181,14 +182,15 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	if local.OverrideMutations != nil {
 		save_set = local.WithOverrides()
 	} else if len(local.Delete) > 0 {
+		deleted := hashset.New[string]()
+		for _, name := range local.Delete {
+			deleted.Add(name)
+		}
 		save_set = NewMutationSet(local.Namespace, local.Revision, local.File)
 		for mut := range local.AllMutations() {
-			save_set.AddMutation(mut)
-		}
-	}
-	for _, name := range local.Delete {
-		if mut, ok := save_set.GetMutation(name); ok {
-			save_set.DeleteMutation(mut)
+			if !deleted.Contains(mut.Name) {
+				save_set.AddMutation(mut)
+			}
 		}
 	}
 

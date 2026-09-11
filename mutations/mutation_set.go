@@ -33,15 +33,29 @@ type MutationSet struct {
 }
 
 // WithOverrides returns a new set where every mutation named in OverrideMutations has
-// its Core/Glue/Needs/GlueNeeds replaced by the override's - this is what actually gets
-// saved to dmut's tracking table for an override-shaped revision (see RunMutations),
-// since override: entries are recorded but never executed. An override entry naming a
-// mutation not present in ms at all (an override for something outside mutations:) is
-// still included, so a later apply sees it as already recorded. Panics if
+// its Core/Glue/Needs/GlueNeeds replaced by the override's, and every mutation named in
+// Delete is left out entirely - this is what actually gets saved to dmut's tracking
+// table for an override-shaped revision (see RunMutations), since override: entries are
+// recorded but never executed and delete: entries drop out of tracking altogether. An
+// override entry naming a mutation not present in ms at all (an override for something
+// outside mutations:) is still included, so a later apply sees it as already recorded.
+// Deleted names are excluded *before* ResolveDependencies runs, not filtered out after -
+// otherwise a surviving mutation's SqlChildren/MetaChildren would keep a dangling
+// reference to the deleted one, which IterateDependencies would still happily walk (this
+// was a real bug: a retired child's down statements got included in a later test pass
+// even though the child had already been removed from the set). Panics if
 // OverrideMutations is nil - callers should check that first.
 func (ms *MutationSet) WithOverrides() *MutationSet {
+	deleted := hashset.New[string]()
+	for _, name := range ms.Delete {
+		deleted.Add(name)
+	}
+
 	ms2 := NewMutationSet(ms.Namespace, ms.Revision, ms.File)
 	for mut := range ms.AllMutations() {
+		if deleted.Contains(mut.Name) {
+			continue
+		}
 		if override, ok := ms.OverrideMutations.GetMutation(mut.Name); ok {
 			ms2.AddMutation(&Mutation{
 				Name:      mut.Name,
@@ -63,6 +77,9 @@ func (ms *MutationSet) WithOverrides() *MutationSet {
 		}
 	}
 	for override := range ms.OverrideMutations.AllMutations() {
+		if deleted.Contains(override.Name) {
+			continue
+		}
 		if _, ok := ms.GetMutation(override.Name); !ok {
 			cp := *override
 			ms2.AddMutation(&cp)
