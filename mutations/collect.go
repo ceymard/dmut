@@ -58,6 +58,8 @@ func Collect(namespaces *MutationNamespace, w io.Writer) error {
 			}
 			sort.Strings(names)
 
+			// TODO(phase 4, collect -r): this doesn't yet re-emit mode/delete/override
+			// for an override-shaped revision - only mutations: round-trips today.
 			for _, name := range names {
 				mut, _ := set.GetMutation(name)
 				out.blank()
@@ -66,9 +68,6 @@ func Collect(namespaces *MutationNamespace, w io.Writer) error {
 				out.statements(1, "core", mut.Core, mut.Core != nil)
 				out.stringList(1, "glue_needs", mut.declaredNeeds(set, mut.GlueNeeds))
 				out.statements(1, "glue", mut.Glue, mut.Glue != nil)
-				out.stringList(1, "new_needs", mut.declaredNeeds(set, mut.NewNeeds))
-				// new_sql is meaningful when empty : it retires a mutation.
-				out.statements(1, "new_sql", mut.NewSql, mut.NewSql != nil)
 			}
 		}
 	}

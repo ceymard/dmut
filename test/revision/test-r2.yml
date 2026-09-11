@@ -3,28 +3,39 @@
 __namespace: test
 __revision: 2
 
-test:
-  new_sql:
-    - |
-      create table test (
-        id serial primary key,
-        name text not null,
-        age integer not null default 0
-      );
+# add_column_age gets folded into test's own override below, so once this revision
+# applies it no longer needs separate tracking - it was already applied for real via
+# mutations:, so delete: just untracks it, it does not down it.
+delete: [test.add_column_age]
 
-  core:
-    - |
-      create table test (
-        id serial primary key,
-        name text not null
-      );
+mutations:
+  test:
+    core:
+      - |
+        create table test (
+          id serial primary key,
+          name text not null
+        );
 
-  children:
-    add_column_age:
-      new_sql: []
-      core:
-        - |
-          alter table test add column age integer not null default 0;
+    glue:
+      - up: |
+          insert into test (name) values ('test1');
 
-        - up: |
-            insert into test (name, age) values ('test', 12);
+    children:
+      add_column_age:
+        core:
+          - |
+            alter table test add column age integer not null default 0;
+
+          - up: |
+              insert into test (name, age) values ('test', 12);
+
+override:
+  test:
+    core:
+      - |
+        create table test (
+          id serial primary key,
+          name text not null,
+          age integer not null default 0
+        );

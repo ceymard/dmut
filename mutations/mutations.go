@@ -53,10 +53,6 @@ type Mutation struct {
 	GlueNeeds []string            `json:"glue_needs,omitempty"`
 	Glue      []MutationStatement `json:"glue,omitempty"`
 
-	//
-	NewNeeds []string            `json:"new_needs"`
-	NewSql   []MutationStatement `json:"new_sql"`
-
 	// Will only be used when loading from yaml, not from database
 	SqlParents   *hashset.Set[*Mutation] `json:"-"`
 	SqlChildren  *hashset.Set[*Mutation] `json:"-"`
@@ -72,7 +68,7 @@ func (mut *Mutation) NameComponents() []string {
 }
 
 func (mut *Mutation) ShouldBeSaved() bool {
-	return len(mut.NewSql) > 0 || len(mut.NewNeeds) > 0 || len(mut.Core) > 0 || len(mut.Needs) > 0 || len(mut.Glue) > 0 || len(mut.GlueNeeds) > 0
+	return len(mut.Core) > 0 || len(mut.Needs) > 0 || len(mut.Glue) > 0 || len(mut.GlueNeeds) > 0
 }
 
 func parseStringList(value ast.Node) (list []string, err error) {
@@ -126,18 +122,6 @@ func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation,
 			} else {
 				mut.GlueNeeds = list
 			}
-		case "new_needs":
-			if list, err := parseStringList(value); err != nil {
-				return nil, err
-			} else {
-				mut.NewNeeds = list
-			}
-		case "new_sql":
-			if list, err := parseStatements(value); err != nil {
-				return nil, err
-			} else {
-				mut.NewSql = list
-			}
 		case "children":
 			children_def, ok := value.(*ast.MappingNode)
 			if !ok {
@@ -166,29 +150,6 @@ func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation,
 		return nil, err
 	}
 	return mut, nil
-}
-
-func (mut *Mutation) AsNewMutation() *Mutation {
-	mut2 := &Mutation{
-		Name:      mut.Name,
-		File:      mut.File,
-		Namespace: mut.Namespace,
-		Needs:     mut.Needs,
-		Core:      mut.Core,
-		GlueNeeds: mut.GlueNeeds,
-		Glue:      mut.Glue,
-	}
-
-	if mut.NewSql != nil {
-		mut2.Core = mut.NewSql
-		mut2.NewSql = nil
-	}
-	if mut.NewNeeds != nil {
-		mut2.Needs = mut.NewNeeds
-		mut2.NewNeeds = nil
-	}
-
-	return mut2
 }
 
 func (mut *Mutation) DisplayName() string {

@@ -111,12 +111,16 @@ func TestCollectSkipsDmutNamespace(t *testing.T) {
 	}
 }
 
-// A retired mutation is one with an explicitly empty new_sql : dropping the
-// distinction between "empty" and "absent" would silently un-retire it.
-func TestCollectKeepsEmptyNewSql(t *testing.T) {
+// collect does not yet preserve mode/delete/override when re-serializing an
+// override-shaped revision - only mutations: round-trips today (see the TODO in
+// collect.go). This is a known, deliberate gap for this phase, not an oversight -
+// closing it belongs to `collect -r` (specs/changes.md, "Changes to collect"). This
+// test exists so that gap can't regress silently *and* so it gets noticed (and
+// rewritten) the moment it's actually closed.
+func TestCollectDoesNotYetPreserveOverrideShape(t *testing.T) {
 	got := collect(t, "../test/revision")
-	if !strings.Contains(got, "new_sql: []") {
-		t.Errorf("expected an empty new_sql to survive collection:\n%s", got)
+	if strings.Contains(got, "override:") || strings.Contains(got, "delete:") {
+		t.Errorf("collect started preserving override-shaped revisions - update this test (and the TODO in collect.go) now that it round-trips:\n%s", got)
 	}
 }
 

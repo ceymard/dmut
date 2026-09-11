@@ -57,6 +57,20 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	var options = MutationRunnerOptions{}
 	options.Merge(opts...)
 
+	// A revision's own mode: declaration (see specs/changes.md, "Squash revisions")
+	// wins outright over whatever the CLI invocation asked for - this is how a
+	// reviewed, committed revision carries destructive intent through an automated
+	// pipeline that otherwise always runs -s.
+	effective_full, effective_simple := options.Full, options.Simple
+	switch local.Mode {
+	case "full":
+		effective_full, effective_simple = true, false
+	case "simple":
+		effective_full, effective_simple = false, true
+	case "default":
+		effective_full, effective_simple = false, false
+	}
+
 	var err error
 	has_changes := true
 
@@ -69,14 +83,9 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 			return err
 		}
 
-		if distant.HasOverrides && distant.Revision < local.Revision {
-			runner.Logger().Println("using new_* mutations from previous revision")
-			distant = distant.AsNewMutationSet()
-		}
-
 		sql_down, sql_up, core_any_real_down := local.GetLCPDelta(distant, ITER_SQL)
 
-		if options.Simple && core_any_real_down {
+		if effective_simple && core_any_real_down {
 			return oops.In("apply").
 				With("namespace", local.Namespace).
 				Errorf("refusing under simple mode: core has a change that isn't a pure append - rerun with -f, or without -s, if that's intended")
@@ -109,7 +118,7 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 				return err
 			}
 
-			if options.Full {
+			if effective_full {
 				// Try the tail-only attempt first, without downing dependants. If it
 				// fails, roll back to before it and rebuild every mutation that needed
 				// a down - and everything depending on it, leaves first - in full
@@ -153,7 +162,37 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 
 	}
 
-	if err := runner.SaveMutations(local); err != nil {
+	// delete: and override: are pure bookkeeping (see specs/changes.md, "Squash
+	// revisions") - they apply regardless of options.Override, since neither one
+	// executes anything either.
+	if len(local.Delete) > 0 {
+		if err := runner.DeleteMutations(local.Namespace, local.Delete); err != nil {
+			return err
+		}
+	}
+
+	// save_set is what actually gets recorded: local with any override: swapped in,
+	// minus anything named in delete: - a mutation can be named in both (e.g. a child
+	// being folded into its parent's override and retired from separate tracking in
+	// the same revision), and delete: must win, or SaveMutations would immediately
+	// resurrect the row DeleteMutations just removed. Always a fresh copy when either
+	// is present, so local itself (the caller's own set) is never mutated in place.
+	save_set := local
+	if local.OverrideMutations != nil {
+		save_set = local.WithOverrides()
+	} else if len(local.Delete) > 0 {
+		save_set = NewMutationSet(local.Namespace, local.Revision, local.File)
+		for mut := range local.AllMutations() {
+			save_set.AddMutation(mut)
+		}
+	}
+	for _, name := range local.Delete {
+		if mut, ok := save_set.GetMutation(name); ok {
+			save_set.DeleteMutation(mut)
+		}
+	}
+
+	if err := runner.SaveMutations(save_set); err != nil {
 		return err
 	}
 
@@ -164,10 +203,9 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 		}
 	}
 
-	if local.HasOverrides {
-		local2 := local.AsNewMutationSet()
-		runner.Logger().Println(au.BrightGreen("🧪"), "performing tests with new_*")
-		if err := TestMutationSet(runner, local2); err != nil {
+	if local.OverrideMutations != nil {
+		runner.Logger().Println(au.BrightGreen("🧪"), "performing tests with override")
+		if err := TestMutationSet(runner, save_set); err != nil {
 			return err
 		}
 	}

@@ -13,10 +13,9 @@ type MutationChildrenMap map[string][]*Mutation
 
 type MutationSet struct {
 	*hashmap.Map[string, *Mutation]
-	Namespace    string
-	Revision     int
-	File         string
-	HasOverrides bool // has NewSql or NewNeeds
+	Namespace string
+	Revision  int
+	File      string
 
 	// Mode, Delete and OverrideMutations are only meaningful on an override-shaped
 	// revision (one that declared mode/delete/override/mutations - see readDocument).
@@ -33,10 +32,41 @@ type MutationSet struct {
 	OverrideMutations *MutationSet
 }
 
-func (ms *MutationSet) AsNewMutationSet() *MutationSet {
+// WithOverrides returns a new set where every mutation named in OverrideMutations has
+// its Core/Glue/Needs/GlueNeeds replaced by the override's - this is what actually gets
+// saved to dmut's tracking table for an override-shaped revision (see RunMutations),
+// since override: entries are recorded but never executed. An override entry naming a
+// mutation not present in ms at all (an override for something outside mutations:) is
+// still included, so a later apply sees it as already recorded. Panics if
+// OverrideMutations is nil - callers should check that first.
+func (ms *MutationSet) WithOverrides() *MutationSet {
 	ms2 := NewMutationSet(ms.Namespace, ms.Revision, ms.File)
 	for mut := range ms.AllMutations() {
-		ms2.AddMutation(mut.AsNewMutation())
+		if override, ok := ms.OverrideMutations.GetMutation(mut.Name); ok {
+			ms2.AddMutation(&Mutation{
+				Name:      mut.Name,
+				File:      mut.File,
+				Namespace: mut.Namespace,
+				Needs:     override.Needs,
+				Core:      override.Core,
+				GlueNeeds: override.GlueNeeds,
+				Glue:      override.Glue,
+			})
+		} else {
+			// A shallow copy, not the same pointer: ResolveDependencies below resets
+			// and repopulates SqlParents/SqlChildren/etc. in place on every mutation
+			// it touches, and ms is a different, still-live MutationSet (RunMutations
+			// still uses it, e.g. for the primary test pass) - mutating its own
+			// Mutation objects out from under it here would corrupt its graph too.
+			cp := *mut
+			ms2.AddMutation(&cp)
+		}
+	}
+	for override := range ms.OverrideMutations.AllMutations() {
+		if _, ok := ms.GetMutation(override.Name); !ok {
+			cp := *override
+			ms2.AddMutation(&cp)
+		}
 	}
 	ms2.ResolveDependencies()
 	return ms2
@@ -110,10 +140,6 @@ func (ms *MutationSet) AddMutation(mut *Mutation) error {
 	}
 	mut.Namespace = ms.Namespace
 	ms.Map.Put(mut.Name, mut)
-
-	if len(mut.NewSql) > 0 || len(mut.NewNeeds) > 0 {
-		ms.HasOverrides = true
-	}
 
 	return nil
 }

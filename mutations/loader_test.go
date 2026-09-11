@@ -406,57 +406,70 @@ func TestRevisionGapsAreRefused(t *testing.T) {
 func TestRevisionsAreSeparateSets(t *testing.T) {
 	ns := mustLoad(t, map[string]string{
 		"r1.yml": "__revision: 1\nx:\n  core:\n    - create schema x;\n",
-		"r2.yml": "__revision: 2\nx:\n  core:\n    - create schema x;\n  new_sql:\n    - create schema x2;\n",
+		"r2.yml": "__revision: 2\nmutations:\n  x:\n    core:\n      - create schema x;\noverride:\n  x:\n    core:\n      - create schema x2;\n",
 	})
 
 	seq, _ := ns.Map.Get("")
 	if len(seq.Revisions) != 2 {
 		t.Fatalf("expected 2 revisions, got %d", len(seq.Revisions))
 	}
-	if !seq.Revisions[2].HasOverrides {
-		t.Error("revision 2 declares new_sql and should be flagged as having overrides")
+	if seq.Revisions[2].OverrideMutations == nil {
+		t.Error("revision 2 declares override: and should have an OverrideMutations set")
 	}
-	if seq.Revisions[1].HasOverrides {
-		t.Error("revision 1 declares no new_sql and should not be flagged")
+	if seq.Revisions[1].OverrideMutations != nil {
+		t.Error("revision 1 declares no override: and should have no OverrideMutations set")
 	}
 }
 
-// An empty new_sql retires a mutation and must not count as an override : there
-// is no cleaned-up definition for the next revision to inherit.
-func TestEmptyNewSqlIsNotAnOverride(t *testing.T) {
+// delete: (untrack without downing) and override: (record a different recorded
+// definition) are independent mechanisms - a revision using only delete: must not be
+// mistaken for one that also overrides anything.
+func TestDeleteAloneIsNotAnOverride(t *testing.T) {
 	ns := mustLoad(t, map[string]string{
-		"r1.yml": "__revision: 1\nx:\n  core:\n    - create schema x;\n  new_sql: []\n",
+		"r1.yml": "__revision: 1\ndelete: [x]\nmutations:\n  y:\n    core:\n      - create schema y;\n",
 	})
 
 	seq, _ := ns.Map.Get("")
-	if seq.Revisions[1].HasOverrides {
-		t.Error("an empty new_sql should not flag the set as having overrides")
+	rev := seq.Revisions[1]
+	if len(rev.Delete) != 1 || rev.Delete[0] != "x" {
+		t.Errorf("expected delete: [x], got %v", rev.Delete)
+	}
+	if rev.OverrideMutations != nil {
+		t.Error("a revision with only delete: should have no OverrideMutations set")
 	}
 }
 
-// AsNewMutationSet is what the next revision compares itself against.
-func TestNewValuesReplaceTheOldOnes(t *testing.T) {
+// WithOverrides is what actually gets saved to dmut's tracking table for an
+// override-shaped revision (see RunMutations) - it's what the next revision's distant
+// set naturally reflects, since override: is written straight into recorded core/glue.
+func TestWithOverridesReplacesTheOldValues(t *testing.T) {
 	s := set(t, mustLoad(t, map[string]string{
 		"r1.yml": `__revision: 1
-base:
-  core:
-    - create schema base;
-x:
-  needs: [base]
-  core:
-    - create schema x;
-  new_needs: []
-  new_sql:
-    - create schema x2;
+mutations:
+  base:
+    core:
+      - create schema base;
+  x:
+    needs: [base]
+    core:
+      - create schema x;
+
+override:
+  x:
+    core:
+      - create schema x2;
 `,
 	}), "")
 
-	replaced := mutation(t, s.AsNewMutationSet(), "x")
+	replaced := mutation(t, s.WithOverrides(), "x")
 	if len(replaced.Core) != 1 || replaced.Core[0].Up != "create schema x2;" {
-		t.Errorf("expected new_sql to replace sql, got %+v", replaced.Core)
+		t.Errorf("expected override: to replace core, got %+v", replaced.Core)
 	}
-	if len(replaced.NewSql) != 0 {
-		t.Error("the new set should not carry new_sql any more")
+
+	// base wasn't overridden, so it must survive WithOverrides unchanged.
+	unchanged := mutation(t, s.WithOverrides(), "base")
+	if len(unchanged.Core) != 1 || unchanged.Core[0].Up != "create schema base;" {
+		t.Errorf("expected base to survive WithOverrides unchanged, got %+v", unchanged.Core)
 	}
 }
 
