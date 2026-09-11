@@ -114,3 +114,83 @@ func TestCollectRevisionFromLocalSkipsDmutNamespace(t *testing.T) {
 		t.Errorf("shell output must not contain the %s namespace:\n%s", DmutNamespace, got)
 	}
 }
+
+// Two namespaces at different local revisions: the given revision number is correct
+// for one and off-by-one for the other. Warnings must be evaluated independently per
+// namespace, not accidentally shared or compared against the wrong one's max.
+func TestCollectRevisionFromLocalWarningsArePerNamespace(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.yml"), []byte(`__namespace: a
+__revision: 2
+
+thing:
+  core:
+    - create schema a;
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.yml"), []byte(`__namespace: b
+__revision: 5
+
+thing:
+  core:
+    - create schema b;
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 3 is correct for a (2+1) but wrong for b (should be 6).
+	_, warnings := collectRevisionFromLocal(t, 3, dir)
+
+	if len(warnings) != 1 {
+		t.Fatalf("expected exactly one warning (for namespace b only), got %v", warnings)
+	}
+	if !strings.Contains(warnings[0], `"b"`) {
+		t.Errorf("expected the warning to name namespace b, got %q", warnings[0])
+	}
+	if strings.Contains(warnings[0], `"a"`) {
+		t.Errorf("namespace a should not have warned, got %q", warnings[0])
+	}
+}
+
+// An orphan override (naming a mutation absent from mutations: entirely) in the
+// namespace's latest revision must still show up in the shell's mutations: - it's
+// part of the effective state WithOverrides() computes, same as any other mutation.
+func TestCollectRevisionFromLocalIncludesOrphanOverrides(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "r1.yml"), []byte(`__namespace: widgets
+__revision: 1
+
+widgets:
+  core:
+    - create table widgets (id serial primary key, name text not null);
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "r2.yml"), []byte(`__namespace: widgets
+__revision: 2
+
+mutations:
+  widgets:
+    core:
+      - create table widgets (id serial primary key, name text not null);
+
+override:
+  widgets:
+    core:
+      - create table widgets (id serial primary key, name text not null);
+  widgets_orphan:
+    core:
+      - create table widgets_orphan (id serial primary key);
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, warnings := collectRevisionFromLocal(t, 3, dir)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings, got %v", warnings)
+	}
+	if !strings.Contains(got, "widgets_orphan") {
+		t.Errorf("expected the orphan override to be included in the shell's mutations::\n%s", got)
+	}
+}
