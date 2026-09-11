@@ -76,6 +76,12 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 
 		sql_down, sql_up, core_any_real_down := local.GetLCPDelta(distant, ITER_SQL)
 
+		if options.Simple && core_any_real_down {
+			return oops.In("apply").
+				With("namespace", local.Namespace).
+				Errorf("refusing under simple mode: core has a change that isn't a pure append - rerun with -f, or without -s, if that's intended")
+		}
+
 		// If any core statement needed a real down (not just an append), all glue in
 		// the namespace is downed and re-upped wholesale, exactly as before - only the
 		// trigger condition changed (a real down, not merely "core differs at all").

@@ -148,6 +148,75 @@ api.users:
 	}
 }
 
+// simple mode must refuse a core change that isn't a pure append, and leave the
+// database exactly as it was - no partial down, no partial up.
+func TestSimpleModeRefusesNonAppendCoreChange(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": basic}))
+	exec(t, uri, "insert into api.users (name) values ('someone');")
+
+	changed := `api:
+  core:
+    - create schema api;
+
+api.users:
+  core:
+    - |
+      create table api.users (
+        id serial primary key,
+        name text not null,
+        email text
+      );
+  glue:
+    - grant select on table api.users to public;
+`
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": changed})}, Simple: true}.Run()
+	requireErrorContaining(t, err, "simple mode")
+
+	if columnExists(t, uri, "users", "email") {
+		t.Error("simple mode must not have touched the table at all")
+	}
+	if got := queryInt(t, uri, "select count(*) from api.users"); got != 1 {
+		t.Errorf("simple mode must not have touched the data, found %d rows", got)
+	}
+}
+
+// simple mode must still allow a pure append, exactly like default mode.
+func TestSimpleModeAllowsPureAppend(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": basic}))
+	exec(t, uri, "insert into api.users (name) values ('someone');")
+
+	appended := `api:
+  core:
+    - create schema api;
+
+api.users:
+  core:
+    - |
+      create table api.users (
+        id serial primary key,
+        name text not null
+      );
+    - create index users_name_idx on api.users (name);
+  glue:
+    - grant select on table api.users to public;
+`
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": appended})}, Simple: true}.Run()
+	if err != nil {
+		t.Fatalf("expected a pure append to succeed under simple mode, got: %v", err)
+	}
+
+	if got := queryInt(t, uri, "select count(*) from api.users"); got != 1 {
+		t.Errorf("expected the row to survive, found %d rows", got)
+	}
+	if !exists(t, uri, "select 1 from pg_indexes where indexname = 'users_name_idx'") {
+		t.Error("the appended index should have been created")
+	}
+}
+
 // Removing a mutation downs it, and everything that depended on it.
 func TestRemovingAMutationDownsIt(t *testing.T) {
 	uri := testdb(t)
