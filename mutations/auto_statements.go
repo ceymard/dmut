@@ -354,6 +354,8 @@ var auto_grant = seq(
 				"tablespace",
 			))),
 			c(id),
+			// Functions/procedures carry an argument list: `on function f(int, text)`.
+			opt(c(balanced_any("(", ")"))),
 			"to",
 			capture("to", id, zero_or_more(",", id)),
 		),

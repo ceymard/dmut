@@ -66,6 +66,10 @@
   down: REVOKE USAGE ON sequence seq FROM u;
 - up: GRANT "admin" TO "user1", "user2";
   down: REVOKE "admin" FROM "user1", "user2";
+- up: grant execute on function fn_created_by_migration() to "~anonymous";
+  down: revoke execute on function fn_created_by_migration() from "~anonymous";
+- up: GRANT EXECUTE ON FUNCTION f(int, numeric(10,2)) TO u1, u2;
+  down: REVOKE EXECUTE ON FUNCTION f(int, numeric(10,2)) FROM u1, u2;
 # CommentStatement (no undo)
 - up: COMMENT ON table t IS 'comment';
   down:
