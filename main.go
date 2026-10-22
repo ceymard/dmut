@@ -8,19 +8,19 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/alecthomas/kong"
 	"github.com/ceymard/dmut/v2/mutations"
-	au "github.com/logrusorgru/aurora"
-	"github.com/samber/oops"
 )
 
 var VERSION = "1.0.0"
 
 type CLI struct {
+	LogFlags
+
 	Collect CollectCmd `cmd:"" help:"Collect all paths into a single yaml file."`
 	Apply   ApplyCmd   `cmd:"" help:"Apply the mutations to the database."`
 	Down    DownCmd    `cmd:"" help:"Down the mutations from the database."`
@@ -57,7 +57,7 @@ func (c CollectCmd) Run() error {
 	var warnings []string
 
 	if len(c.Paths) == 1 && isPostgresURI(c.Paths[0]) {
-		runner, err := mutations.NewPgRunner(c.Paths[0], false)
+		runner, err := mutations.NewPgRunner(c.Paths[0], nil)
 		if err != nil {
 			return err
 		}
@@ -79,7 +79,7 @@ func (c CollectCmd) Run() error {
 	}
 
 	for _, w := range warnings {
-		fmt.Fprintln(os.Stderr, au.BrightYellow("warn").String(), w)
+		slog.Warn(w)
 	}
 
 	return mutations.CollectRevisionShell(shells, out)
@@ -115,21 +115,15 @@ func (VersionCmd) Run() error {
 
 func main() {
 	cli := CLI{}
-	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	ctx := kong.Parse(&cli,
 		kong.Name("dmut"),
 		kong.Description("Database mutation runner. Collect, test, and apply migrations."),
 		kong.UsageOnError(),
 	)
+	logger := cli.NewLogger(os.Stderr)
+	slog.SetDefault(logger)
 	if err := ctx.Run(); err != nil {
-		if oops_err, ok := err.(oops.OopsError); ok {
-			fmt.Printf("%+v\n", oops_err)
-
-			// fmt.Println(oops_err.Error())
-			// fmt.Println(oops_err.Stacktrace())
-		} else {
-			fmt.Println(err)
-		}
+		cli.reportError(logger, os.Stderr, err)
 		os.Exit(1)
 	}
 }

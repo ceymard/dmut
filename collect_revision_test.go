@@ -54,7 +54,7 @@ thing:
 func newPgRunner(t *testing.T, uri string) *mutations.PgRunner {
 	t.Helper()
 
-	runner, err := mutations.NewPgRunner(uri, false)
+	runner, err := mutations.NewPgRunner(uri, nil)
 	if err != nil {
 		t.Fatalf("could not connect: %v", err)
 	}

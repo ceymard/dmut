@@ -1,14 +1,18 @@
 package mutations
 
 import (
-	"log"
+	"log/slog"
 )
 
 type Executor interface {
-	Logger() *log.Logger
-	ResumeLogging()
-	SetTesting()
-	GetStringOutput() string
+	// Logger is where the runner and the functions driving it log. Records
+	// logged between BeginCapture and EndCapture are held back.
+	Logger() *slog.Logger
+	// BeginCapture holds back all records logged through Logger() until EndCapture.
+	BeginCapture()
+	// EndCapture ends the capture; held records are emitted if replay is true,
+	// dropped otherwise.
+	EndCapture(replay bool)
 	Exec(sql string, args ...interface{}) error
 
 	Begin() error

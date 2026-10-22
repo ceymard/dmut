@@ -812,7 +812,7 @@ func TestDeleteMutationsRemovesOnlyNamedRows(t *testing.T) {
 		t.Fatalf("expected 2 mutations recorded before delete, got %d", got)
 	}
 
-	runner, err := mutations.NewPgRunner(uri, false)
+	runner, err := mutations.NewPgRunner(uri, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

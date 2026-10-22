@@ -4,7 +4,6 @@ import "github.com/ceymard/dmut/v2/mutations"
 
 type DownCmd struct {
 	Uri       string `arg:"" help:"Database host."`
-	Verbose   bool   `short:"v" help:"Verbose output."`
 	Namespace string `arg:"" help:"Namespace to down."`
 	Dry       bool   `short:"d" help:"Dry run, don't down the mutations."`
 }
@@ -12,7 +11,7 @@ type DownCmd struct {
 func (c DownCmd) Run() error {
 	var fake_empty_local_set *mutations.MutationSet = mutations.NewMutationSet(c.Namespace, 0, "")
 
-	runner, err := mutations.NewPgRunner(c.Uri, c.Verbose)
+	runner, err := mutations.NewPgRunner(c.Uri, nil)
 	if err != nil {
 		return err
 	}
@@ -30,8 +29,7 @@ func (c DownCmd) Run() error {
 	}
 
 	if err := mutations.RunMutations(runner, fake_empty_local_set, &mutations.MutationRunnerOptions{
-		Verbose: c.Verbose,
-		Commit:  !c.Dry,
+		Commit: !c.Dry,
 	}); err != nil {
 		return err
 	}

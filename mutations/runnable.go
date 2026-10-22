@@ -1,7 +1,6 @@
 package mutations
 
 import (
-	"fmt"
 	"iter"
 
 	"github.com/ugurcsen/gods-generic/maps/linkedhashmap"
@@ -16,8 +15,9 @@ func (r *Runnable) IsEmpty() bool {
 	return r.Size() == 0
 }
 
-func (r *Runnable) DisplayName() string {
-	return fmt.Sprintf("%s %s·%s", r.Direction.UpOrDown(), r.Mutation.DisplayName(), r.Direction.MetaOrSql())
+// LogAttrs returns the slog attributes identifying this runnable.
+func (r *Runnable) LogAttrs() []any {
+	return append(r.Mutation.LogAttrs(), "dir", r.Direction.UpOrDown(), "kind", r.Direction.MetaOrSql())
 }
 
 func (r *Runnable) Size() int {

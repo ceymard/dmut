@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -91,6 +93,9 @@ func testdb(t *testing.T) string {
 }
 
 func TestMain(m *testing.M) {
+	// the commands log through slog.Default(); keep that noise out of test output
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+
 	code := m.Run()
 
 	if container != nil {

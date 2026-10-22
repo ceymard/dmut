@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"log"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/ceymard/dmut/v2/mutations"
@@ -13,7 +13,6 @@ import (
 )
 
 type TestCmd struct {
-	Verbose  bool     `short:"v" help:"Verbose output."`
 	All      bool     `short:"a" help:"Test all revisions, not just the latest one."`
 	Image    string   `name:"test-image" help:"Postgres image name to test on."`
 	Database string   `name:"test-database" help:"Database name to test on."`
@@ -25,7 +24,7 @@ type TestCmd struct {
 type Printer struct{}
 
 func (Printer) Accept(l testcontainers.Log) {
-	fmt.Print(string(l.Content))
+	slog.Debug("postgres", "log", strings.TrimRight(string(l.Content), "\n"))
 }
 
 func (t TestCmd) Run() error {
@@ -48,7 +47,7 @@ func (t TestCmd) Run() error {
 		return err
 	}
 
-	log.Println("testing mutations on", image)
+	slog.Info("testing mutations", "image", image)
 	ctx := context.Background()
 	container, err := postgres.Run(ctx,
 		image,
@@ -64,24 +63,22 @@ func (t TestCmd) Run() error {
 	}
 	defer container.Terminate(ctx)
 
-	if t.Verbose {
+	if slog.Default().Enabled(ctx, slog.LevelDebug) {
 		printer := Printer{}
 		container.FollowOutput(printer)
 		container.StartLogProducer(ctx)
 	}
 
-	log.Println("container started, waiting for it to be ready")
+	slog.Info("container started, waiting for it to be ready")
 
 	uri, err := container.ConnectionString(ctx)
 	if err != nil {
 		return err
 	}
-	log.Println("test container URI:", uri)
 
 	if err := mutations.ReadAndRunMutations(uri, t.Paths, &mutations.MutationRunnerOptions{
-		Verbose: t.Verbose,
-		Commit:  false,
-		All:     t.All,
+		Commit: false,
+		All:    t.All,
 	}); err != nil {
 		return err
 	}

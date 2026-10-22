@@ -8,7 +8,9 @@ require (
 	github.com/alecthomas/participle/v2 v2.1.4
 	github.com/goccy/go-yaml v1.19.2
 	github.com/jackc/pgx/v5 v5.8.0
+	github.com/lmittmann/tint v1.2.0
 	github.com/logrusorgru/aurora v2.0.3+incompatible
+	github.com/mattn/go-isatty v0.0.20
 	github.com/samber/oops v1.21.0
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.40.0

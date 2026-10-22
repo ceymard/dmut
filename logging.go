@@ -1,0 +1,126 @@
+package main
+
+import (
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"strings"
+
+	"github.com/ceymard/dmut/v2/mutations"
+	"github.com/lmittmann/tint"
+	"github.com/mattn/go-isatty"
+)
+
+// LogFlags are the global flags shaping how dmut logs. All logs go to stderr;
+// stdout is reserved for command results.
+type LogFlags struct {
+	JSON    bool   `short:"j" name:"json" help:"Log as JSON lines instead of plain text."`
+	Verbose bool   `short:"v" name:"verbose" help:"Log at debug level, which includes every SQL statement."`
+	Source  bool   `name:"source" help:"Add the source file and line to each log record."`
+	Time    bool   `name:"time" help:"Show timestamps in plain text logs (JSON logs always have one)."`
+	Color   string `name:"color" enum:"auto,always,never" default:"auto" help:"Colorize plain text logs: auto, always or never."`
+}
+
+// useColor decides whether plain logs written to w are colored: "always" and
+// "never" are explicit, "auto" requires a terminal and an unset NO_COLOR.
+func (f LogFlags) useColor(w io.Writer) bool {
+	switch f.Color {
+	case "always":
+		return true
+	case "never":
+		return false
+	}
+	file, ok := w.(*os.File)
+	return ok && os.Getenv("NO_COLOR") == "" && isatty.IsTerminal(file.Fd())
+}
+
+// Terminal 256-color codes for the attributes worth spotting at a glance.
+var attrColors = map[string]uint8{
+	"namespace": 13, // bright magenta
+	"revision":  10, // bright green
+	"mutation":  14, // bright cyan
+	"sql":       12, // bright blue
+	"error":     9,  // bright red
+}
+
+// NewLogger builds the logger described by the flags, writing to w.
+func (f LogFlags) NewLogger(w io.Writer) *slog.Logger {
+	level := slog.LevelInfo
+	if f.Verbose {
+		level = slog.LevelDebug
+	}
+	if f.JSON {
+		return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level, AddSource: f.Source}))
+	}
+	return slog.New(tint.NewTextHandler(w, &tint.Options{
+		Level:      level,
+		AddSource:  f.Source,
+		NoColor:    !f.useColor(w),
+		TimeFormat: "15:04:05",
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if len(groups) == 0 && a.Key == slog.TimeKey && !f.Time {
+				return slog.Attr{}
+			}
+			if c, ok := attrColors[a.Key]; ok && len(groups) == 0 {
+				return tint.Attr(c, a)
+			}
+			return a
+		},
+	}))
+}
+
+// reportError logs err as the final error of the run. In JSON mode it is one
+// record carrying every error attribute. In plain mode the message is the log
+// line, the other attributes follow it, and the failing SQL is printed below as
+// an indented block with the part from the error position highlighted.
+func (f LogFlags) reportError(logger *slog.Logger, w io.Writer, err error) {
+	attrs := mutations.ErrorAttrs(err)
+	if f.JSON {
+		logger.Error(err.Error(), attrs...)
+		return
+	}
+
+	var sql string
+	var position int
+	rest := make([]any, 0, len(attrs))
+	for i := 0; i < len(attrs); i += 2 {
+		key, value := attrs[i].(string), attrs[i+1]
+		switch key {
+		case "error": // already the log message
+		case "sql":
+			sql, _ = value.(string)
+		case "position":
+			position, _ = value.(int)
+		default:
+			rest = append(rest, key, value)
+		}
+	}
+	logger.Error(err.Error(), rest...)
+	if sql != "" {
+		fmt.Fprint(w, formatSQLBlock(sql, position, f.useColor(w)))
+	}
+}
+
+// formatSQLBlock indents sql by four spaces. position is the 1-based character
+// offset reported by Postgres (0 when unknown); with color on, the text before
+// it is blue and the text from it onwards is red.
+func formatSQLBlock(sql string, position int, color bool) string {
+	const blue, red, reset = "\x1b[94m", "\x1b[91m", "\x1b[0m"
+	indent := func(s string) string { return strings.ReplaceAll(s, "\n", "\n    ") }
+
+	runes := []rune(sql)
+	if position < 1 || position > len(runes) {
+		position = len(runes) + 1
+	}
+	before, after := string(runes[:position-1]), string(runes[position-1:])
+
+	if !color {
+		return "    " + indent(before+after) + "\n"
+	}
+	out := "    " + blue + indent(before) + reset
+	if after != "" {
+		out += red + indent(after) + reset
+	}
+	return out + "\n"
+}

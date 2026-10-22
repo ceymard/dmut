@@ -72,12 +72,10 @@ create roles cannot be shared between integration tests.
 
 ```
 dmut apply <uri> <paths...>       apply mutations to a database
-  -v, --verbose                     echo every statement as it runs
   -d, --dry                         run everything, then roll back instead of committing
   -o, --override                    record the mutations without applying them (see below)
 
 dmut test <paths...>              apply and test against a throwaway postgres (requires Docker)
-  -v, --verbose
   -a, --all                         replay every revision from 1, not just the latest
   --test-image <image>              postgres image to run (default: postgres:14)
   --test-database <name>            (default: test)
@@ -85,13 +83,19 @@ dmut test <paths...>              apply and test against a throwaway postgres (r
   --test-password <pass>            (default: test)
 
 dmut down <uri> <namespace>       down everything dmut applied in a namespace
-  -v, --verbose
   -d, --dry
 
 dmut collect <outfile> <paths...> write every mutation back out as a single yaml file
 dmut explode --out-dir <dir> <paths...>  split a single-document yaml file into one file per mutation
 dmut legacy <uri>                 dump a pre-1.0 dmut schema as yaml
 dmut version
+
+global flags (accepted before or after the command; see "Logging" below)
+  -j, --json                        log as JSON lines instead of plain text
+  -v, --verbose                     log at debug level: every SQL statement as it runs
+  --source                          add the source file and line to each log record
+  --time                            show timestamps in plain text logs
+  --color auto|always|never         colorize plain text logs (default: auto)
 ```
 
 `<uri>` is a libpq/pgx connection string (`postgres://user:pass@host/db`).
@@ -105,8 +109,7 @@ The default namespace is the empty string, so downing unnamespaced mutations rea
 dmut down postgres://localhost/mydb ""
 ```
 
-Short flags are consistent across commands: `-v` is always `--verbose`, `-d` is always `--dry`,
-`-o` is always `--override`. Options that don't share meaning with another command (`test`'s
+Short flags are consistent across commands: `-d` is always `--dry`, `-o` is always `--override`. Options that don't share meaning with another command (`test`'s
 `--test-*` flags, `explode`'s `--out-dir`) have no short form, so a short flag never means two
 different things depending on which subcommand you're running.
 
@@ -133,6 +136,59 @@ recorded state to correct. Run a plain apply once before adopting objects with `
 
 Dmut keeps its own bookkeeping in the `__dmut__` schema (table `__dmut__.mutations`), which it
 creates on first run as a namespace of its own.
+
+### Logging
+
+Everything dmut says about its progress goes to **stderr**, through Go's `log/slog`. Stdout only
+carries a command's result (the yaml of `collect -`, the file names `explode` writes, the version),
+so `dmut collect - ./mutations > all.yml` is always safe.
+
+By default the log is plain text, with the symbols 🧪 ✓ 🎉 💾 ↩ marking the main milestones:
+
+```
+INF → applying mutations namespace=api revision=3
+INF run namespace=api mutation=api.users dir=up kind=core
+INF 🧪 performing tests namespace=api revision=3
+INF 🎉 no errors
+INF 💾 committing
+```
+
+With `-j`/`--json` every record is one JSON object per line instead, with the same attributes as
+separate fields (and always a `time`):
+
+```
+{"time":"…","level":"INFO","msg":"run","namespace":"api","mutation":"api.users","dir":"up","kind":"core"}
+```
+
+| Attribute | Meaning |
+|---|---|
+| `namespace` | namespace of the mutation or revision (`""` is the default namespace) |
+| `revision` | revision being applied |
+| `mutation` | mutation name |
+| `dir` | `up` or `down` |
+| `kind` | `core` (the SQL half) or `glue` (the meta half) |
+| `phase` | `test` on records replayed from a failed test phase |
+| `sql` | the statement, at debug level (`-v`), or the failing one in an error |
+| `uri` | the connection URI, with its password replaced by `xxxxx` |
+
+Plain text logs have no timestamp unless `--time` is given, and are colored only when stderr is a
+terminal and `NO_COLOR` is unset (`--color=always` / `--color=never` override this). `--source`
+adds the Go source file and line to every record; it is only useful for debugging dmut itself.
+
+The test phase is silent when it succeeds. When it fails, everything it did is printed after the
+fact, with `phase=test`, so that the failing statement can be seen in context.
+
+When a command fails, the error is logged last at error level, without a stack trace. For a
+Postgres error the message, `detail`, `hint` and `sqlstate` come first, followed by the failing
+statement indented on its own lines (in color, the part from the error position onwards is red).
+In JSON mode that is a single record with `error`, `detail`, `hint`, `sqlstate`, `position` and the
+raw `sql` as fields.
+
+#### Using dmut as a library
+
+`mutations.NewPgRunner(uri, logger)` and `MutationRunnerOptions.Logger` take a `*slog.Logger`; when
+it is nil, `slog.Default()` is used. `mutations.ErrorAttrs(err)` flattens an error and its context
+into slog arguments.
 
 ## How a run works
 

@@ -6,7 +6,6 @@ import (
 
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
-	au "github.com/logrusorgru/aurora"
 	"github.com/samber/oops"
 	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
@@ -16,20 +15,21 @@ type IterationDirection struct {
 	Meta bool
 }
 
+// UpOrDown returns "up" or "down"; it is the value of the "dir" log attribute.
 func (dir IterationDirection) UpOrDown() string {
-	up_or_down := au.BrightGreen("↑").String()
 	if dir.Down {
-		up_or_down = au.BrightRed("↓").String()
+		return "down"
 	}
-	return up_or_down
+	return "up"
 }
 
+// MetaOrSql returns "glue" for the meta (glue) half of a mutation and "core"
+// for its SQL half; it is the value of the "kind" log attribute.
 func (dir IterationDirection) MetaOrSql() string {
-	meta_or_sql := au.BrightYellow("core").String()
 	if dir.Meta {
-		meta_or_sql = au.BrightBlue("glue").String()
+		return "glue"
 	}
-	return meta_or_sql
+	return "core"
 }
 
 var (
@@ -152,8 +152,9 @@ func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation,
 	return mut, nil
 }
 
-func (mut *Mutation) DisplayName() string {
-	return au.BrightMagenta(mut.set.Namespace).String() + " " + mut.Name
+// LogAttrs returns the slog attributes identifying this mutation.
+func (mut *Mutation) LogAttrs() []any {
+	return []any{"namespace", mut.set.Namespace, "mutation", mut.Name}
 }
 
 func (mut *Mutation) CoreHash() string {

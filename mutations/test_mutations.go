@@ -2,21 +2,14 @@ package mutations
 
 import (
 	"slices"
-
-	au "github.com/logrusorgru/aurora"
 )
 
 // Test a mutation set by running all mutations independently, and resetting after each one.
 // Consider that the set is already up in the database.
 func TestMutationSet(runner Executor, set *MutationSet) (err error) {
 
-	runner.SetTesting()
-	defer func() {
-		runner.ResumeLogging()
-		if err != nil {
-			runner.Logger().Println(runner.GetStringOutput())
-		}
-	}()
+	runner.BeginCapture()
+	defer func() { runner.EndCapture(err != nil) }()
 
 	if err = runner.SavePoint("test_mutation_set"); err != nil {
 		return err
@@ -37,7 +30,7 @@ func TestMutationSet(runner Executor, set *MutationSet) (err error) {
 		return err
 	}
 
-	runner.Logger().Println("Downing SQL", sql_down.Size())
+	runner.Logger().Info("downing sql", "count", sql_down.Size())
 
 	// Then, down the SQL
 	if err = sql_down.Run(runner); err != nil {
@@ -50,11 +43,11 @@ func TestMutationSet(runner Executor, set *MutationSet) (err error) {
 	}
 
 	if err = runner.RollbackToSavepoint("test_mutation_set"); err != nil {
-		runner.Logger().Println(au.BrightRed("error rollbacking to savepoint"), err)
+		runner.Logger().Error("error rolling back to savepoint", "error", err)
 	}
 
 	if err = runner.ReleaseSavepoint("test_mutation_set"); err != nil {
-		runner.Logger().Println(au.BrightRed("error rollbacking to savepoint"), err)
+		runner.Logger().Error("error releasing savepoint", "error", err)
 	}
 
 	return nil
@@ -70,7 +63,7 @@ func MutationTestSequence(runner Executor, set *MutationSet, dir IterationDirect
 
 	// Test all mutations independently
 	for mutation := range set.AllMutations() {
-		runner.Logger().Printf("testing %s.%s\n", mutation.DisplayName(), dir.MetaOrSql())
+		runner.Logger().Info("testing", append(mutation.LogAttrs(), "kind", dir.MetaOrSql())...)
 
 		var inner_mutations []*Mutation
 		for mut := range mutation.IterateDependencies(dir) {

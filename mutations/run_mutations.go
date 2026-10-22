@@ -1,15 +1,13 @@
 package mutations
 
 import (
-	"io"
+	"log/slog"
 
-	au "github.com/logrusorgru/aurora"
 	"github.com/samber/oops"
 	"github.com/ugurcsen/gods-generic/sets/hashset"
 )
 
 type MutationRunnerOptions struct {
-	Verbose  bool
 	Commit   bool
 	Override bool
 	All      bool
@@ -22,32 +20,29 @@ type MutationRunnerOptions struct {
 	Full   bool
 	Simple bool
 
-	// Output, when set, replaces the PgRunner's default os.Stdout as the
-	// destination for dmut's own progress/notice log lines — lets an
-	// embedding application (anything driving dmut as a library rather
-	// than through the CLI) capture that output into its own logging
-	// instead of it going straight to stdout. nil (the default) leaves
-	// PgRunner's stdout behaviour unchanged.
-	Output io.Writer
+	// Logger, when set, receives dmut's own progress/notice records (SQL at
+	// debug level) in place of slog.Default() - lets an embedding application
+	// (anything driving dmut as a library rather than through the CLI) route
+	// them into its own logging. nil leaves slog.Default() in use.
+	Logger *slog.Logger
 }
 
 // Merge ORs every boolean field: a flag becomes true if any of the merged
 // options request it, and nothing can turn a flag back off. That's
-// intentional for opt-in switches (Verbose, Override, All) where several
+// intentional for opt-in switches (Override, All) where several
 // independent sources should each be able to request the behaviour without
-// knowing about each other. Output isn't boolean, so it merges by
-// last-write-wins instead: the last non-nil Output among others replaces
+// knowing about each other. Logger isn't boolean, so it merges by
+// last-write-wins instead: the last non-nil Logger among others replaces
 // whatever was set before it.
 func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
 	for _, other := range others {
-		o.Verbose = o.Verbose || other.Verbose
 		o.Commit = o.Commit || other.Commit
 		o.Override = o.Override || other.Override
 		o.All = o.All || other.All
 		o.Full = o.Full || other.Full
 		o.Simple = o.Simple || other.Simple
-		if other.Output != nil {
-			o.Output = other.Output
+		if other.Logger != nil {
+			o.Logger = other.Logger
 		}
 	}
 }
@@ -110,9 +105,9 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 
 		if !has_changes {
 			// No changes, no tests !
-			runner.Logger().Println(au.BrightGreen("≡"), "no changes to apply for namespace", au.BrightMagenta(local.Namespace).String(), "revision", au.BrightGreen(local.Revision).String())
+			runner.Logger().Info("≡ no changes to apply", "namespace", local.Namespace, "revision", local.Revision)
 		} else {
-			runner.Logger().Println(au.BrightGreen("→"), "applying mutations for namespace", au.BrightMagenta(local.Namespace).String(), "revision", au.BrightGreen(local.Revision).String())
+			runner.Logger().Info("→ applying mutations", "namespace", local.Namespace, "revision", local.Revision)
 
 			// 1. Start by downing the meta
 			if err := meta_down.Run(runner); err != nil {
@@ -199,7 +194,7 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	}
 
 	if has_changes {
-		runner.Logger().Println(au.BrightGreen("🧪"), "performing tests")
+		runner.Logger().Info("🧪 performing tests", "namespace", local.Namespace, "revision", local.Revision)
 		if err := TestMutationSet(runner, local); err != nil {
 			return err
 		}
@@ -234,13 +229,13 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 			if err := changed_set.ResolveDependencies(); err != nil {
 				return err
 			}
-			runner.Logger().Println(au.BrightGreen("🧪"), "performing tests with override")
+			runner.Logger().Info("🧪 performing tests with override", "namespace", local.Namespace, "revision", local.Revision)
 			if err := TestMutationSet(runner, changed_set); err != nil {
 				return err
 			}
 		}
 	}
-	runner.Logger().Println(au.BrightGreen("✓"), "tests passed")
+	runner.Logger().Info("✓ tests passed", "namespace", local.Namespace, "revision", local.Revision)
 
 	return nil
 }
@@ -278,7 +273,7 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 		// Db has no mutations, only apply the highest local one
 		if db_mutations.Revision == 0 {
 			if !options.All {
-				runner.Logger().Println(au.BrightGreen("→"), "no database mutations,applying highest local revision for namespace", namespace)
+				runner.Logger().Info("→ no database mutations, applying highest local revision", "namespace", namespace, "revision", revisions.MaxRevision)
 				if revision, ok := revisions.Revisions[revisions.MaxRevision]; ok {
 					if err := RunMutations(runner, revision, opts...); err != nil {
 						return err
@@ -300,9 +295,8 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 		}
 	}
 
-	runner.Logger().Println(au.BrightGreen("🎉"), "no errors")
+	runner.Logger().Info("🎉 no errors")
 	if options.Commit {
-		// runner.Logger().Println(au.BrightGreen("💾"), "committing")
 		if err := runner.Commit(); err != nil {
 			return err
 		}
@@ -325,15 +319,11 @@ func ReadAndRunMutations(uri string, paths []string, opts ...*MutationRunnerOpti
 		return err
 	}
 
-	runner, err := NewPgRunner(uri, options.Verbose)
+	runner, err := NewPgRunner(uri, options.Logger)
 	if err != nil {
 		return err
 	}
 	defer runner.Close()
-
-	if options.Output != nil {
-		runner.SetOutput(options.Output)
-	}
 
 	// Test before
 	if err := RunAllMutations(runner, muts, &options); err != nil {

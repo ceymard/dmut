@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
-	"log"
 	"strings"
+
+	"github.com/samber/oops"
 )
 
 // NewDigestBuffer returns a new DigestBuffer
@@ -30,8 +31,7 @@ func (dg *DigestBuffer) AddStatement(stmt string) error {
 	var lx, _ = SqlLexer.Lex("", strings.NewReader(stmt))
 	for tk, err := lx.Next(); !tk.EOF(); tk, err = lx.Next() {
 		if err != nil {
-			log.Print(stmt)
-			return err
+			return oops.In("mutations").With("statement", stmt).Wrap(err)
 		}
 		_, _ = dg.WriteString(tk.String())
 		_ = dg.WriteByte(' ')

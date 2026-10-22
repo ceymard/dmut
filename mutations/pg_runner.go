@@ -1,39 +1,27 @@
 package mutations
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"log"
-	"os"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	au "github.com/logrusorgru/aurora"
 	"github.com/samber/oops"
 )
 
 var _ Executor = &PgRunner{}
 
 type PgRunner struct {
-	uri     string
-	logger  *log.Logger
-	conn    *pgx.Conn
-	verbose bool
-	buf     bytes.Buffer
-
-	// normalOutput/normalPrefix are what ResumeLogging restores after a
-	// SetTesting/ResumeLogging cycle (run once per Run for every mutation
-	// with changes — see test_mutations.go) — NOT hardcoded to os.Stdout,
-	// so a SetOutput redirect (see below) survives the test phase instead
-	// of silently reverting to stdout the first time anything is actually
-	// applied.
-	normalOutput io.Writer
-	normalPrefix string
+	uri    string
+	logger *slog.Logger
+	core   *captureCore
+	conn   *pgx.Conn
 }
 
-func (r *PgRunner) Logger() *log.Logger {
+// Logger returns the runner's logger. While a capture is active (see
+// BeginCapture) its records are held back instead of being emitted.
+func (r *PgRunner) Logger() *slog.Logger {
 	return r.logger
 }
 
@@ -41,25 +29,25 @@ func (r *PgRunner) Close() error {
 	return r.conn.Close(context.Background())
 }
 
-func NewPgRunner(url string, verbose bool) (*PgRunner, error) {
+// NewPgRunner connects to the database at url. Progress, notices and SQL
+// (at debug level) are logged through logger, or through slog.Default() when
+// logger is nil. The password of url is never logged.
+func NewPgRunner(url string, logger *slog.Logger) (*PgRunner, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	core := &captureCore{}
+	res := &PgRunner{uri: url, core: core}
+	res.logger = slog.New(captureHandler{core: core, inner: logger.Handler()})
 
-	res := &PgRunner{uri: url, verbose: verbose}
-
-	res.normalOutput = os.Stdout
-	res.normalPrefix = au.BrightGreen("pg ").String()
-	res.logger = log.New(res.normalOutput, "", log.Lshortfile|log.LstdFlags)
-	res.logger.SetPrefix(res.normalPrefix)
-
-	res.logger.Println("connecting to", url)
+	res.logger.Info("connecting", "uri", redactURI(url))
 	config, err := pgx.ParseConfig(url)
 	if err != nil {
 		return nil, err
 	}
 
 	config.OnNotice = pgconn.NoticeHandler(func(conn *pgconn.PgConn, notice *pgconn.Notice) {
-		res.logger.Println(au.BrightYellow("notice").String(), notice.Message)
-		// oo := oops.With("message", notice.Message).New("notice")
-		// res.logger.Printf("%+v\n", oo)
+		res.logger.Info(notice.Message, "notice", true, "severity", notice.Severity, "sqlstate", notice.Code)
 	})
 
 	conn, err := pgx.ConnectConfig(context.Background(), config)
@@ -71,39 +59,21 @@ func NewPgRunner(url string, verbose bool) (*PgRunner, error) {
 	return res, nil
 }
 
-// SetOutput redirects this runner's log lines to w for the rest of its
-// lifetime, including across any later SetTesting/ResumeLogging cycle —
-// ResumeLogging restores normalOutput/normalPrefix, which this updates,
-// rather than the hardcoded os.Stdout it used to. Also drops the
-// terminal-oriented aurora color prefix and the logger's own timestamp/
-// file:line flags : a redirect target is assumed to be a caller with its
-// own logging context (rel's slog output, say), where duplicating both
-// would just be noise.
-func (r *PgRunner) SetOutput(w io.Writer) {
-	r.normalOutput = w
-	r.normalPrefix = ""
-	r.logger.SetOutput(w)
-	r.logger.SetFlags(0)
-	r.logger.SetPrefix("")
+// BeginCapture holds back every record logged through Logger() from now on,
+// tagged phase=test, until EndCapture.
+func (r *PgRunner) BeginCapture() {
+	r.core.beginCapture()
 }
 
-func (r *PgRunner) ResumeLogging() {
-	r.logger.SetOutput(r.normalOutput)
-	r.logger.SetPrefix(r.normalPrefix)
+// EndCapture stops the capture started by BeginCapture. The held records are
+// emitted in order if replay is true, and dropped otherwise.
+func (r *PgRunner) EndCapture(replay bool) {
+	r.core.endCapture(replay)
 }
 
-func (r *PgRunner) SetTesting() {
-	r.buf = bytes.Buffer{}
-	r.logger.SetPrefix(au.BrightMagenta("test ").String())
-	r.logger.SetOutput(&r.buf)
-}
-
-func (r *PgRunner) GetStringOutput() string {
-	res := r.buf.String()
-	r.buf.Reset()
-	return res
-}
-
+// wrapPgError attaches the failing sql and, for server errors, the position,
+// detail, hint and SQLSTATE as raw context values (see ErrorAttrs). Colouring
+// the sql around position is the renderer's job, not the error's.
 func wrapPgError(err error, sql string) error {
 	if err == nil {
 		return nil
@@ -114,6 +84,7 @@ func wrapPgError(err error, sql string) error {
 	}
 
 	if pgerr, ok := err.(*pgconn.PgError); ok {
+		oo = oo.With("sqlstate", pgerr.Code)
 		if details := pgerr.Detail; details != "" {
 			oo = oo.With("detail", details)
 		}
@@ -121,12 +92,8 @@ func wrapPgError(err error, sql string) error {
 			oo = oo.With("hint", hint)
 		}
 		if pgerr.Position > 0 {
-			oo = oo.With("sql", au.BrightBlue(sql[0:pgerr.Position-1]).String()+au.BrightRed(sql[pgerr.Position-1:]).String())
-		} else {
-			oo = oo.With("sql", au.BrightBlue(sql).String())
+			oo = oo.With("position", int(pgerr.Position))
 		}
-
-		return oo.Wrap(err)
 	}
 
 	return oo.Wrap(err)
@@ -136,16 +103,10 @@ func (r *PgRunner) Run(runnable *Runnable) error {
 	if runnable.Size() == 0 {
 		return nil
 	}
-	r.logger.Println(runnable.DisplayName())
+	r.logger.Info("run", runnable.LogAttrs()...)
 	for i, stmt := range runnable.Statements() {
 		if err := r.exec(runnable.Mutation, stmt); err != nil {
-			oo := oops.With("statement index", i+1)
-			if oop2, ok := err.(*oops.OopsError); ok {
-				if _, ok := oop2.Context()["statement"]; !ok {
-					oo = oo.With("statement", au.BrightBlue(stmt).String())
-				}
-			}
-			return oo.With("statement", stmt).Wrap(err)
+			return oops.With("statement_index", i+1).Wrap(err)
 		}
 	}
 	return nil
@@ -170,17 +131,16 @@ func (r *PgRunner) DeleteMutations(namespace string, names []string) error {
 }
 
 func (r *PgRunner) Commit() error {
-	r.logger.Println(au.BrightGreen("💾"), "committing")
+	r.logger.Info("💾 committing")
 	return r.exec(nil, `COMMIT`)
 }
 
 func (r *PgRunner) Begin() error {
-	// r.logger.Println(au.BrightGreen("💾"), "BEGIN")
 	return r.exec(nil, "BEGIN")
 }
 
 func (r *PgRunner) Rollback() error {
-	r.logger.Println(au.BrightRed("↩"), "rolling back")
+	r.logger.Info("↩ rolling back")
 	return r.exec(nil, "ROLLBACK")
 }
 
@@ -191,7 +151,6 @@ func (r *PgRunner) SavePoint(name string) error {
 		}
 		return nil
 	}
-	// r.logger.Println(au.BrightGreen("💾"), "saving point", name)
 	return r.exec(nil, `SAVEPOINT `+name)
 }
 
@@ -200,7 +159,6 @@ func (r *PgRunner) RollbackToSavepoint(name string) error {
 	if name != "" {
 		cmd += ` TO SAVEPOINT ` + name
 	}
-	// r.logger.Println(au.BrightRed("💾"), "rolling back to point", name)
 	return r.exec(nil, cmd)
 }
 
@@ -213,9 +171,7 @@ func (r *PgRunner) Exec(sql string, args ...interface{}) error {
 }
 
 func (r *PgRunner) exec(mutation *Mutation, sql string, args ...interface{}) error {
-	if r.verbose {
-		r.logger.Println(au.BrightBlue(sql))
-	}
+	r.logger.Debug("sql", "sql", sql)
 	_, err := r.conn.Exec(context.Background(), sql, args...)
 	if err != nil {
 		err = wrapPgError(err, sql)
@@ -223,10 +179,8 @@ func (r *PgRunner) exec(mutation *Mutation, sql string, args ...interface{}) err
 
 		if mutation != nil {
 			oo = oo.With("mutation", mutation.Name).With("file", mutation.File).With("namespace", mutation.Namespace).With("needs", mutation.Needs).With("glue_needs", mutation.GlueNeeds)
-
 		}
 		err = oo.Wrap(err)
-		// err = oops.In("pg").With("sql", sql).Wrapf(err, "%s %s", au.BrightRed("error in statement").String(), au.BrightBlue(sql).String())
 	}
 	return err
 }
