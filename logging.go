@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -50,6 +51,51 @@ var valueColors = map[string]map[string]uint8{
 	"kind": {"core": 13, "glue": 12}, // bright magenta, bright blue
 }
 
+// iconHandler takes the mutations.IconKey attribute out of each record. In plain
+// mode it is shown in front of the message, in JSON mode it is dropped so that
+// msg stays plain text.
+type iconHandler struct {
+	inner slog.Handler
+	show  bool
+}
+
+func (h iconHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.inner.Enabled(ctx, level)
+}
+
+func (h iconHandler) Handle(ctx context.Context, r slog.Record) error {
+	var icon string
+	kept := make([]slog.Attr, 0, r.NumAttrs())
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == mutations.IconKey {
+			icon = a.Value.String()
+		} else {
+			kept = append(kept, a)
+		}
+		return true
+	})
+	if icon == "" {
+		return h.inner.Handle(ctx, r)
+	}
+
+	msg := r.Message
+	if h.show {
+		msg = icon + " " + msg
+	}
+	// r.PC is carried over so --source still points at the logging call.
+	out := slog.NewRecord(r.Time, r.Level, msg, r.PC)
+	out.AddAttrs(kept...)
+	return h.inner.Handle(ctx, out)
+}
+
+func (h iconHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return iconHandler{inner: h.inner.WithAttrs(attrs), show: h.show}
+}
+
+func (h iconHandler) WithGroup(name string) slog.Handler {
+	return iconHandler{inner: h.inner.WithGroup(name), show: h.show}
+}
+
 // NewLogger builds the logger described by the flags, writing to w.
 func (f LogFlags) NewLogger(w io.Writer) *slog.Logger {
 	level := slog.LevelInfo
@@ -57,9 +103,9 @@ func (f LogFlags) NewLogger(w io.Writer) *slog.Logger {
 		level = slog.LevelDebug
 	}
 	if f.JSON {
-		return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level, AddSource: f.Source}))
+		return slog.New(iconHandler{inner: slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level, AddSource: f.Source})})
 	}
-	return slog.New(tint.NewTextHandler(w, &tint.Options{
+	return slog.New(iconHandler{show: true, inner: tint.NewTextHandler(w, &tint.Options{
 		Level:      level,
 		AddSource:  f.Source,
 		NoColor:    !f.useColor(w),
@@ -78,7 +124,7 @@ func (f LogFlags) NewLogger(w io.Writer) *slog.Logger {
 			}
 			return a
 		},
-	}))
+	})})
 }
 
 // reportError logs err as the final error of the run. In JSON mode it is one

@@ -186,3 +186,36 @@ func TestPlainLoggerColorsDirAndKindByValue(t *testing.T) {
 		}
 	}
 }
+
+func TestIconIsAPrefixInPlainLogsAndDroppedFromJSON(t *testing.T) {
+	var buf bytes.Buffer
+	LogFlags{Color: "never"}.NewLogger(&buf).Info("committed", "icon", "✅", "namespace", "api")
+	if !strings.Contains(buf.String(), "INF ✅ committed") || strings.Contains(buf.String(), "icon=") {
+		t.Errorf("expected the icon in front of the message and not as an attribute: %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "namespace=api") {
+		t.Errorf("the other attributes must be kept: %q", buf.String())
+	}
+
+	buf.Reset()
+	LogFlags{JSON: true}.NewLogger(&buf).Info("committed", "icon", "✅", "namespace", "api")
+	var rec map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec["msg"] != "committed" || rec["namespace"] != "api" {
+		t.Errorf("JSON msg must stay plain text: %v", rec)
+	}
+	if _, ok := rec["icon"]; ok {
+		t.Errorf("JSON records carry no icon: %v", rec)
+	}
+}
+
+func TestIconRecordsKeepTheirSourceAndLoggerAttributes(t *testing.T) {
+	var buf bytes.Buffer
+	logger := LogFlags{Color: "never", Source: true}.NewLogger(&buf).With("namespace", "api")
+	logger.Info("committed", "icon", "✅")
+	if !strings.Contains(buf.String(), "logging_test.go") || !strings.Contains(buf.String(), "namespace=api") {
+		t.Errorf("expected the caller's source and the With attributes: %q", buf.String())
+	}
+}

@@ -49,18 +49,19 @@ Everything dmut says about its progress goes to **stderr**, through Go's `log/sl
 carries a command's result (the yaml of `collect -`, the file names `explode` writes, the version),
 so `dmut collect - ./mutations > all.yml` is always safe.
 
-By default the log is plain text, with the symbols 🧪 ✓ 🎉 💾 ↩ marking the main milestones:
+By default the log is plain text, with an icon in front of the main milestones (🧪 tests started, 🆗 tests passed, 🎉 no errors, ✅ committed, ⛔ rolled back after a failure):
 
 ```
 INF applying mutations namespace=api revision=3
 INF run namespace=api revision=3 mutation=api.users dir=up kind=core
 INF 🧪 performing tests namespace=api revision=3
+INF 🆗 tests passed namespace=api revision=3
 INF 🎉 no errors
-INF 💾 committing
+INF ✅ committed
 ```
 
 With `-j`/`--json` every record is one JSON object per line instead, with the same attributes as
-separate fields (and always a `time`):
+separate fields (and always a `time`). The icons are not part of JSON records, so `msg` stays plain text (`"committed"`):
 
 ```
 {"time":"…","level":"INFO","msg":"run","namespace":"api","revision":3,"mutation":"api.users","dir":"up","kind":"core"}
@@ -73,6 +74,7 @@ separate fields (and always a `time`):
 | `mutation` | mutation name |
 | `dir` | `up` (green) or `down` (red) |
 | `kind` | `core` (the SQL half, magenta) or `glue` (the meta half, blue) |
+| `icon` | the milestone icon; shown in front of the message in plain text and removed from JSON by the dmut CLI (a library caller's own handler sees it as an ordinary attribute) |
 | `phase` | `test` on records replayed from a failed test phase |
 | `sql` | the statement, at debug level (`-v`), or the failing one in an error |
 | `uri` | the connection URI, with its password replaced by `xxxxx` |
@@ -83,6 +85,8 @@ adds the Go source file and line to every record; it is only useful for debuggin
 
 The test phase is silent when it succeeds. When it fails, everything it did is printed after the
 fact, with `phase=test`, so that the failing statement can be seen in context.
+
+A rollback that is just the end of a dry run or of `dmut test` is logged as `rolling back, nothing to commit`, without the ⛔ icon.
 
 When a command fails, the error is logged last at error level, without a stack trace. For a
 Postgres error the message, `detail`, `hint` and `sqlstate` come first, followed by the failing

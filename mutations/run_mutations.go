@@ -194,7 +194,7 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	}
 
 	if has_changes {
-		runner.Logger().Info("🧪 performing tests", "namespace", local.Namespace, "revision", local.Revision)
+		runner.Logger().Info("performing tests", IconKey, IconTestsStarted, "namespace", local.Namespace, "revision", local.Revision)
 		if err := TestMutationSet(runner, local); err != nil {
 			return err
 		}
@@ -229,13 +229,13 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 			if err := changed_set.ResolveDependencies(); err != nil {
 				return err
 			}
-			runner.Logger().Info("🧪 performing tests with override", "namespace", local.Namespace, "revision", local.Revision)
+			runner.Logger().Info("performing tests with override", IconKey, IconTestsStarted, "namespace", local.Namespace, "revision", local.Revision)
 			if err := TestMutationSet(runner, changed_set); err != nil {
 				return err
 			}
 		}
 	}
-	runner.Logger().Info("✓ tests passed", "namespace", local.Namespace, "revision", local.Revision)
+	runner.Logger().Info("tests passed", IconKey, IconTestsPassed, "namespace", local.Namespace, "revision", local.Revision)
 
 	return nil
 }
@@ -255,6 +255,7 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 	// runner.Close()) doesn't inherit a dangling open transaction.
 	defer func() {
 		if err != nil {
+			runner.Logger().Info("rolling back", IconKey, IconRolledBack)
 			runner.Rollback()
 		}
 	}()
@@ -295,12 +296,13 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 		}
 	}
 
-	runner.Logger().Info("🎉 no errors")
+	runner.Logger().Info("no errors", IconKey, IconNoErrors)
 	if options.Commit {
 		if err := runner.Commit(); err != nil {
 			return err
 		}
 	} else {
+		runner.Logger().Info("rolling back, nothing to commit")
 		if err := runner.Rollback(); err != nil {
 			return err
 		}

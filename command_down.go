@@ -1,6 +1,10 @@
 package main
 
-import "github.com/ceymard/dmut/v2/mutations"
+import (
+	"log/slog"
+
+	"github.com/ceymard/dmut/v2/mutations"
+)
 
 type DownCmd struct {
 	Uri       string `arg:"" help:"Database host."`
@@ -35,6 +39,7 @@ func (c DownCmd) Run() error {
 	}
 
 	if c.Dry {
+		slog.Info("rolling back, dry run")
 		return runner.Rollback()
 	}
 

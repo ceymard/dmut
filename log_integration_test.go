@@ -56,9 +56,9 @@ func TestApplyLogsStructuredAttributes(t *testing.T) {
 	if findRecord(all, func(r map[string]any) bool { return r["mutation"] == "api.users" && r["kind"] == "glue" }) == nil {
 		t.Error("expected a run record for the api.users glue")
 	}
-	if findRecord(all, func(r map[string]any) bool { return r["msg"] == "🎉 no errors" }) == nil ||
-		findRecord(all, func(r map[string]any) bool { return r["msg"] == "💾 committing" }) == nil {
-		t.Error("the symbols of the main milestones must stay in the messages")
+	if findRecord(all, func(r map[string]any) bool { return r["msg"] == "no errors" }) == nil ||
+		findRecord(all, func(r map[string]any) bool { return r["msg"] == "committed" }) == nil {
+		t.Error("expected the no errors and committed milestones")
 	}
 
 	connecting := findRecord(all, func(r map[string]any) bool { return r["msg"] == "connecting" })
@@ -151,5 +151,54 @@ func TestFailedTestPhaseReplaysItsRecords(t *testing.T) {
 	}
 	if findRecord(records(), func(r map[string]any) bool { return r["phase"] == "test" && r["msg"] == "run" }) == nil {
 		t.Error("the replay should include the runs that led to the failure")
+	}
+}
+
+func hasRecord(records []map[string]any, msg string, icon any) bool {
+	return findRecord(records, func(r map[string]any) bool { return r["msg"] == msg && r["icon"] == icon }) != nil
+}
+
+func TestMilestoneIcons(t *testing.T) {
+	records := captureLogs(t)
+	uri := testdb(t)
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": basic}))
+	all := records()
+
+	for msg, icon := range map[string]string{"performing tests": "🧪", "tests passed": "🆗", "no errors": "🎉", "committed": "✅"} {
+		if !hasRecord(all, msg, icon) {
+			t.Errorf("expected %q to carry the %s icon", msg, icon)
+		}
+	}
+	if findRecord(all, func(r map[string]any) bool { return r["icon"] == "⛔" }) != nil {
+		t.Error("⛔ means a rollback after a failure, not part of a successful run")
+	}
+}
+
+func TestDryRunRollbackIsNotFlaggedAsAFailure(t *testing.T) {
+	records := captureLogs(t)
+	uri := testdb(t)
+
+	if err := (ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": basic})}, Dry: true}).Run(); err != nil {
+		t.Fatal(err)
+	}
+	all := records()
+
+	if !hasRecord(all, "rolling back, nothing to commit", nil) {
+		t.Errorf("a dry run rolls back without an icon, got %v", all)
+	}
+	if findRecord(all, func(r map[string]any) bool { return r["icon"] == "⛔" }) != nil {
+		t.Error("a dry run is not a failure")
+	}
+}
+
+func TestFailureRollbackCarriesTheStopIcon(t *testing.T) {
+	records := captureLogs(t)
+	uri := testdb(t)
+
+	if err := apply(t, uri, mutationDir(t, map[string]string{"a.yml": brokenSyntax})); err == nil {
+		t.Fatal("expected a failure")
+	}
+	if !hasRecord(records(), "rolling back", "⛔") {
+		t.Errorf("expected the failed run to log ⛔ rolling back, got %v", records())
 	}
 }

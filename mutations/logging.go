@@ -10,6 +10,21 @@ import (
 	"github.com/samber/oops"
 )
 
+// IconKey is the attribute carrying the icon of a milestone record (see the Icon
+// constants). The dmut CLI turns it into a prefix of the message in plain text
+// logs and drops it from JSON logs; a handler that knows nothing about it just
+// sees an ordinary string attribute.
+const IconKey = "icon"
+
+// Icons of the milestones, passed as the IconKey attribute.
+const (
+	IconTestsStarted = "🧪"
+	IconTestsPassed  = "🆗"
+	IconNoErrors     = "🎉"
+	IconCommitted    = "✅"
+	IconRolledBack   = "⛔"
+)
+
 // captureCore is the state shared by every logger derived from one runner's
 // Logger(): whether records are currently being held back, and the held records.
 type captureCore struct {

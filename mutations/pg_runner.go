@@ -131,16 +131,20 @@ func (r *PgRunner) DeleteMutations(namespace string, names []string) error {
 }
 
 func (r *PgRunner) Commit() error {
-	r.logger.Info("💾 committing")
-	return r.exec(nil, `COMMIT`)
+	if err := r.exec(nil, `COMMIT`); err != nil {
+		return err
+	}
+	r.logger.Info("committed", IconKey, IconCommitted)
+	return nil
 }
 
 func (r *PgRunner) Begin() error {
 	return r.exec(nil, "BEGIN")
 }
 
+// Rollback rolls the transaction back without logging: whether it is a failure
+// worth an icon or a deliberate rollback is for the caller to say.
 func (r *PgRunner) Rollback() error {
-	r.logger.Info("↩ rolling back")
 	return r.exec(nil, "ROLLBACK")
 }
 
