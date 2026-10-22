@@ -146,8 +146,8 @@ so `dmut collect - ./mutations > all.yml` is always safe.
 By default the log is plain text, with the symbols 🧪 ✓ 🎉 💾 ↩ marking the main milestones:
 
 ```
-INF → applying mutations namespace=api revision=3
-INF run namespace=api mutation=api.users dir=up kind=core
+INF applying mutations namespace=api revision=3
+INF run namespace=api revision=3 mutation=api.users dir=up kind=core
 INF 🧪 performing tests namespace=api revision=3
 INF 🎉 no errors
 INF 💾 committing
@@ -157,7 +157,7 @@ With `-j`/`--json` every record is one JSON object per line instead, with the sa
 separate fields (and always a `time`):
 
 ```
-{"time":"…","level":"INFO","msg":"run","namespace":"api","mutation":"api.users","dir":"up","kind":"core"}
+{"time":"…","level":"INFO","msg":"run","namespace":"api","revision":3,"mutation":"api.users","dir":"up","kind":"core"}
 ```
 
 | Attribute | Meaning |
@@ -165,8 +165,8 @@ separate fields (and always a `time`):
 | `namespace` | namespace of the mutation or revision (`""` is the default namespace) |
 | `revision` | revision being applied |
 | `mutation` | mutation name |
-| `dir` | `up` or `down` |
-| `kind` | `core` (the SQL half) or `glue` (the meta half) |
+| `dir` | `up` (green) or `down` (red) |
+| `kind` | `core` (the SQL half, magenta) or `glue` (the meta half, blue) |
 | `phase` | `test` on records replayed from a failed test phase |
 | `sql` | the statement, at debug level (`-v`), or the failing one in an error |
 | `uri` | the connection URI, with its password replaced by `xxxxx` |

@@ -50,8 +50,8 @@ func TestApplyLogsStructuredAttributes(t *testing.T) {
 	all := records()
 
 	run := findRecord(all, func(r map[string]any) bool { return r["mutation"] == "api.users" && r["kind"] == "core" })
-	if run == nil || run["msg"] != "run" || run["dir"] != "up" || run["namespace"] != "" {
-		t.Errorf("expected a run record for api.users core (default namespace is the empty string), got %v", run)
+	if run == nil || run["msg"] != "run" || run["dir"] != "up" || run["namespace"] != "" || run["revision"] == nil {
+		t.Errorf("expected a run record for api.users core (default namespace is the empty string, revision included), got %v", run)
 	}
 	if findRecord(all, func(r map[string]any) bool { return r["mutation"] == "api.users" && r["kind"] == "glue" }) == nil {
 		t.Error("expected a run record for the api.users glue")

@@ -105,9 +105,9 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 
 		if !has_changes {
 			// No changes, no tests !
-			runner.Logger().Info("≡ no changes to apply", "namespace", local.Namespace, "revision", local.Revision)
+			runner.Logger().Info("no changes to apply", "namespace", local.Namespace, "revision", local.Revision)
 		} else {
-			runner.Logger().Info("→ applying mutations", "namespace", local.Namespace, "revision", local.Revision)
+			runner.Logger().Info("applying mutations", "namespace", local.Namespace, "revision", local.Revision)
 
 			// 1. Start by downing the meta
 			if err := meta_down.Run(runner); err != nil {
@@ -273,7 +273,7 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 		// Db has no mutations, only apply the highest local one
 		if db_mutations.Revision == 0 {
 			if !options.All {
-				runner.Logger().Info("→ no database mutations, applying highest local revision", "namespace", namespace, "revision", revisions.MaxRevision)
+				runner.Logger().Info("no database mutations, applying highest local revision", "namespace", namespace, "revision", revisions.MaxRevision)
 				if revision, ok := revisions.Revisions[revisions.MaxRevision]; ok {
 					if err := RunMutations(runner, revision, opts...); err != nil {
 						return err

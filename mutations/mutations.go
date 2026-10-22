@@ -154,7 +154,7 @@ func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation,
 
 // LogAttrs returns the slog attributes identifying this mutation.
 func (mut *Mutation) LogAttrs() []any {
-	return []any{"namespace", mut.set.Namespace, "mutation", mut.Name}
+	return []any{"namespace", mut.set.Namespace, "revision", mut.set.Revision, "mutation", mut.Name}
 }
 
 func (mut *Mutation) CoreHash() string {

@@ -44,6 +44,12 @@ var attrColors = map[string]uint8{
 	"error":     9,  // bright red
 }
 
+// Colors of attributes whose meaning depends on their value.
+var valueColors = map[string]map[string]uint8{
+	"dir":  {"up": 10, "down": 9},    // bright green, bright red
+	"kind": {"core": 13, "glue": 12}, // bright magenta, bright blue
+}
+
 // NewLogger builds the logger described by the flags, writing to w.
 func (f LogFlags) NewLogger(w io.Writer) *slog.Logger {
 	level := slog.LevelInfo
@@ -62,8 +68,13 @@ func (f LogFlags) NewLogger(w io.Writer) *slog.Logger {
 			if len(groups) == 0 && a.Key == slog.TimeKey && !f.Time {
 				return slog.Attr{}
 			}
-			if c, ok := attrColors[a.Key]; ok && len(groups) == 0 {
-				return tint.Attr(c, a)
+			if len(groups) == 0 {
+				if c, ok := attrColors[a.Key]; ok {
+					return tint.Attr(c, a)
+				}
+				if c, ok := valueColors[a.Key][a.Value.String()]; ok {
+					return tint.Attr(c, a)
+				}
 			}
 			return a
 		},

@@ -69,16 +69,16 @@ same transaction as everything else and fails the whole apply if the two rows fr
 didn't survive, or if full-text search over the now-consolidated column doesn't work.
 
 Running `dmut test -v -a examples/revisions` against a fresh throwaway database shows this
-directly — the log for the revision 2 → 3 transition contains no `↓`/`↑` for `properties·core` at
+directly — the log for the revision 2 → 3 transition contains no `run` record for `properties` with `kind=core` at
 all, only `glue`'s new statement (the `do $$` check — the seed insert is already accounted for by
 revision 2's override and doesn't run again):
 
 ```
-→ applying mutations for namespace revisions revision 2
-↑ revisions properties.description_search·core
-→ applying mutations for namespace revisions revision 3
-↑ revisions properties·glue
-notice   revision check passed: 2 properties, full text search still works
+INF applying mutations namespace=revisions revision=2
+INF run namespace=revisions revision=2 mutation=properties.description_search dir=up kind=core
+INF applying mutations namespace=revisions revision=3
+INF run namespace=revisions revision=3 mutation=properties dir=up kind=glue
+INF revision check passed: 2 properties, full text search still works notice=true severity=NOTICE
 ```
 
 A **fresh** database only ever sees the final, consolidated shape — `dmut test examples/revisions`
