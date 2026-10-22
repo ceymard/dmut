@@ -23,13 +23,15 @@ func CleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
 // method return an error wrapping ctx.Err().
 type Executor interface {
 	// Logger is where the runner and the functions driving it log. Records
-	// logged between BeginCapture and EndCapture are held back.
+	// logged between BeginCapture and EndCapture are held back when capture accepts them.
 	Logger() *slog.Logger
-	// BeginCapture holds back all records logged through Logger() until EndCapture.
-	BeginCapture()
+	// BeginCapture holds back the records logged through Logger() that capture
+	// accepts, until EndCapture. Captures don't nest.
+	BeginCapture(capture Capture)
 	// EndCapture ends the capture; held records are emitted if replay is true,
-	// dropped otherwise.
-	EndCapture(replay bool)
+	// dropped otherwise. When there is something to replay, note is logged first
+	// (nothing is logged if it is empty).
+	EndCapture(replay bool, note string)
 	Exec(ctx context.Context, sql string, args ...interface{}) error
 
 	Begin(ctx context.Context) error

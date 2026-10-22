@@ -49,7 +49,7 @@ func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
 }
 
 // RunMutations runs the mutations for a given local mutation set. A transaction should be started before calling this function.
-func RunMutations(ctx context.Context, runner Executor, local *MutationSet, opts ...*MutationRunnerOptions) error {
+func RunMutations(ctx context.Context, runner Executor, local *MutationSet, opts ...*MutationRunnerOptions) (err error) {
 
 	var options = MutationRunnerOptions{}
 	options.Merge(opts...)
@@ -68,7 +68,6 @@ func RunMutations(ctx context.Context, runner Executor, local *MutationSet, opts
 		effective_full, effective_simple = false, false
 	}
 
-	var err error
 	has_changes := true
 
 	if !options.Override {
@@ -94,10 +93,14 @@ func RunMutations(ctx context.Context, runner Executor, local *MutationSet, opts
 		// Otherwise glue gets the same longest-common-prefix treatment as core, so an
 		// isolated function/grant edit doesn't force a rebuild of unrelated glue.
 		var meta_down, meta_up *RunnableMap
+		// Glue whose own definition changed, as opposed to glue only rebuilt because core was downed.
+		var glue_changed []string
 		if core_any_real_down {
 			var fake_empty_local_set *MutationSet = nil
 			_, meta_up = local.GetMutationsDelta(nil, ITER_META)
 			meta_down, _ = fake_empty_local_set.GetMutationsDelta(distant, ITER_META)
+			own_down, own_up, _ := local.GetLCPDelta(distant, ITER_META)
+			glue_changed = changedNames(own_down, own_up)
 		} else {
 			meta_down, meta_up, _ = local.GetLCPDelta(distant, ITER_META)
 		}
@@ -109,6 +112,27 @@ func RunMutations(ctx context.Context, runner Executor, local *MutationSet, opts
 			runner.Logger().Info("no changes to apply", "namespace", local.Namespace, "revision", local.Revision)
 		} else {
 			runner.Logger().Info("applying mutations", "namespace", local.Namespace, "revision", local.Revision)
+
+			// A full glue rebuild is summed up by two records instead of one per
+			// mutation; -v keeps the detail. The detailed records are only held
+			// back, so a failure can still show what ran before it.
+			glue_downed, _ := meta_down.Counts()
+			rebuild := core_any_real_down && glue_downed > 0
+			end_hold := func(bool) {}
+			if rebuild {
+				runner.Logger().Info("downing all glue (core changed)", glueSummaryAttrs(local, meta_down, IconDown, nil)...)
+				if !runner.Logger().Enabled(ctx, slog.LevelDebug) {
+					runner.BeginCapture(Capture{Match: isGlueRun})
+					held := true
+					end_hold = func(failed bool) {
+						if held {
+							held = false
+							runner.EndCapture(failed, "glue steps before the failure:")
+						}
+					}
+					defer func() { end_hold(err != nil) }()
+				}
+			}
 
 			// 1. Start by downing the meta
 			if err := meta_down.Run(ctx, runner); err != nil {
@@ -154,6 +178,11 @@ func RunMutations(ctx context.Context, runner Executor, local *MutationSet, opts
 
 			if err := meta_up.Run(ctx, runner); err != nil {
 				return err
+			}
+			// Must end before the tests below, which capture on their own.
+			end_hold(false)
+			if rebuild {
+				runner.Logger().Info("glue back up", glueSummaryAttrs(local, meta_up, IconUp, glue_changed)...)
 			}
 		}
 
@@ -337,4 +366,44 @@ func ReadAndRunMutations(ctx context.Context, uri string, paths []string, opts .
 	}
 
 	return nil
+}
+
+// isGlueRun accepts the per-mutation record PgRunner.Run logs for a glue runnable.
+func isGlueRun(r slog.Record) bool {
+	if r.Message != "run" {
+		return false
+	}
+	glue := false
+	r.Attrs(func(a slog.Attr) bool {
+		glue = a.Key == "kind" && a.Value.String() == "glue"
+		return !glue && a.Key != "kind"
+	})
+	return glue
+}
+
+// glueSummaryAttrs are the attributes of the records summing up a full glue
+// rebuild: runnables is what was run, changed the glue whose own definition changed.
+func glueSummaryAttrs(local *MutationSet, runnables *RunnableMap, icon string, changed []string) []any {
+	mutations, statements := runnables.Counts()
+	attrs := []any{IconKey, icon, "namespace", local.Namespace, "revision", local.Revision,
+		"mutations", mutations, "statements", statements}
+	if len(changed) > 0 {
+		attrs = append(attrs, "changed", changed)
+	}
+	return attrs
+}
+
+// changedNames lists, without duplicates, the mutations named by either map.
+func changedNames(maps ...*RunnableMap) []string {
+	seen := hashset.New[string]()
+	var names []string
+	for _, m := range maps {
+		for _, name := range m.Keys() {
+			if !seen.Contains(name) {
+				seen.Add(name)
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }

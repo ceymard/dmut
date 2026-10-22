@@ -49,11 +49,11 @@ Everything dmut says about its progress goes to **stderr**, through Go's `log/sl
 carries a command's result (the yaml of `collect -`, the file names `explode` writes, the version),
 so `dmut collect - ./mutations > all.yml` is always safe.
 
-By default the log is plain text, with an icon in front of the main milestones (🧪 tests started, 🆗 tests passed, 🎉 no errors, ✅ committed, ⛔ rolled back after a failure):
+By default the log is plain text, with an icon in front of the main milestones (🧪 tests started, 🆗 tests passed, 🎉 no errors, ✅ committed, ⛔ rolled back after a failure). Every `run` record also starts with 🟢 when it goes up or 🔴 when it goes down:
 
 ```
 INF applying mutations namespace=api revision=3
-INF run namespace=api revision=3 mutation=api.users dir=up kind=core
+INF 🟢 run namespace=api revision=3 mutation=api.users dir=up kind=core
 INF 🧪 performing tests namespace=api revision=3
 INF 🆗 tests passed namespace=api revision=3
 INF 🎉 no errors
@@ -75,6 +75,8 @@ separate fields (and always a `time`). The icons are not part of JSON records, s
 | `dir` | `up` (green) or `down` (red) |
 | `kind` | `core` (the SQL half, magenta) or `glue` (the meta half, blue) |
 | `icon` | the milestone icon; shown in front of the message in plain text and removed from JSON by the dmut CLI (a library caller's own handler sees it as an ordinary attribute) |
+| `mutations`, `statements` | on the two glue rebuild records (see below): how many mutations and statements they cover |
+| `changed` | on `glue back up`: the glue mutations whose own definition changed |
 | `phase` | `test` on records replayed from a failed test phase |
 | `sql` | the statement, at debug level (`-v`), or the failing one in an error |
 | `uri` | the connection URI, with its password replaced by `xxxxx` |
@@ -85,6 +87,13 @@ adds the Go source file and line to every record; it is only useful for debuggin
 
 The test phase is silent when it succeeds. When it fails, everything it did is printed after the
 fact, with `phase=test`, so that the failing statement can be seen in context.
+
+When a core change forces all the glue of a namespace to be rebuilt, the rebuild is two records
+instead of one per glue mutation: `🔴 downing all glue (core changed)` before the first core mutation,
+and `🟢 glue back up` once every glue mutation is back, listing in `changed` the ones that had
+changed on their own. `-v` brings back the per-mutation records. If the run fails, the per-mutation
+glue records are printed after `glue steps before the failure:`, just before the error. A change
+that only touches glue still logs each glue mutation it downs and re-ups.
 
 A rollback that is just the end of a dry run or of `dmut test` is logged as `rolling back, nothing to commit`, without the ⛔ icon.
 

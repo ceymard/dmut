@@ -23,13 +23,26 @@ const (
 	IconNoErrors     = "🎉"
 	IconCommitted    = "✅"
 	IconRolledBack   = "⛔"
+	IconUp           = "🟢" // a runnable going up
+	IconDown         = "🔴" // a runnable going down
 )
 
+// Capture selects which records a capture holds back and how they are tagged.
+type Capture struct {
+	// Phase, when not empty, is added to every held record as the "phase" attribute.
+	Phase string
+	// Match, when not nil, restricts the capture to the records it accepts; the
+	// others are emitted live. nil holds every record.
+	Match func(slog.Record) bool
+}
+
 // captureCore is the state shared by every logger derived from one runner's
-// Logger(): whether records are currently being held back, and the held records.
+// Logger(): whether records are currently being held back, which ones, and the
+// held records.
 type captureCore struct {
 	mu        sync.Mutex
 	capturing bool
+	capture   Capture
 	held      []heldRecord
 }
 
@@ -42,7 +55,7 @@ type heldRecord struct {
 }
 
 // captureHandler forwards records to inner, unless its core is capturing: then
-// records are held (tagged phase=test) until the core is flushed.
+// records the capture accepts are held until the core is flushed.
 type captureHandler struct {
 	core  *captureCore
 	inner slog.Handler
@@ -54,9 +67,11 @@ func (h captureHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 func (h captureHandler) Handle(ctx context.Context, r slog.Record) error {
 	h.core.mu.Lock()
-	if h.core.capturing {
+	if h.core.capturing && (h.core.capture.Match == nil || h.core.capture.Match(r)) {
 		r = r.Clone()
-		r.AddAttrs(slog.String("phase", "test"))
+		if h.core.capture.Phase != "" {
+			r.AddAttrs(slog.String("phase", h.core.capture.Phase))
+		}
 		h.core.held = append(h.core.held, heldRecord{handler: h.inner, record: r})
 		h.core.mu.Unlock()
 		return nil
@@ -73,24 +88,29 @@ func (h captureHandler) WithGroup(name string) slog.Handler {
 	return captureHandler{core: h.core, inner: h.inner.WithGroup(name)}
 }
 
-// beginCapture starts holding back records instead of emitting them.
-func (c *captureCore) beginCapture() {
+// beginCapture starts holding back the records c accepts instead of emitting them.
+func (c *captureCore) beginCapture(capture Capture) {
 	c.mu.Lock()
 	c.capturing = true
+	c.capture = capture
 	c.held = nil
 	c.mu.Unlock()
 }
 
 // endCapture stops holding records back; when replay is true the held records
-// are emitted first, in order, otherwise they are dropped.
-func (c *captureCore) endCapture(replay bool) {
+// are emitted, in order, otherwise they are dropped. note, when not nil, is
+// called right before a non-empty replay so it can introduce it.
+func (c *captureCore) endCapture(replay bool, note func()) {
 	c.mu.Lock()
 	held := c.held
 	c.held = nil
 	c.capturing = false
 	c.mu.Unlock()
-	if !replay {
+	if !replay || len(held) == 0 {
 		return
+	}
+	if note != nil {
+		note()
 	}
 	for _, h := range held {
 		_ = h.handler.Handle(context.Background(), h.record)

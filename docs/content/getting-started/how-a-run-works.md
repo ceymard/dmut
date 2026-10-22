@@ -8,7 +8,8 @@ Failure at any step halts the process and nothing is applied.
    Obsolete mutations are downed along with everything that depends on them, recursively.
 3. Down the obsolete `glue`, down the obsolete `core`, up the new `core`, then up the new `glue`. If
    *any* `core` had to be downed, *all* `glue` in the namespace is downed and re-upped, since glue
-   may depend on any object the core touched.
+   may depend on any object the core touched. That rebuild is logged as two records, not one per
+   glue mutation (see [Logging](cli-reference.md#logging)).
 4. Record the new state in `__dmut__.mutations`.
 5. Test, when anything changed: down all `glue`, then replay each mutation's `glue` chain
    up-then-down on its own; then down all `core` and do the same for `core`. This runs against the

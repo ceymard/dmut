@@ -9,8 +9,8 @@ import (
 // Consider that the set is already up in the database.
 func TestMutationSet(ctx context.Context, runner Executor, set *MutationSet) (err error) {
 
-	runner.BeginCapture()
-	defer func() { runner.EndCapture(err != nil) }()
+	runner.BeginCapture(Capture{Phase: "test"})
+	defer func() { runner.EndCapture(err != nil, "") }()
 
 	if err = runner.SavePoint(ctx, "test_mutation_set"); err != nil {
 		return err

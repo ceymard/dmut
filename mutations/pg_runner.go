@@ -63,16 +63,21 @@ func NewPgRunner(ctx context.Context, url string, logger *slog.Logger) (*PgRunne
 	return res, nil
 }
 
-// BeginCapture holds back every record logged through Logger() from now on,
-// tagged phase=test, until EndCapture.
-func (r *PgRunner) BeginCapture() {
-	r.core.beginCapture()
+// BeginCapture holds back the records capture accepts, logged through Logger()
+// from now on, until EndCapture.
+func (r *PgRunner) BeginCapture(capture Capture) {
+	r.core.beginCapture(capture)
 }
 
 // EndCapture stops the capture started by BeginCapture. The held records are
-// emitted in order if replay is true, and dropped otherwise.
-func (r *PgRunner) EndCapture(replay bool) {
-	r.core.endCapture(replay)
+// emitted in order if replay is true, and dropped otherwise. A non-empty note is
+// logged before a replay that has records.
+func (r *PgRunner) EndCapture(replay bool, note string) {
+	var announce func()
+	if note != "" {
+		announce = func() { r.logger.Info(note) }
+	}
+	r.core.endCapture(replay, announce)
 }
 
 // wrapPgError attaches the failing sql and, for server errors, the position,
@@ -107,7 +112,11 @@ func (r *PgRunner) Run(ctx context.Context, runnable *Runnable) error {
 	if runnable.Size() == 0 {
 		return nil
 	}
-	r.logger.Info("run", runnable.LogAttrs()...)
+	icon := IconUp
+	if runnable.Direction.Down {
+		icon = IconDown
+	}
+	r.logger.Info("run", append(runnable.LogAttrs(), IconKey, icon)...)
 	for i, stmt := range runnable.Statements() {
 		if err := r.exec(ctx, runnable.Mutation, stmt); err != nil {
 			return oops.With("statement_index", i+1).Wrap(err)

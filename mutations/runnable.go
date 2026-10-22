@@ -73,3 +73,15 @@ func (rm *RunnableMap) Run(ctx context.Context, runner Executor) error {
 	}
 	return nil
 }
+
+// Counts returns how many runnables of rm run at least one statement, and how
+// many statements they run in all.
+func (rm *RunnableMap) Counts() (mutations, statements int) {
+	for _, runnable := range rm.Values() {
+		if n := runnable.Size(); n > 0 {
+			mutations++
+			statements += n
+		}
+	}
+	return mutations, statements
+}
