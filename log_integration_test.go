@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"strings"
@@ -178,7 +179,7 @@ func TestDryRunRollbackIsNotFlaggedAsAFailure(t *testing.T) {
 	records := captureLogs(t)
 	uri := testdb(t)
 
-	if err := (ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": basic})}, Dry: true}).Run(); err != nil {
+	if err := (ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": basic})}, Dry: true}).Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	all := records()

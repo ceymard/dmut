@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -54,11 +55,11 @@ thing:
 func newPgRunner(t *testing.T, uri string) *mutations.PgRunner {
 	t.Helper()
 
-	runner, err := mutations.NewPgRunner(uri, nil)
+	runner, err := mutations.NewPgRunner(context.Background(), uri, nil)
 	if err != nil {
 		t.Fatalf("could not connect: %v", err)
 	}
-	t.Cleanup(func() { runner.Close() })
+	t.Cleanup(func() { runner.Close(context.Background()) })
 	return runner
 }
 
@@ -70,7 +71,7 @@ func TestGetDBNamespacesListsDistinctNamespaces(t *testing.T) {
 	}))
 
 	runner := newPgRunner(t, uri)
-	namespaces, err := runner.GetDBNamespaces()
+	namespaces, err := runner.GetDBNamespaces(context.Background())
 	if err != nil {
 		t.Fatalf("GetDBNamespaces: %v", err)
 	}
@@ -97,7 +98,7 @@ func TestGetDBNamespacesExcludesDmutNamespace(t *testing.T) {
 	mustApply(t, uri, mutationDir(t, map[string]string{"one.yml": namespacedFixture("one")}))
 
 	runner := newPgRunner(t, uri)
-	namespaces, err := runner.GetDBNamespaces()
+	namespaces, err := runner.GetDBNamespaces(context.Background())
 	if err != nil {
 		t.Fatalf("GetDBNamespaces: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestGetDBNamespacesOnFreshDatabase(t *testing.T) {
 	uri := testdb(t)
 
 	runner := newPgRunner(t, uri)
-	namespaces, err := runner.GetDBNamespaces()
+	namespaces, err := runner.GetDBNamespaces(context.Background())
 	if err != nil {
 		t.Fatalf("GetDBNamespaces: %v", err)
 	}
@@ -135,7 +136,7 @@ func TestCollectRevisionFromDatabaseSourcesRecordedMutations(t *testing.T) {
 	}))
 
 	runner := newPgRunner(t, uri)
-	shells, warnings, err := mutations.CollectRevisionFromDatabase(runner, 3)
+	shells, warnings, err := mutations.CollectRevisionFromDatabase(context.Background(), runner, 3)
 	if err != nil {
 		t.Fatalf("CollectRevisionFromDatabase: %v", err)
 	}
@@ -304,7 +305,7 @@ func TestCollectRevisionFromDatabaseWarnsOnWrongNumber(t *testing.T) {
 	}))
 
 	runner := newPgRunner(t, uri)
-	shells, warnings, err := mutations.CollectRevisionFromDatabase(runner, 7)
+	shells, warnings, err := mutations.CollectRevisionFromDatabase(context.Background(), runner, 7)
 	if err != nil {
 		t.Fatalf("CollectRevisionFromDatabase: %v", err)
 	}

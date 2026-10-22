@@ -16,14 +16,14 @@ type LegacyCmd struct {
 	Host string `arg:"" help:"Database host."`
 }
 
-func (c LegacyCmd) Run() error {
-	conn, err := pgx.Connect(context.Background(), c.Host)
+func (c LegacyCmd) Run(ctx context.Context) error {
+	conn, err := pgx.Connect(ctx, c.Host)
 	if err != nil {
 		return err
 	}
-	defer conn.Close(context.Background())
+	defer conn.Close(ctx)
 
-	rows, err := conn.Query(context.Background(), "SELECT hash, name, up, down, children FROM dmut.mutations")
+	rows, err := conn.Query(ctx, "SELECT hash, name, up, down, children FROM dmut.mutations")
 	if err != nil {
 		return err
 	}

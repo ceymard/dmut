@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+
 	"github.com/ceymard/dmut/v2/mutations"
 	"github.com/samber/oops"
 )
@@ -14,13 +16,13 @@ type ApplyCmd struct {
 	Simple   bool     `short:"s" name:"simple" help:"Refuse to run if core has any change that isn't a pure append."`
 }
 
-func (a ApplyCmd) Run() error {
+func (a ApplyCmd) Run(ctx context.Context) error {
 
 	if a.Full && a.Simple {
 		return oops.In("apply").Errorf("-f/--full and -s/--simple are mutually exclusive")
 	}
 
-	if err := mutations.ReadAndRunMutations(a.Uri, a.Paths, &mutations.MutationRunnerOptions{
+	if err := mutations.ReadAndRunMutations(ctx, a.Uri, a.Paths, &mutations.MutationRunnerOptions{
 		Commit:   !a.Dry,
 		Override: a.Override,
 		Full:     a.Full,

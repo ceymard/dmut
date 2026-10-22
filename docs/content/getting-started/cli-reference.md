@@ -96,9 +96,20 @@ raw `sql` as fields.
 
 ### Using dmut as a library
 
-`mutations.NewPgRunner(uri, logger)` and `MutationRunnerOptions.Logger` take a `*slog.Logger`; when
+`mutations.NewPgRunner(ctx, uri, logger)` and `MutationRunnerOptions.Logger` take a `*slog.Logger`; when
 it is nil, `slog.Default()` is used. `mutations.ErrorAttrs(err)` flattens an error and its context
 into slog arguments.
+
+Every function and `Executor` method that talks to the database takes a `context.Context` as its first
+argument (`ReadAndRunMutations`, `RunAllMutations`, `RunMutations`, `CollectRevisionFromDatabase`,
+`NewPgRunner`, ...). Cancelling it, or letting its deadline expire, aborts the statement in flight and
+makes the call return an error that wraps `ctx.Err()` (`errors.Is(err, context.Canceled)` works). The
+run is then rolled back, so nothing is applied: `RunAllMutations` rolls back and `Close` ends the
+connection on a fresh context that ignores the cancellation, each waiting at most
+`mutations.CleanupTimeout` (5 seconds). If the database does not answer in time, the connection is
+dropped and Postgres rolls the transaction back by itself. `NewPgRunner` uses its `ctx` only to connect.
+
+The `dmut` command cancels this context on Ctrl-C (SIGINT) and SIGTERM.
 
 ## `--override`
 

@@ -1,6 +1,7 @@
 package mutations
 
 import (
+	"context"
 	"iter"
 
 	"github.com/ugurcsen/gods-generic/maps/linkedhashmap"
@@ -64,9 +65,9 @@ func NewRunnableMap() *RunnableMap {
 	}
 }
 
-func (rm *RunnableMap) Run(runner Executor) error {
+func (rm *RunnableMap) Run(ctx context.Context, runner Executor) error {
 	for _, runnable := range rm.Values() {
-		if err := runner.Run(runnable); err != nil {
+		if err := runner.Run(ctx, runnable); err != nil {
 			return err
 		}
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path"
@@ -16,7 +17,7 @@ type ExplodeCmd struct {
 	Paths  []string `arg:"" help:"Paths to the mutation files"`
 }
 
-func (e ExplodeCmd) Run() error {
+func (e ExplodeCmd) Run(ctx context.Context) error {
 
 	re_mutation := regexp.MustCompile(`(?m)^([^:\n]+):[ \t]*\n(([ \t][^\n]*)?\n)*`)
 	re_namespace := regexp.MustCompile(`(?m)^__namespace:[ \t]*(.+?)[ \t]*$`)

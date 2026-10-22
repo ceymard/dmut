@@ -1,6 +1,7 @@
 package mutations
 
 import (
+	"context"
 	"fmt"
 	"io"
 )
@@ -77,14 +78,14 @@ func CollectRevisionFromLocal(namespaces *MutationNamespace, revision int) (shel
 // is the secondary `collect -r` workflow, for an orphaned database with no local
 // files. warnings mirrors CollectRevisionFromLocal's "does revision look like n+1"
 // check, against the database's own recorded revision for each namespace.
-func CollectRevisionFromDatabase(runner Executor, revision int) (shells []*MutationSet, warnings []string, err error) {
-	namespaces, err := runner.GetDBNamespaces()
+func CollectRevisionFromDatabase(ctx context.Context, runner Executor, revision int) (shells []*MutationSet, warnings []string, err error) {
+	namespaces, err := runner.GetDBNamespaces(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	for _, ns := range namespaces {
-		distant, err := runner.GetDBMutationsFromDb(ns)
+		distant, err := runner.GetDBMutationsFromDb(ctx, ns)
 		if err != nil {
 			return nil, nil, err
 		}

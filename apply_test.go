@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/ceymard/dmut/v2/mutations"
@@ -171,7 +172,7 @@ api.users:
   glue:
     - grant select on table api.users to public;
 `
-	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": changed})}, Simple: true}.Run()
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": changed})}, Simple: true}.Run(context.Background())
 	requireErrorContaining(t, err, "simple mode")
 
 	if columnExists(t, uri, "users", "email") {
@@ -204,7 +205,7 @@ api.users:
   glue:
     - grant select on table api.users to public;
 `
-	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": appended})}, Simple: true}.Run()
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": appended})}, Simple: true}.Run(context.Background())
 	if err != nil {
 		t.Fatalf("expected a pure append to succeed under simple mode, got: %v", err)
 	}
@@ -295,7 +296,7 @@ func TestFullModeCascadesOnFailure(t *testing.T) {
 	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": withDependent}))
 	exec(t, uri, "insert into api.accounts (balance) values (100);")
 
-	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": withDependentRetyped})}, Full: true}.Run()
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": withDependentRetyped})}, Full: true}.Run(context.Background())
 	if err != nil {
 		t.Fatalf("expected full mode to rebuild past the dependent, got: %v", err)
 	}
@@ -391,7 +392,7 @@ func TestFullModeCascadesTwoLevelsDeep(t *testing.T) {
 	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": threeLevelChain}))
 	exec(t, uri, "insert into api.accounts (balance) values (100);")
 
-	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": threeLevelChainRetyped})}, Full: true}.Run()
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": threeLevelChainRetyped})}, Full: true}.Run(context.Background())
 	if err != nil {
 		t.Fatalf("expected full mode to rebuild both levels of dependents, got: %v", err)
 	}
@@ -439,7 +440,7 @@ func TestFullModeAbortsWhenTheRebuildAlsoFails(t *testing.T) {
 	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": withDependent}))
 	exec(t, uri, "insert into api.accounts (balance) values (100);")
 
-	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": withDependentBrokenRetype})}, Full: true}.Run()
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": withDependentBrokenRetype})}, Full: true}.Run(context.Background())
 	if err == nil {
 		t.Fatal("expected the apply to fail - the rebuild's target definition is broken SQL")
 	}
@@ -494,7 +495,7 @@ func TestSimpleModeRefusesRemovalFromTheMiddle(t *testing.T) {
 	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": withTwoIndexes}))
 	exec(t, uri, "insert into api.users (name) values ('someone');")
 
-	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": withMiddleIndexRemoved})}, Simple: true}.Run()
+	err := ApplyCmd{Uri: uri, Paths: []string{mutationDir(t, map[string]string{"a.yml": withMiddleIndexRemoved})}, Simple: true}.Run(context.Background())
 	requireErrorContaining(t, err, "simple mode")
 
 	if !exists(t, uri, "select 1 from pg_indexes where indexname = 'users_name_idx'") {
@@ -529,7 +530,7 @@ func TestDryRunChangesNothing(t *testing.T) {
 		Uri:   uri,
 		Paths: []string{mutationDir(t, map[string]string{"a.yml": basic})},
 		Dry:   true,
-	}).Run(); err != nil {
+	}).Run(context.Background()); err != nil {
 		t.Fatalf("expected the dry run to succeed, got: %v", err)
 	}
 
@@ -606,7 +607,7 @@ func TestOverrideAdoptsExistingObjects(t *testing.T) {
 		Uri:      uri,
 		Paths:    []string{mutationDir(t, map[string]string{"a.yml": basic})},
 		Override: true,
-	}).Run(); err != nil {
+	}).Run(context.Background()); err != nil {
 		t.Fatalf("expected the override to succeed, got: %v", err)
 	}
 
@@ -628,7 +629,7 @@ func TestOverrideStillHasToBeDownable(t *testing.T) {
 		Uri:      uri,
 		Paths:    []string{mutationDir(t, map[string]string{"a.yml": basic})},
 		Override: true,
-	}).Run()
+	}).Run(context.Background())
 
 	if err == nil {
 		t.Fatal("expected overriding objects that are not there to fail")
@@ -647,7 +648,7 @@ func TestOverrideCannotBootstrapDmut(t *testing.T) {
 		Uri:      uri,
 		Paths:    []string{mutationDir(t, map[string]string{"a.yml": basic})},
 		Override: true,
-	}).Run()
+	}).Run(context.Background())
 
 	requireErrorContaining(t, err, "__dmut__.mutations")
 }
@@ -674,7 +675,7 @@ func TestNamespacesAreIndependent(t *testing.T) {
 		t.Fatal("both namespaces should have been applied")
 	}
 
-	if err := (DownCmd{Uri: uri, Namespace: "other"}).Run(); err != nil {
+	if err := (DownCmd{Uri: uri, Namespace: "other"}).Run(context.Background()); err != nil {
 		t.Fatalf("expected the down to succeed, got: %v", err)
 	}
 
@@ -697,7 +698,7 @@ func TestDownRemovesEverything(t *testing.T) {
 
 	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": basic}))
 
-	if err := (DownCmd{Uri: uri, Namespace: ""}).Run(); err != nil {
+	if err := (DownCmd{Uri: uri, Namespace: ""}).Run(context.Background()); err != nil {
 		t.Fatalf("expected the down to succeed, got: %v", err)
 	}
 
@@ -761,7 +762,7 @@ func TestRevisionsKeepTheData(t *testing.T) {
 func TestReplayingAllRevisions(t *testing.T) {
 	uri := testdb(t)
 
-	if err := mutations.ReadAndRunMutations(uri, []string{revision_paths}, &mutations.MutationRunnerOptions{
+	if err := mutations.ReadAndRunMutations(context.Background(), uri, []string{revision_paths}, &mutations.MutationRunnerOptions{
 		Commit: true,
 		All:    true,
 	}); err != nil {
@@ -812,19 +813,19 @@ func TestDeleteMutationsRemovesOnlyNamedRows(t *testing.T) {
 		t.Fatalf("expected 2 mutations recorded before delete, got %d", got)
 	}
 
-	runner, err := mutations.NewPgRunner(uri, nil)
+	runner, err := mutations.NewPgRunner(context.Background(), uri, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer runner.Close()
+	defer runner.Close(context.Background())
 
-	if err := runner.Begin(); err != nil {
+	if err := runner.Begin(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := runner.DeleteMutations("", []string{"api.users"}); err != nil {
+	if err := runner.DeleteMutations(context.Background(), "", []string{"api.users"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := runner.Commit(); err != nil {
+	if err := runner.Commit(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -922,7 +923,7 @@ func TestRevisionModeOverridesCliSimple(t *testing.T) {
 		Uri:    uri,
 		Paths:  []string{mutationDir(t, map[string]string{"a.yml": withDependentRetypedFullMode})},
 		Simple: true,
-	}.Run()
+	}.Run(context.Background())
 	if err != nil {
 		t.Fatalf("expected the revision's own mode: full to override -s, got: %v", err)
 	}
@@ -1111,7 +1112,7 @@ func TestRevisionModeSimpleOverridesCliFull(t *testing.T) {
 		Uri:   uri,
 		Paths: []string{mutationDir(t, map[string]string{"a.yml": withDependentRetypedSimpleMode})},
 		Full:  true,
-	}.Run()
+	}.Run(context.Background())
 	requireErrorContaining(t, err, "simple mode")
 
 	if !exists(t, uri, "select 1 from information_schema.columns where table_name = 'accounts' and column_name = 'balance' and data_type = 'integer'") {

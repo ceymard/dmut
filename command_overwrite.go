@@ -1,5 +1,7 @@
 package main
 
+import "context"
+
 // Overwrite the destination database with the definition provided in the yaml paths
 
 type OverwriteCmd struct {
@@ -7,6 +9,6 @@ type OverwriteCmd struct {
 	Paths []string `arg:"" help:"Paths to the mutation files"`
 }
 
-func (o OverwriteCmd) Run() error {
+func (o OverwriteCmd) Run(ctx context.Context) error {
 	return nil
 }

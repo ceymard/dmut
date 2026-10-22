@@ -25,14 +25,18 @@ func (r *PgRunner) Logger() *slog.Logger {
 	return r.logger
 }
 
-func (r *PgRunner) Close() error {
-	return r.conn.Close(context.Background())
+// Close ends the connection. It ignores any cancellation of ctx and is
+// bounded by CleanupTimeout, so it is safe to defer after a cancellation.
+func (r *PgRunner) Close(ctx context.Context) error {
+	ctx, cancel := CleanupContext(ctx)
+	defer cancel()
+	return r.conn.Close(ctx)
 }
 
 // NewPgRunner connects to the database at url. Progress, notices and SQL
 // (at debug level) are logged through logger, or through slog.Default() when
-// logger is nil. The password of url is never logged.
-func NewPgRunner(url string, logger *slog.Logger) (*PgRunner, error) {
+// logger is nil. ctx only bounds the initial connection. The password of url is never logged.
+func NewPgRunner(ctx context.Context, url string, logger *slog.Logger) (*PgRunner, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -50,7 +54,7 @@ func NewPgRunner(url string, logger *slog.Logger) (*PgRunner, error) {
 		res.logger.Info(notice.Message, "notice", true, "severity", notice.Severity, "sqlstate", notice.Code)
 	})
 
-	conn, err := pgx.ConnectConfig(context.Background(), config)
+	conn, err := pgx.ConnectConfig(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -99,84 +103,84 @@ func wrapPgError(err error, sql string) error {
 	return oo.Wrap(err)
 }
 
-func (r *PgRunner) Run(runnable *Runnable) error {
+func (r *PgRunner) Run(ctx context.Context, runnable *Runnable) error {
 	if runnable.Size() == 0 {
 		return nil
 	}
 	r.logger.Info("run", runnable.LogAttrs()...)
 	for i, stmt := range runnable.Statements() {
-		if err := r.exec(runnable.Mutation, stmt); err != nil {
+		if err := r.exec(ctx, runnable.Mutation, stmt); err != nil {
 			return oops.With("statement_index", i+1).Wrap(err)
 		}
 	}
 	return nil
 }
 
-func (r *PgRunner) ClearMutations(namespace string) error {
+func (r *PgRunner) ClearMutations(ctx context.Context, namespace string) error {
 	sql := `DELETE FROM __dmut__.mutations WHERE namespace = $1`
-	err := r.exec(nil, sql, namespace)
+	err := r.exec(ctx, nil, sql, namespace)
 	return wrapPgError(err, sql)
 }
 
 // DeleteMutations removes bookkeeping for specific mutations, unlike ClearMutations
 // which wipes an entire namespace - this is what a revision's `delete:` key uses to
 // untrack named mutations without running a down for them.
-func (r *PgRunner) DeleteMutations(namespace string, names []string) error {
+func (r *PgRunner) DeleteMutations(ctx context.Context, namespace string, names []string) error {
 	if len(names) == 0 {
 		return nil
 	}
 	sql := `DELETE FROM __dmut__.mutations WHERE namespace = $1 AND name = ANY($2)`
-	err := r.exec(nil, sql, namespace, names)
+	err := r.exec(ctx, nil, sql, namespace, names)
 	return wrapPgError(err, sql)
 }
 
-func (r *PgRunner) Commit() error {
-	if err := r.exec(nil, `COMMIT`); err != nil {
+func (r *PgRunner) Commit(ctx context.Context) error {
+	if err := r.exec(ctx, nil, `COMMIT`); err != nil {
 		return err
 	}
 	r.logger.Info("committed", IconKey, IconCommitted)
 	return nil
 }
 
-func (r *PgRunner) Begin() error {
-	return r.exec(nil, "BEGIN")
+func (r *PgRunner) Begin(ctx context.Context) error {
+	return r.exec(ctx, nil, "BEGIN")
 }
 
 // Rollback rolls the transaction back without logging: whether it is a failure
 // worth an icon or a deliberate rollback is for the caller to say.
-func (r *PgRunner) Rollback() error {
-	return r.exec(nil, "ROLLBACK")
+func (r *PgRunner) Rollback(ctx context.Context) error {
+	return r.exec(ctx, nil, "ROLLBACK")
 }
 
-func (r *PgRunner) SavePoint(name string) error {
+func (r *PgRunner) SavePoint(ctx context.Context, name string) error {
 	if name == "" {
-		if err := r.exec(nil, "BEGIN"); err != nil {
+		if err := r.exec(ctx, nil, "BEGIN"); err != nil {
 			return wrapPgError(err, "BEGIN")
 		}
 		return nil
 	}
-	return r.exec(nil, `SAVEPOINT `+name)
+	return r.exec(ctx, nil, `SAVEPOINT `+name)
 }
 
-func (r *PgRunner) RollbackToSavepoint(name string) error {
+func (r *PgRunner) RollbackToSavepoint(ctx context.Context, name string) error {
 	var cmd = `ROLLBACK`
 	if name != "" {
 		cmd += ` TO SAVEPOINT ` + name
 	}
-	return r.exec(nil, cmd)
+	return r.exec(ctx, nil, cmd)
 }
 
-func (r *PgRunner) ReleaseSavepoint(name string) error {
-	return r.exec(nil, `RELEASE SAVEPOINT `+name)
+func (r *PgRunner) ReleaseSavepoint(ctx context.Context, name string) error {
+	return r.exec(ctx, nil, `RELEASE SAVEPOINT `+name)
 }
 
-func (r *PgRunner) Exec(sql string, args ...interface{}) error {
-	return r.exec(nil, sql, args...)
+func (r *PgRunner) Exec(ctx context.Context, sql string, args ...interface{}) error {
+	return r.exec(ctx, nil, sql, args...)
 }
 
-func (r *PgRunner) exec(mutation *Mutation, sql string, args ...interface{}) error {
+func (r *PgRunner) exec(ctx context.Context, mutation *Mutation, sql string, args ...interface{}) error {
 	r.logger.Debug("sql", "sql", sql)
-	_, err := r.conn.Exec(context.Background(), sql, args...)
+	_, err := r.conn.Exec(ctx, sql, args...)
 	if err != nil {
 		err = wrapPgError(err, sql)
 		oo := oops.In("pg")
@@ -192,7 +196,7 @@ func (r *PgRunner) exec(mutation *Mutation, sql string, args ...interface{}) err
 // GetDBNamespaces lists every distinct namespace recorded in __dmut__.mutations,
 // excluding __dmut__ itself - used by `collect -r` when sourcing a revision shell
 // from a live database with no local files to already know the namespace from.
-func (r *PgRunner) GetDBNamespaces() ([]string, error) {
+func (r *PgRunner) GetDBNamespaces(ctx context.Context) ([]string, error) {
 	var (
 		db     = r.conn
 		exists bool
@@ -203,7 +207,7 @@ func (r *PgRunner) GetDBNamespaces() ([]string, error) {
 		FROM pg_catalog.pg_namespace
 		WHERE nspname = '__dmut__'
 	)`
-	if err := db.QueryRow(context.Background(), sql).Scan(&exists); err != nil {
+	if err := db.QueryRow(ctx, sql).Scan(&exists); err != nil {
 		return nil, wrapPgError(err, sql)
 	}
 	if !exists {
@@ -211,7 +215,7 @@ func (r *PgRunner) GetDBNamespaces() ([]string, error) {
 	}
 
 	sql = `SELECT DISTINCT namespace FROM __dmut__.mutations WHERE namespace != $1 ORDER BY namespace`
-	rows, err := db.Query(context.Background(), sql, DmutNamespace)
+	rows, err := db.Query(ctx, sql, DmutNamespace)
 	if err != nil {
 		return nil, wrapPgError(err, sql)
 	}
@@ -233,7 +237,7 @@ func (r *PgRunner) GetDBNamespaces() ([]string, error) {
 }
 
 // get the mutations already in the database
-func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) {
+func (r *PgRunner) GetDBMutationsFromDb(ctx context.Context, namespace string) (*MutationSet, error) {
 	var (
 		db     = r.conn
 		exists bool
@@ -245,7 +249,7 @@ func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) 
 		FROM pg_catalog.pg_namespace
 		WHERE nspname = '__dmut__'
 	)`
-	if err := db.QueryRow(context.Background(), sql).Scan(&exists); err != nil {
+	if err := db.QueryRow(ctx, sql).Scan(&exists); err != nil {
 		return nil, wrapPgError(err, sql)
 	}
 	if !exists {
@@ -263,7 +267,7 @@ func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) 
 		) as data
 		from (select * from __dmut__.mutations WHERE namespace = $1) r
 	`
-	row := db.QueryRow(context.Background(), sql, namespace)
+	row := db.QueryRow(ctx, sql, namespace)
 
 	var json_text []byte
 	if err := row.Scan(&json_text); err != nil {
@@ -294,8 +298,8 @@ func (r *PgRunner) GetDBMutationsFromDb(namespace string) (*MutationSet, error) 
 	return res, nil
 }
 
-func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
-	if err = r.ClearMutations(mutations.Namespace); err != nil {
+func (r *PgRunner) SaveMutations(ctx context.Context, mutations *MutationSet) (err error) {
+	if err = r.ClearMutations(ctx, mutations.Namespace); err != nil {
 		return err
 	}
 
@@ -335,7 +339,7 @@ func (r *PgRunner) SaveMutations(mutations *MutationSet) (err error) {
 		FROM json_populate_recordset(NULL::__dmut__.mutations, $1::json)
 		ON CONFLICT (namespace, name) DO UPDATE SET file = excluded.file, needs = excluded.needs, glue_needs = excluded.glue_needs, glue = excluded.glue, core = excluded.core`
 
-	if err := r.exec(nil, sql, muts_json, mutations.Namespace, mutations.Revision); err != nil {
+	if err := r.exec(ctx, nil, sql, muts_json, mutations.Namespace, mutations.Revision); err != nil {
 		return wrapPgError(err, sql)
 	}
 	return nil

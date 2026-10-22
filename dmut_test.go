@@ -124,7 +124,7 @@ func mutationDir(t *testing.T, files map[string]string) string {
 // apply runs the apply command the way the cli does.
 func apply(t *testing.T, uri string, paths ...string) error {
 	t.Helper()
-	return ApplyCmd{Uri: uri, Paths: paths}.Run()
+	return ApplyCmd{Uri: uri, Paths: paths}.Run(context.Background())
 }
 
 // mustApply fails the test when the mutations do not apply.

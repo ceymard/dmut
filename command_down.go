@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/ceymard/dmut/v2/mutations"
@@ -12,27 +13,27 @@ type DownCmd struct {
 	Dry       bool   `short:"d" help:"Dry run, don't down the mutations."`
 }
 
-func (c DownCmd) Run() error {
+func (c DownCmd) Run(ctx context.Context) error {
 	var fake_empty_local_set *mutations.MutationSet = mutations.NewMutationSet(c.Namespace, 0, "")
 
-	runner, err := mutations.NewPgRunner(c.Uri, nil)
+	runner, err := mutations.NewPgRunner(ctx, c.Uri, nil)
 	if err != nil {
 		return err
 	}
-	defer runner.Close()
+	defer runner.Close(ctx)
 
-	db_mutations, err := runner.GetDBMutationsFromDb(c.Namespace)
+	db_mutations, err := runner.GetDBMutationsFromDb(ctx, c.Namespace)
 	if err != nil {
 		return err
 	}
 
 	fake_empty_local_set.Revision = db_mutations.Revision
 
-	if err := runner.Begin(); err != nil {
+	if err := runner.Begin(ctx); err != nil {
 		return err
 	}
 
-	if err := mutations.RunMutations(runner, fake_empty_local_set, &mutations.MutationRunnerOptions{
+	if err := mutations.RunMutations(ctx, runner, fake_empty_local_set, &mutations.MutationRunnerOptions{
 		Commit: !c.Dry,
 	}); err != nil {
 		return err
@@ -40,8 +41,8 @@ func (c DownCmd) Run() error {
 
 	if c.Dry {
 		slog.Info("rolling back, dry run")
-		return runner.Rollback()
+		return runner.Rollback(ctx)
 	}
 
-	return runner.Commit()
+	return runner.Commit(ctx)
 }

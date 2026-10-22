@@ -1,6 +1,7 @@
 package mutations
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/samber/oops"
@@ -48,7 +49,7 @@ func (o *MutationRunnerOptions) Merge(others ...*MutationRunnerOptions) {
 }
 
 // RunMutations runs the mutations for a given local mutation set. A transaction should be started before calling this function.
-func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOptions) error {
+func RunMutations(ctx context.Context, runner Executor, local *MutationSet, opts ...*MutationRunnerOptions) error {
 
 	var options = MutationRunnerOptions{}
 	options.Merge(opts...)
@@ -75,7 +76,7 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 		var namespace = local.Namespace
 		var distant *MutationSet
 
-		if distant, err = runner.GetDBMutationsFromDb(namespace); err != nil {
+		if distant, err = runner.GetDBMutationsFromDb(ctx, namespace); err != nil {
 			return err
 		}
 
@@ -110,7 +111,7 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 			runner.Logger().Info("applying mutations", "namespace", local.Namespace, "revision", local.Revision)
 
 			// 1. Start by downing the meta
-			if err := meta_down.Run(runner); err != nil {
+			if err := meta_down.Run(ctx, runner); err != nil {
 				return err
 			}
 
@@ -120,38 +121,38 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 				// a down - and everything depending on it, leaves first - in full
 				// rather than by tail, then retry once. No further retry: a second
 				// failure aborts the whole apply exactly like default mode.
-				if err := runner.SavePoint("core_attempt"); err != nil {
+				if err := runner.SavePoint(ctx, "core_attempt"); err != nil {
 					return err
 				}
-				attempt_err := sql_down.Run(runner)
+				attempt_err := sql_down.Run(ctx, runner)
 				if attempt_err == nil {
-					attempt_err = sql_up.Run(runner)
+					attempt_err = sql_up.Run(ctx, runner)
 				}
 				if attempt_err != nil {
-					if err := runner.RollbackToSavepoint("core_attempt"); err != nil {
+					if err := runner.RollbackToSavepoint(ctx, "core_attempt"); err != nil {
 						return err
 					}
 					expanded_down, expanded_up := local.ExpandForFullRebuild(sql_down.Keys(), distant, ITER_SQL)
-					if err := expanded_down.Run(runner); err != nil {
+					if err := expanded_down.Run(ctx, runner); err != nil {
 						return err
 					}
-					if err := expanded_up.Run(runner); err != nil {
+					if err := expanded_up.Run(ctx, runner); err != nil {
 						return err
 					}
-				} else if err := runner.ReleaseSavepoint("core_attempt"); err != nil {
+				} else if err := runner.ReleaseSavepoint(ctx, "core_attempt"); err != nil {
 					return err
 				}
 			} else {
-				if err := sql_down.Run(runner); err != nil {
+				if err := sql_down.Run(ctx, runner); err != nil {
 					return err
 				}
 
-				if err := sql_up.Run(runner); err != nil {
+				if err := sql_up.Run(ctx, runner); err != nil {
 					return err
 				}
 			}
 
-			if err := meta_up.Run(runner); err != nil {
+			if err := meta_up.Run(ctx, runner); err != nil {
 				return err
 			}
 		}
@@ -162,7 +163,7 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	// revisions") - they apply regardless of options.Override, since neither one
 	// executes anything either.
 	if len(local.Delete) > 0 {
-		if err := runner.DeleteMutations(local.Namespace, local.Delete); err != nil {
+		if err := runner.DeleteMutations(ctx, local.Namespace, local.Delete); err != nil {
 			return err
 		}
 	}
@@ -189,13 +190,13 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 		}
 	}
 
-	if err := runner.SaveMutations(save_set); err != nil {
+	if err := runner.SaveMutations(ctx, save_set); err != nil {
 		return err
 	}
 
 	if has_changes {
 		runner.Logger().Info("performing tests", IconKey, IconTestsStarted, "namespace", local.Namespace, "revision", local.Revision)
-		if err := TestMutationSet(runner, local); err != nil {
+		if err := TestMutationSet(ctx, runner, local); err != nil {
 			return err
 		}
 	}
@@ -230,7 +231,7 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 				return err
 			}
 			runner.Logger().Info("performing tests with override", IconKey, IconTestsStarted, "namespace", local.Namespace, "revision", local.Revision)
-			if err := TestMutationSet(runner, changed_set); err != nil {
+			if err := TestMutationSet(ctx, runner, changed_set); err != nil {
 				return err
 			}
 		}
@@ -240,12 +241,12 @@ func RunMutations(runner Executor, local *MutationSet, opts ...*MutationRunnerOp
 	return nil
 }
 
-func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*MutationRunnerOptions) (err error) {
+func RunAllMutations(ctx context.Context, runner Executor, namespaces *MutationNamespace, opts ...*MutationRunnerOptions) (err error) {
 
 	var options = MutationRunnerOptions{}
 	options.Merge(opts...)
 
-	if err := runner.Begin(); err != nil {
+	if err := runner.Begin(ctx); err != nil {
 		return err
 	}
 
@@ -256,12 +257,15 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 	defer func() {
 		if err != nil {
 			runner.Logger().Info("rolling back", IconKey, IconRolledBack)
-			runner.Rollback()
+			// ctx may be the very reason for the failure: roll back on a fresh one.
+			cleanup_ctx, cancel := CleanupContext(ctx)
+			defer cancel()
+			runner.Rollback(cleanup_ctx)
 		}
 	}()
 
 	for _, namespace := range namespaces.Keys() {
-		db_mutations, err := runner.GetDBMutationsFromDb(namespace)
+		db_mutations, err := runner.GetDBMutationsFromDb(ctx, namespace)
 		if err != nil {
 			return err
 		}
@@ -276,7 +280,7 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 			if !options.All {
 				runner.Logger().Info("no database mutations, applying highest local revision", "namespace", namespace, "revision", revisions.MaxRevision)
 				if revision, ok := revisions.Revisions[revisions.MaxRevision]; ok {
-					if err := RunMutations(runner, revision, opts...); err != nil {
+					if err := RunMutations(ctx, runner, revision, opts...); err != nil {
 						return err
 					}
 				}
@@ -289,7 +293,7 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 
 		for i := db_mutations.Revision; i <= revisions.MaxRevision; i++ {
 			if revision, ok := revisions.Revisions[i]; ok {
-				if err := RunMutations(runner, revision, opts...); err != nil {
+				if err := RunMutations(ctx, runner, revision, opts...); err != nil {
 					return err
 				}
 			}
@@ -298,12 +302,12 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 
 	runner.Logger().Info("no errors", IconKey, IconNoErrors)
 	if options.Commit {
-		if err := runner.Commit(); err != nil {
+		if err := runner.Commit(ctx); err != nil {
 			return err
 		}
 	} else {
 		runner.Logger().Info("rolling back, nothing to commit")
-		if err := runner.Rollback(); err != nil {
+		if err := runner.Rollback(ctx); err != nil {
 			return err
 		}
 	}
@@ -311,7 +315,7 @@ func RunAllMutations(runner Executor, namespaces *MutationNamespace, opts ...*Mu
 	return nil
 }
 
-func ReadAndRunMutations(uri string, paths []string, opts ...*MutationRunnerOptions) error {
+func ReadAndRunMutations(ctx context.Context, uri string, paths []string, opts ...*MutationRunnerOptions) error {
 
 	var options = MutationRunnerOptions{}
 	options.Merge(opts...)
@@ -321,14 +325,14 @@ func ReadAndRunMutations(uri string, paths []string, opts ...*MutationRunnerOpti
 		return err
 	}
 
-	runner, err := NewPgRunner(uri, options.Logger)
+	runner, err := NewPgRunner(ctx, uri, options.Logger)
 	if err != nil {
 		return err
 	}
-	defer runner.Close()
+	defer runner.Close(ctx)
 
 	// Test before
-	if err := RunAllMutations(runner, muts, &options); err != nil {
+	if err := RunAllMutations(ctx, runner, muts, &options); err != nil {
 		return err
 	}
 

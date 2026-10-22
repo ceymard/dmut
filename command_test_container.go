@@ -27,7 +27,7 @@ func (Printer) Accept(l testcontainers.Log) {
 	slog.Debug("postgres", "log", strings.TrimRight(string(l.Content), "\n"))
 }
 
-func (t TestCmd) Run() error {
+func (t TestCmd) Run(ctx context.Context) error {
 	var image = "postgres:14"
 	if t.Image != "" {
 		image = t.Image
@@ -48,7 +48,6 @@ func (t TestCmd) Run() error {
 	}
 
 	slog.Info("testing mutations", "image", image)
-	ctx := context.Background()
 	container, err := postgres.Run(ctx,
 		image,
 		postgres.WithDatabase(t.Database),
@@ -61,7 +60,12 @@ func (t TestCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	defer container.Terminate(ctx)
+	// The container must go away even when ctx was cancelled.
+	defer func() {
+		cleanup_ctx, cancel := mutations.CleanupContext(ctx)
+		defer cancel()
+		container.Terminate(cleanup_ctx)
+	}()
 
 	if slog.Default().Enabled(ctx, slog.LevelDebug) {
 		printer := Printer{}
@@ -76,7 +80,7 @@ func (t TestCmd) Run() error {
 		return err
 	}
 
-	if err := mutations.ReadAndRunMutations(uri, t.Paths, &mutations.MutationRunnerOptions{
+	if err := mutations.ReadAndRunMutations(ctx, uri, t.Paths, &mutations.MutationRunnerOptions{
 		Commit: false,
 		All:    t.All,
 	}); err != nil {

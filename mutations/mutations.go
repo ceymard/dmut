@@ -1,6 +1,7 @@
 package mutations
 
 import (
+	"context"
 	"iter"
 	"strings"
 
@@ -255,9 +256,9 @@ func (mut *Mutation) Runnable(dir IterationDirection) *Runnable {
 	}
 }
 
-func (mut *Mutation) RunRecursively(runner Executor, dir IterationDirection) error {
+func (mut *Mutation) RunRecursively(ctx context.Context, runner Executor, dir IterationDirection) error {
 	for dep := range mut.IterateDependencies(dir) {
-		if err := runner.Run(dep.Runnable(dir)); err != nil {
+		if err := runner.Run(ctx, dep.Runnable(dir)); err != nil {
 			return err
 		}
 	}

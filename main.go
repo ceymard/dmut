@@ -6,11 +6,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/alecthomas/kong"
 	"github.com/ceymard/dmut/v2/mutations"
@@ -38,7 +41,7 @@ type CollectCmd struct {
 	Revision int      `short:"r" name:"revision" help:"Emit a revision shell at this number instead of a flat collect (see specs/changes.md, Squash revisions)."`
 }
 
-func (c CollectCmd) Run() error {
+func (c CollectCmd) Run(ctx context.Context) error {
 	out, close_out, err := c.openOutfile()
 	if err != nil {
 		return err
@@ -57,13 +60,13 @@ func (c CollectCmd) Run() error {
 	var warnings []string
 
 	if len(c.Paths) == 1 && isPostgresURI(c.Paths[0]) {
-		runner, err := mutations.NewPgRunner(c.Paths[0], nil)
+		runner, err := mutations.NewPgRunner(ctx, c.Paths[0], nil)
 		if err != nil {
 			return err
 		}
-		defer runner.Close()
+		defer runner.Close(ctx)
 
-		shells, warnings, err = mutations.CollectRevisionFromDatabase(runner, c.Revision)
+		shells, warnings, err = mutations.CollectRevisionFromDatabase(ctx, runner, c.Revision)
 		if err != nil {
 			return err
 		}
@@ -108,22 +111,29 @@ func isPostgresURI(s string) bool {
 
 type VersionCmd struct{}
 
-func (VersionCmd) Run() error {
+func (VersionCmd) Run(context.Context) error {
 	fmt.Println(VERSION)
 	return nil
 }
 
 func main() {
+	// Ctrl-C cancels the context: the run stops and rolls back instead of the
+	// process being killed mid-statement.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	cli := CLI{}
-	ctx := kong.Parse(&cli,
+	kctx := kong.Parse(&cli,
+		kong.BindTo(ctx, (*context.Context)(nil)),
 		kong.Name("dmut"),
 		kong.Description("Database mutation runner. Collect, test, and apply migrations."),
 		kong.UsageOnError(),
 	)
 	logger := cli.NewLogger(os.Stderr)
 	slog.SetDefault(logger)
-	if err := ctx.Run(); err != nil {
+	if err := kctx.Run(); err != nil {
 		cli.reportError(logger, os.Stderr, err)
+		stop()
 		os.Exit(1)
 	}
 }
