@@ -1,5 +1,5 @@
 build:
-    go build -o dmut .
+    go build -ldflags "-X main.VERSION=$(git describe --tags --always --dirty)" -o dmut .
 
 # Everything. The integration tests are skipped if docker is not running.
 test:

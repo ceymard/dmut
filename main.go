@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 
@@ -19,7 +20,20 @@ import (
 	"github.com/ceymard/dmut/v2/mutations"
 )
 
-var VERSION = "1.0.0"
+// VERSION is set at build time (-ldflags "-X main.VERSION=..."). When empty, it is
+// taken from the build info Go embeds: the module tag for `go install ...@vX.Y.Z`,
+// or a git-describe-like string for a build inside a checkout.
+var VERSION = ""
+
+func version() string {
+	if VERSION != "" {
+		return VERSION
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "unknown"
+}
 
 type CLI struct {
 	LogFlags
@@ -112,7 +126,7 @@ func isPostgresURI(s string) bool {
 type VersionCmd struct{}
 
 func (VersionCmd) Run(context.Context) error {
-	fmt.Println(VERSION)
+	fmt.Println(version())
 	return nil
 }
 
