@@ -311,9 +311,30 @@ it manages is simpler, and all `core` runs before any glue, so objects and roles
 exist when glue references them. The split also encourages thinking in terms of heavy (core) vs
 light (glue) changes.
 
+### What goes in `glue`
+
+`glue` describes behaviour and access, and may only hold the statements below. Anything else is
+refused when the files are loaded, before dmut connects to a database:
+
+- `CREATE [OR REPLACE]` / `DROP` of a `FUNCTION`, `PROCEDURE`, `AGGREGATE`, `VIEW`, `TRIGGER`
+  (including `CONSTRAINT TRIGGER`), `POLICY` or `RULE`
+- `ALTER` of those same kinds (including `OWNER TO` and renames), and `ALTER DEFAULT PRIVILEGES`
+- `ALTER TABLE <table> ...` with only these actions, any number comma-separated:
+  `ENABLE` / `DISABLE` / `FORCE` / `NO FORCE ROW LEVEL SECURITY`, `ENABLE` / `DISABLE TRIGGER`,
+  `ALTER COLUMN <name> SET DEFAULT ...`, `ALTER COLUMN <name> DROP DEFAULT`
+- `GRANT ...` and `REVOKE ...`
+- `COMMENT ON ...`
+
+Everything else is refused, including `SELECT`, `WITH`, `INSERT`, `UPDATE`, `DELETE`, `DO`, `CALL`,
+`SET`, `REFRESH MATERIALIZED VIEW`, and anything that creates or alters tables, materialized views,
+sequences, indexes, schemas, types, roles, and so on. Both `up` and a hand-written `down` are
+checked; the body of a `CREATE FUNCTION ... $$ ... $$` is not. See the
+[docs](docs/content/mutation-format/core-vs-glue.md) for the details.
+
 ### What goes in `core`
 
-Statements whose down would lose data or take a long time:
+Everything else: anything that holds data, or whose down would lose data or take a long time. That
+includes seed data and `DO $$ ... $$` checks, which run in the order written:
 
 - `CREATE TABLE ...`
 - `CREATE MATERIALIZED VIEW ...` (it holds data, so it is never glue)
@@ -324,19 +345,7 @@ Statements whose down would lose data or take a long time:
 - `CREATE ROLE ...`
 - `ALTER TABLE <table> ADD COLUMN ...`
 - `ALTER TABLE <table> ADD CONSTRAINT ...`
-
-### What goes in `glue`
-
-Lightweight statements that describe behaviour and can be de-applied and re-applied often:
-
-- `CREATE FUNCTION ...` / `CREATE PROCEDURE ...`
-- `CREATE VIEW ...`
-- `CREATE TRIGGER ...`
-- `CREATE POLICY ...`
-- `ALTER TABLE <table> ENABLE ROW LEVEL SECURITY`
-- `ALTER TABLE <table> ALTER COLUMN <name> SET DEFAULT ...`
-- `GRANT ...`
-- `ALTER DEFAULT PRIVILEGES ...`
+- `ALTER TABLE <table> ALTER COLUMN <name> SET NOT NULL`
 
 ## Automatic down statements
 
@@ -527,7 +536,7 @@ and dmut makes no attempt at comparing database states: it applies, or it downs.
 tests every time to catch the most common errors, it cannot catch them all. The responsibility
 falls on the developer to make sure the revisions they write make sense.
 
-You can use `glue` blocks to write unit tests in `do $$ begin ... end $$ language plpgsql`
+You can use `core` blocks to write unit tests in `do $$ begin ... end $$ language plpgsql`
 statements, since a `raise` will fail the mutation. `test/revision/test-r3.yml` uses this to assert
 that no data was lost across a revision.
 

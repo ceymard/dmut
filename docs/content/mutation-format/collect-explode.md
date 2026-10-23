@@ -37,7 +37,6 @@ properties:
         name text not null,
         description text
       );
-  glue:
     - up: |-
         insert into properties (name, description) values
           ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),

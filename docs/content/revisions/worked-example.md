@@ -42,8 +42,8 @@ top-level keys, so a mutation can never collide with one of the reserved names (
   land on the exact same hash, or dmut treats them as different definitions and drops/recreates the
   table for no reason. `override` replaces a mutation's recorded `core` *and* `glue` *and* `needs`
   wholesale, so the seed-data insert has to be restated here too — leaving it out wouldn't fail
-  loudly, it would just make the *recorded* glue empty, and a later revision that still has that
-  insert in its own `glue` would see it as new and run it again.
+  loudly, it would just make the *recorded* core shorter, and a later revision that still has that
+  insert in its own `core` would see it as new and run it again.
 - `delete: [properties.description_search]` retires the child mutation once revision 3 lands: it
   already ran for real via `mutations:` below, so once its column is folded into `properties`'s
   override, it no longer needs separate tracking. `delete` only forgets it was being tracked — it
@@ -69,15 +69,15 @@ same transaction as everything else and fails the whole apply if the two rows fr
 didn't survive, or if full-text search over the now-consolidated column doesn't work.
 
 Running `dmut test -v -a examples/revisions` against a fresh throwaway database shows this
-directly — the log for the revision 2 → 3 transition contains no `run` record for `properties` with `kind=core` at
-all, only `glue`'s new statement (the `do $$` check — the seed insert is already accounted for by
-revision 2's override and doesn't run again):
+directly — in the revision 2 → 3 transition, `properties` runs only its new `core` statement (the
+`do $$` check, appended after the statements revision 2's override already accounts for — the table,
+the index and the seed insert don't run again), and the table is never dropped:
 
 ```
 INF applying mutations namespace=revisions revision=2
 INF run namespace=revisions revision=2 mutation=properties.description_search dir=up kind=core
 INF applying mutations namespace=revisions revision=3
-INF run namespace=revisions revision=3 mutation=properties dir=up kind=glue
+INF run namespace=revisions revision=3 mutation=properties dir=up kind=core
 INF revision check passed: 2 properties, full text search still works notice=true severity=NOTICE
 ```
 

@@ -107,14 +107,12 @@ Three things stood out while building this, worth naming plainly rather than lea
    bookkeeping a person gets wrong. `dmut test -a` catches it (a changed hash shows up as an
    unexpected `↓`/`↑` on `customers·core` in the revision 2 → 3 transition), but only after the fact,
    in CI, not while writing the file.
-3. **`glue` always running after all `core` is a real, load-bearing gotcha here, not a footnote.**
-   The seed data in this tutorial could not live in `glue` the way it does in the smaller worked
-   example, because `split_name`'s `DROP COLUMN full_name` is itself `core`, and *all* `core` in the
-   namespace runs before *any* `glue` - including every child's. Seeding through `glue` would insert
-   rows referencing a column that's already gone by the time the insert runs. The fix (move the seed
-   insert into `customers`'s own `core`) is a one-line change once you know to look for it, but the
-   failure mode - `column "full_name" of relation "customers" does not exist` - gives no hint that
-   the ordering rule, not the SQL itself, is the problem.
+3. **Seed data and checks have to live in `core`.** `glue` may not touch data: `INSERT`, `DO $$` and
+   everything else outside a short list of behaviour statements is rejected when the files are loaded
+   (see [core vs glue](../mutation-format/core-vs-glue.md)). And since *all* `core` in a namespace runs
+   before *any* `glue`, a seed insert in `glue` would also have run after every child's column changes,
+   against columns that may no longer exist. In `core`, statements run in the order written, right
+   after the table they depend on.
 
 None of these are bugs; they're the direct, honest cost of dmut's two guarantees - every revision
 is independently applicable, and `core`/`glue` ordering is global, not per-mutation. For a table with

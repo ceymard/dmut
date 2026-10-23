@@ -14,9 +14,49 @@ manages is simpler, and all `core` runs before any glue, so objects and roles ar
 exist when glue references them. The split also encourages thinking in terms of heavy (core) vs
 light (glue) changes.
 
+## What goes in `glue`
+
+`glue` describes behaviour and access. It may only hold the statements below. Anything else is
+refused when the mutation files are loaded, before dmut connects to a database:
+
+- `CREATE [OR REPLACE]` / `DROP` of a `FUNCTION`, `PROCEDURE`, `AGGREGATE`, `VIEW`, `TRIGGER`
+  (including `CONSTRAINT TRIGGER`), `POLICY` or `RULE`
+- `ALTER` of those same kinds (including `OWNER TO` and renames), and `ALTER DEFAULT PRIVILEGES`
+- `ALTER TABLE <table> ...`, but only these actions, any number of them comma-separated:
+    - `ENABLE` / `DISABLE` / `FORCE` / `NO FORCE ROW LEVEL SECURITY`
+    - `ENABLE` / `DISABLE TRIGGER`
+    - `ALTER COLUMN <name> SET DEFAULT ...` and `ALTER COLUMN <name> DROP DEFAULT`
+- `GRANT ...` and `REVOKE ...`
+- `COMMENT ON ...`
+
+These can be taken down and brought back up as often as needed without losing a single row, which
+is what lets dmut rebuild all the `glue` of a namespace whenever some `core` changes.
+
+Everything else is refused, notably:
+
+- anything that holds or shapes data: `CREATE`/`DROP`/`ALTER` of tables, materialized views,
+  sequences, indexes, schemas, types, domains, extensions, roles, and any other `ALTER TABLE` action
+  (`ADD COLUMN`, `ALTER COLUMN ... TYPE`, `SET NOT NULL`, `ADD CONSTRAINT`, `OWNER TO`, ...)
+- statements that read or write rows: `SELECT`, `WITH`, `EXPLAIN`, `INSERT`, `UPDATE`, `DELETE`,
+  `MERGE`, `TRUNCATE`, `COPY`
+- statements that run code dmut cannot see into: `DO`, `CALL`
+- maintenance and session statements: `REFRESH MATERIALIZED VIEW`, `REINDEX`, `CLUSTER`, `VACUUM`,
+  `LOCK`, `SET`, `RESET`, `BEGIN`, ...
+
+Because this is a whitelist, a statement that is not listed is refused even if it would be harmless.
+The body of a `CREATE FUNCTION ... $$ ... $$` is not inspected: a function may do anything once it
+is called. Both the `up` and a hand-written `down` of a statement are checked; a `down` generated
+by dmut comes from an `up` that has already passed. A statement string holding several statements
+(`grant ...; delete ...;`) is checked statement by statement.
+
+The error names the file, the mutation, the position of the statement and its first words, for
+instance `"create materialized view" is not allowed in glue ... ; move it to core`.
+
 ## What goes in `core`
 
-Statements whose down would lose data or take a long time:
+Everything else, which is anything that holds data or whose down would lose data or take a long
+time. Seed data and checks written as `INSERT` or `DO $$ ... $$` also go here, in the order they
+must run:
 
 - `CREATE TABLE ...`
 - `CREATE MATERIALIZED VIEW ...` (it holds data, so it is never glue)
@@ -27,19 +67,17 @@ Statements whose down would lose data or take a long time:
 - `CREATE ROLE ...`
 - `ALTER TABLE <table> ADD COLUMN ...`
 - `ALTER TABLE <table> ADD CONSTRAINT ...`
+- `ALTER TABLE <table> ALTER COLUMN <name> SET NOT NULL`
 
-## What goes in `glue`
+## Never use `CASCADE`
 
-Lightweight statements that describe behaviour and can be de-applied and re-applied often:
-
-- `CREATE FUNCTION ...` / `CREATE PROCEDURE ...`
-- `CREATE VIEW ...`
-- `CREATE TRIGGER ...`
-- `CREATE POLICY ...`
-- `ALTER TABLE <table> ENABLE ROW LEVEL SECURITY`
-- `ALTER TABLE <table> ALTER COLUMN <name> SET DEFAULT ...`
-- `GRANT ...`
-- `ALTER DEFAULT PRIVILEGES ...`
+Do not put `CASCADE` in a `DROP` statement, in `core` or in `glue`. Dmut owns the whole lifecycle
+of what it creates, and relies on each object being created in its own mutation with its
+dependencies declared. A `DROP ... CASCADE` silently removes everything that depends on the object,
+including things dmut does not know are affected: dropping a view with `CASCADE` also drops any
+materialized view built on it, and with it the data. Without `CASCADE`, Postgres refuses to drop an
+object something still depends on, and the test phase reports the missing dependency. Dmut does not
+check for this; it is on you.
 
 ## Glue doesn't always rerun when you'd expect
 

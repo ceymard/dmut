@@ -21,16 +21,10 @@ customers:
         email text not null unique,
         signed_up_at timestamptz not null default now()
       );
-    # Seed data, deliberately in `core` and not `glue`: every child mutation
-    # below (including the one that drops `full_name`) depends on `customers`
-    # and therefore runs after this mutation's own `core` list finishes - but
-    # *all* `core` in the namespace always runs before *any* `glue`, children
-    # included. Seeding through `glue` here would insert these rows after
-    # `full_name` was already dropped, and fail outright. This is the one
-    # place in this file where data lives in `core` instead of `glue` - see
-    # "core vs glue" in the docs for the usual rule, and treat this as the
-    # exception that proves it: ordering, not weight, is what actually
-    # decided it here.
+    # Seed data lives in `core`: `glue` may not hold data statements. It also has
+    # to run before the children below (including the one that drops
+    # `full_name`), which `core`'s statement order guarantees and `glue`, run
+    # after *all* `core` in the namespace, never could.
     - up: |
         insert into customers (full_name, email) values
           ('Jane Cooper', 'jane@example.com'),

@@ -98,6 +98,6 @@ and dmut makes no attempt at comparing database states: it applies, or it downs.
 tests every time to catch the most common errors, it cannot catch them all. The responsibility
 falls on the developer to make sure the revisions they write make sense.
 
-You can use `glue` blocks to write unit tests in `do $$ begin ... end $$ language plpgsql`
+You can use `core` blocks to write unit tests in `do $$ begin ... end $$ language plpgsql`
 statements, since a `raise` will fail the mutation. The [worked example](worked-example.md) uses
 exactly this to assert that no data was lost across a revision.

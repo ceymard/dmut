@@ -12,19 +12,19 @@ test:
         age integer not null default 0
       );
 
-  glue:
-    - |
-      create view test_view as select age from test;
-
     # Verify that no data was lost during the mutations
     - up: |
         do $$
         declare
           v_count integer;
         begin
-          v_count := (select count(*) from test_view);
+          v_count := (select count(*) from test);
           if v_count is null then
-            raise exception 'test_view should not be empty - test table was most likely dropped when it should not have been';
+            raise exception 'test should not be empty - test table was most likely dropped when it should not have been';
           end if;
-          raise notice 'there was % rows in test_view', v_count;
+          raise notice 'there was % rows in test', v_count;
         end $$ language plpgsql;
+
+  glue:
+    - |
+      create view test_view as select age from test;

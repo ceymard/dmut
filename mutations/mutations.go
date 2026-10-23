@@ -107,14 +107,14 @@ func parseMutation(name string, ms *MutationSet, value ast.Node) (mut *Mutation,
 				mut.Needs = list
 			}
 		case "core":
-			if list, err := parseStatements(value); err != nil {
-				return nil, err
+			if list, err := parseStatements(value, nil); err != nil {
+				return nil, oo.Wrap(err)
 			} else {
 				mut.Core = list
 			}
 		case "glue":
-			if list, err := parseStatements(value); err != nil {
-				return nil, err
+			if list, err := parseStatements(value, checkGlueSQL); err != nil {
+				return nil, oo.With("block", "glue").Wrap(err)
 			} else {
 				mut.Glue = list
 			}

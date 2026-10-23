@@ -87,7 +87,7 @@ api.users:
       CREATE TABLE api.users (
         id uuid PRIMARY KEY,
         username text not null unique,
-        roles TEXT[],
+        roles TEXT[] not null,
         first_name TEXT,
         last_name TEXT,
         name text NOT NULL,
@@ -108,7 +108,6 @@ api.users:
     - |
       alter table api.users
         alter column id set default gen_random_uuid()
-        , alter column roles set not null
         , alter column roles set default '{}'::text[]
       ;
     - grant all on table api.users to "@admin";

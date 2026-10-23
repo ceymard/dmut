@@ -17,7 +17,6 @@ mutations:
           name text not null
         );
 
-    glue:
       - up: |
           insert into test (name) values ('test1');
 

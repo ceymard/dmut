@@ -358,7 +358,7 @@ func TestFailedGlueRebuildReplaysWhatRanBeforeTheFailure(t *testing.T) {
 	records := captureLogsAt(t, slog.LevelInfo)
 	uri := testdb(t)
 	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": basic}))
-	broken := basicWithColumn("up: select 1/0\n      down: select 1")
+	broken := basicWithColumn("up: grant select on table api.nosuch to public;\n      down: revoke select on table api.users from public;")
 	if err := apply(t, uri, mutationDir(t, map[string]string{"a.yml": broken})); err == nil {
 		t.Fatal("expected the glue up to fail")
 	}

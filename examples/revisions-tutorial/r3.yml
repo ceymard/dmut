@@ -34,7 +34,6 @@ customers:
           ('Wade', 'Warren', 'wade@example.com');
       down: delete from customers where email in ('jane@example.com', 'wade@example.com');
 
-  glue:
     - up: |
         do $$
         declare
