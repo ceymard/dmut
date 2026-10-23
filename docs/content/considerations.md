@@ -19,6 +19,10 @@ icon: material/alert-decagram
   cannot be undone will fail the whole apply, not just itself. See [Automatic down statements](mutation-format/auto-down.md) for the handful of statements where "downable" means writing an
   explicit `down` yourself.
 
+- **List in `needs` every mutation whose core your core uses.** A foreign key to another table, a column of a type created elsewhere. `dmut test` tries editing each core statement, accepting that a dependent blocks it as long as `-f` can rebuild it, and fails, naming the mutation, when it cannot.
+
+- **List in `glue_needs` every mutation whose glue your glue uses.** A function called by a view, a function used by a trigger: dmut only knows to take the view down before the function if you said so. `dmut test` tries editing each glue statement and fails, naming the mutation, when something cannot be downed.
+
 - `needs` and `glue_needs` may not cross a [namespace](mutation-format/namespaces.md) or a
   [revision](revisions/index.md).
 

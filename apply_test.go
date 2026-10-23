@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/ceymard/dmut/v2/mutations"
@@ -1226,5 +1227,263 @@ api.users.retired_flag:
 	}
 	if got := savedMutations(t, uri, ""); got != 3 {
 		t.Errorf("expected api, api.users and api.users.retired_flag tracked (legacy_flag gone), got %d", got)
+	}
+}
+
+// Glue is cheap to rebuild, so changing a glue statement that other mutations' glue was
+// built on must rebuild those too instead of failing on "cannot drop ... because other
+// objects depend on it". Editing f() sends the tail g() down with it, and the view in
+// api.report uses g().
+const glueWithDependent = `api:
+  core:
+    - create schema api;
+
+api.base:
+  core:
+    - create table api.base (id int);
+  glue:
+    - create function api.f() returns int as $$ select 1 $$ language sql;
+    - create function api.g() returns int as $$ select 2 $$ language sql;
+
+api.report:
+  needs: [api.base]
+  glue_needs: [api.base]
+  glue:
+    - create view api.report as select api.g() as x;
+
+api.summary:
+  needs: [api.report]
+  glue_needs: [api.report]
+  glue:
+    - create view api.summary as select x + 1 as y from api.report;
+`
+
+func TestChangingGlueRebuildsDependentGlue(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": glueWithDependent}))
+	exec(t, uri, "insert into api.base (id) values (1);")
+
+	changed := strings.Replace(glueWithDependent, "select 1 $$", "select 11 $$", 1)
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": changed}))
+
+	if got := queryInt(t, uri, "select api.f()"); got != 11 {
+		t.Errorf("the edited function should be in place, got %d", got)
+	}
+	// Both dependents, direct and indirect, must be back.
+	if got := queryInt(t, uri, "select x from api.report"); got != 2 {
+		t.Errorf("api.report should have been rebuilt, got %d", got)
+	}
+	if got := queryInt(t, uri, "select y from api.summary"); got != 3 {
+		t.Errorf("api.summary should have been rebuilt, got %d", got)
+	}
+	if got := queryInt(t, uri, "select count(*) from api.base"); got != 1 {
+		t.Errorf("a glue change must never touch the data, found %d rows", got)
+	}
+}
+
+// A dependent that changed at the same time as what it depends on is rebuilt once, from
+// its new definition.
+func TestChangingGlueAndItsDependentTogether(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": glueWithDependent}))
+
+	changed := strings.Replace(glueWithDependent, "select 1 $$", "select 11 $$", 1)
+	changed = strings.Replace(changed, "select api.g() as x", "select api.g() * 10 as x", 1)
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": changed}))
+
+	if got := queryInt(t, uri, "select x from api.report"); got != 20 {
+		t.Errorf("api.report should use its new definition, got %d", got)
+	}
+	if got := queryInt(t, uri, "select y from api.summary"); got != 21 {
+		t.Errorf("api.summary should follow, got %d", got)
+	}
+}
+
+// Appending a glue statement is not a real down : nothing is dropped, so dependents must
+// be left alone.
+func TestAppendingGlueLeavesDependentsAlone(t *testing.T) {
+	uri := testdb(t)
+
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": glueWithDependent}))
+	// A rebuilt view would lose this comment.
+	exec(t, uri, "comment on view api.report is 'untouched';")
+
+	appended := strings.Replace(glueWithDependent,
+		"    - create function api.g() returns int as $$ select 2 $$ language sql;\n",
+		"    - create function api.g() returns int as $$ select 2 $$ language sql;\n    - create function api.h() returns int as $$ select 3 $$ language sql;\n", 1)
+	mustApply(t, uri, mutationDir(t, map[string]string{"a.yml": appended}))
+
+	if got := queryInt(t, uri, "select api.h()"); got != 3 {
+		t.Errorf("the appended function should exist, got %d", got)
+	}
+	if got := queryInt(t, uri, "select count(*) from pg_description where objoid = 'api.report'::regclass and description = 'untouched'"); got != 1 {
+		t.Error("appending glue must not rebuild its dependents")
+	}
+}
+
+// bringUp puts a mutation set in the database by hand, core first and then glue, in the
+// orders given. A real apply cannot guarantee any order between mutations that do not
+// depend on each other. A nil coreOrder brings the core up following the dependencies.
+func bringUp(t *testing.T, uri string, dir string, coreOrder []string, glueOrder []string) (*mutations.PgRunner, *mutations.MutationSet) {
+	t.Helper()
+
+	ctx := context.Background()
+	ns, err := mutations.LoadYamlMutations(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sequence, _ := ns.Map.Get("")
+	set := sequence.Revisions[sequence.MaxRevision]
+
+	runner, err := mutations.NewPgRunner(ctx, uri, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { runner.Close(ctx) })
+	if err := runner.Begin(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	if coreOrder == nil {
+		done := map[string]bool{}
+		for mut := range set.AllMutations() {
+			for dep := range mut.IterateDependencies(mutations.ITER_SQL_UP) {
+				if !done[dep.Name] {
+					done[dep.Name] = true
+					coreOrder = append(coreOrder, dep.Name)
+				}
+			}
+		}
+	}
+	for _, name := range coreOrder {
+		mut, ok := set.GetMutation(name)
+		if !ok {
+			t.Fatalf("no mutation %s", name)
+		}
+		if err := runner.Run(ctx, mut.Runnable(mutations.ITER_SQL_UP)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range glueOrder {
+		mut, ok := set.GetMutation(name)
+		if !ok {
+			t.Fatalf("no mutation %s", name)
+		}
+		if err := runner.Run(ctx, mut.Runnable(mutations.ITER_META_UP)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return runner, set
+}
+
+const glueUsedWithoutSayingSo = `api:
+  core:
+    - create schema api;
+
+api.base:
+  glue:
+    - create function api.f() returns int as $$ select 1 $$ language sql;
+    - create function api.g() returns int as $$ select 2 $$ language sql;
+
+api.report:
+  glue:
+    - create view api.report as select api.g() as x;
+`
+
+// A mutation whose glue uses another one's, without glue_needs, is not downed with it. The
+// tests must say so, because a real edit would fail the same way.
+func TestGlueEditsCatchAMissingGlueNeeds(t *testing.T) {
+	uri := testdb(t)
+	runner, set := bringUp(t, uri, mutationDir(t, map[string]string{"a.yml": glueUsedWithoutSayingSo}), nil, []string{"api.base", "api.report"})
+
+	err := mutations.TestGlueEdits(context.Background(), runner, set)
+
+	requireErrorContaining(t, err, "api.base")
+	requireErrorContaining(t, err, "glue_needs")
+	requireErrorContaining(t, err, "depend")
+}
+
+func TestGlueEditsPassWhenGlueNeedsIsDeclared(t *testing.T) {
+	uri := testdb(t)
+	declared := strings.Replace(glueUsedWithoutSayingSo, "api.report:\n", "api.report:\n  glue_needs: [api.base]\n", 1)
+	runner, set := bringUp(t, uri, mutationDir(t, map[string]string{"a.yml": declared}), nil, []string{"api.base", "api.report"})
+
+	if err := mutations.TestGlueEdits(context.Background(), runner, set); err != nil {
+		t.Fatalf("every edit should be applicable, got: %v", err)
+	}
+}
+
+// The edits are only tried, never kept.
+func TestGlueEditsLeaveTheDatabaseAsTheyFoundIt(t *testing.T) {
+	uri := testdb(t)
+	declared := strings.Replace(glueUsedWithoutSayingSo, "api.report:\n", "api.report:\n  glue_needs: [api.base]\n", 1)
+	runner, set := bringUp(t, uri, mutationDir(t, map[string]string{"a.yml": declared}), nil, []string{"api.base", "api.report"})
+
+	if err := mutations.TestGlueEdits(context.Background(), runner, set); err != nil {
+		t.Fatal(err)
+	}
+	// Still in the same transaction : the view is there and uses the original function.
+	if err := runner.Exec(context.Background(), "do $$ begin if (select x from api.report) <> 2 then raise exception 'wrong'; end if; end $$"); err != nil {
+		t.Fatalf("the glue should be as it was: %v", err)
+	}
+}
+
+const coreUsedWithoutSayingSo = `api:
+  core:
+    - create schema api;
+
+api.parent:
+  core:
+    - create table api.parent (id int primary key);
+
+api.child:
+  core:
+    - create table api.child (parent_id int references api.parent (id));
+`
+
+var coreOrder = []string{"api", "api.parent", "api.child"}
+
+// A table referencing another without needs is not rebuilt with it, so not even full mode can
+// replace the referenced one. The tests must say so, because a real edit would fail alike.
+func TestCoreEditsCatchAMissingNeeds(t *testing.T) {
+	uri := testdb(t)
+	runner, set := bringUp(t, uri, mutationDir(t, map[string]string{"a.yml": coreUsedWithoutSayingSo}), coreOrder, nil)
+
+	err := mutations.TestCoreEdits(context.Background(), runner, set)
+
+	requireErrorContaining(t, err, "api.parent")
+	requireErrorContaining(t, err, "needs")
+	requireErrorContaining(t, err, "depend")
+}
+
+// Default mode is blocked by the child's foreign key, which is why full mode exists : the
+// tests accept it as long as the rebuild works.
+func TestCoreEditsPassWhenNeedsIsDeclared(t *testing.T) {
+	uri := testdb(t)
+	declared := strings.Replace(coreUsedWithoutSayingSo, "api.child:\n", "api.child:\n  needs: [api.parent]\n", 1)
+	runner, set := bringUp(t, uri, mutationDir(t, map[string]string{"a.yml": declared}), coreOrder, nil)
+
+	if err := mutations.TestCoreEdits(context.Background(), runner, set); err != nil {
+		t.Fatalf("every edit should be applicable, got: %v", err)
+	}
+}
+
+// Rebuilding tables to try an edit must not cost the data it holds.
+func TestCoreEditsKeepTheData(t *testing.T) {
+	uri := testdb(t)
+	declared := strings.Replace(coreUsedWithoutSayingSo, "api.child:\n", "api.child:\n  needs: [api.parent]\n", 1)
+	runner, set := bringUp(t, uri, mutationDir(t, map[string]string{"a.yml": declared}), coreOrder, nil)
+	ctx := context.Background()
+	if err := runner.Exec(ctx, "insert into api.parent values (1); insert into api.child values (1);"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := mutations.TestCoreEdits(ctx, runner, set); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.Exec(ctx, "do $$ begin if (select count(*) from api.child) <> 1 or (select count(*) from api.parent) <> 1 then raise exception 'rows are gone'; end if; end $$"); err != nil {
+		t.Fatalf("the rows should still be there: %v", err)
 	}
 }

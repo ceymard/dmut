@@ -316,6 +316,7 @@ light (glue) changes.
 Statements whose down would lose data or take a long time:
 
 - `CREATE TABLE ...`
+- `CREATE MATERIALIZED VIEW ...` (it holds data, so it is never glue)
 - `CREATE INDEX ...` (no data is lost, but indexes can be slow to create)
 - `CREATE TYPE ...`
 - `CREATE SCHEMA ...`
@@ -329,7 +330,7 @@ Statements whose down would lose data or take a long time:
 Lightweight statements that describe behaviour and can be de-applied and re-applied often:
 
 - `CREATE FUNCTION ...` / `CREATE PROCEDURE ...`
-- `CREATE [MATERIALIZED] VIEW ...`
+- `CREATE VIEW ...`
 - `CREATE TRIGGER ...`
 - `CREATE POLICY ...`
 - `ALTER TABLE <table> ENABLE ROW LEVEL SECURITY`

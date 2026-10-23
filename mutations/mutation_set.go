@@ -2,6 +2,7 @@ package mutations
 
 import (
 	"iter"
+	"slices"
 	"strings"
 
 	"github.com/samber/oops"
@@ -94,6 +95,32 @@ func (ms *MutationSet) WithOverrides() *MutationSet {
 	}
 	ms2.ResolveDependencies()
 	return ms2
+}
+
+// withEdited returns a copy of ms where one statement of the named mutation (core, or glue
+// when dir.Meta) reads as changed to commonPrefixLen. Only its down text changes : the copy is
+// meant to be compared with ms (see testEdits), so its downs are never run and its ups are the
+// real ones. ms itself is left untouched.
+func (ms *MutationSet) withEdited(name string, index int, dir IterationDirection) *MutationSet {
+	cp := NewMutationSet(ms.Namespace, ms.Revision, ms.File)
+	for mut := range ms.AllMutations() {
+		c := *mut
+		// ResolveDependencies appends to these : keep it off the original's arrays.
+		c.Needs = slices.Clone(mut.Needs)
+		c.GlueNeeds = slices.Clone(mut.GlueNeeds)
+		if mut.Name == name {
+			if dir.Meta {
+				c.Glue = slices.Clone(mut.Glue)
+				c.Glue[index].Down = "select 'edited'"
+			} else {
+				c.Core = slices.Clone(mut.Core)
+				c.Core[index].Down = "select 'edited'"
+			}
+		}
+		cp.AddMutation(&c)
+	}
+	cp.ResolveDependencies()
+	return cp
 }
 
 func (ms *MutationSet) GetMutation(name string) (*Mutation, bool) {
@@ -305,6 +332,11 @@ func (ms *MutationSet) GetMutationsDelta(other *MutationSet, dir IterationDirect
 // any_real_down reports whether any mutation needed a non-empty old tail (as opposed to a
 // pure append or a brand-new mutation) - callers use this to decide whether glue needs the
 // old whole-mutation teardown instead of this same LCP treatment (see RunMutations).
+//
+// For glue (dir.Meta), a mutation that needs a real down also takes every mutation depending
+// on it down in full, and brings it back up in full: a dependent can use any object of the
+// tail, and glue is cheap to rebuild. Core does not cascade, since rebuilding a dependent's
+// core would destroy its data ; `full` mode asks for that explicitly.
 func (ms *MutationSet) GetLCPDelta(other *MutationSet, dir IterationDirection) (
 	to_down *RunnableMap,
 	to_up *RunnableMap,
@@ -384,12 +416,32 @@ func (ms *MutationSet) GetLCPDelta(other *MutationSet, dir IterationDirection) (
 		tails[local.Name] = tail{old_tail, new_tail, other_mut, local}
 	}
 
-	// IterateDependencies(up_dir) yields ancestors before self; IterateDependencies
-	// (down_dir) yields dependents before self. Walking every local mutation's own
-	// chain guarantees the right relative order regardless of which mutation the
-	// outer loop happens to reach first - by the time any mutation is inserted, every
-	// mutation before it in the chain already was, on an earlier iteration if not this
-	// one.
+	// The dependents come from the recorded graph, which is what is actually in the database.
+	// Those no longer present locally were already downed in full by the loop above.
+	if dir.Meta {
+		for name, t := range tails {
+			if len(t.old) == 0 {
+				continue
+			}
+			for dep := range t.other_mut.IterateDependencies(down_dir) {
+				if dep.Name == name {
+					continue
+				}
+				if _, ok := ms.GetMutation(dep.Name); !ok {
+					continue
+				}
+				cascaded.Add(dep.Name)
+				delete(tails, dep.Name)
+			}
+		}
+	}
+
+	// IterateDependencies(up_dir) yields ancestors before self. Walking every mutation's own
+	// chain guarantees the right relative order regardless of which mutation the outer loop
+	// happens to reach first - by the time any mutation is inserted, every mutation before it
+	// in the chain already was, on an earlier iteration if not this one. The down loop below
+	// relies on the same property with IterateDependencies(down_dir), which yields dependents
+	// before self.
 	for local := range ms.AllMutations() {
 		for dep := range local.IterateDependencies(up_dir) {
 			if _, done := to_up.Get(dep.Name); done {
@@ -402,11 +454,18 @@ func (ms *MutationSet) GetLCPDelta(other *MutationSet, dir IterationDirection) (
 				to_up.Put(dep.Name, dep.Runnable(up_dir))
 			}
 		}
-		for dep := range local.IterateDependencies(down_dir) {
+	}
+
+	// Down walks the recorded graph, since that is what has to come down whatever the new
+	// definitions now declare.
+	for recorded := range other.AllMutations() {
+		for dep := range recorded.IterateDependencies(down_dir) {
 			if _, done := to_down.Get(dep.Name); done {
 				continue
 			}
-			if t, ok := tails[dep.Name]; ok && len(t.old) > 0 {
+			if cascaded.Contains(dep.Name) {
+				to_down.Put(dep.Name, dep.Runnable(down_dir))
+			} else if t, ok := tails[dep.Name]; ok && len(t.old) > 0 {
 				to_down.Put(dep.Name, withStatements(t.other_mut, t.old).Runnable(down_dir))
 			}
 		}

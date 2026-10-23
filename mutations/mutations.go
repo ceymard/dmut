@@ -4,6 +4,7 @@ import (
 	"context"
 	"iter"
 	"strings"
+	"sync"
 
 	"github.com/goccy/go-yaml"
 	"github.com/goccy/go-yaml/ast"
@@ -184,11 +185,20 @@ func (mut *Mutation) Hash(dir IterationDirection) string {
 // down text (whitespace/comments ignored, per DigestBuffer.AddStatement), suitable for
 // direct comparison between two statements - see commonPrefixLen.
 func normalizedStatement(stmt MutationStatement) string {
+	if cached, ok := normalizedStatements.Load(stmt); ok {
+		return cached.(string)
+	}
 	dg := NewDigestBuffer()
 	_ = dg.AddStatement(stmt.Up)
 	_ = dg.AddStatement(stmt.Down)
-	return dg.String()
+	fingerprint := dg.String()
+	normalizedStatements.Store(stmt, fingerprint)
+	return fingerprint
 }
+
+// normalizedStatements memoizes normalizedStatement : lexing is the costly part, and
+// TestGlueEdits compares the same statements over and over.
+var normalizedStatements sync.Map
 
 // commonPrefixLen returns the length of the longest common prefix of old and new,
 // comparing statements by code-equivalence (see normalizedStatement) rather than exact

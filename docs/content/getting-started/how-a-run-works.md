@@ -4,14 +4,14 @@ Everything happens inside a single transaction, per namespace, in ascending revi
 Failure at any step halts the process and nothing is applied.
 
 1. Read the mutations already applied from `__dmut__.mutations` for that namespace.
-2. Compute the delta. A mutation is obsolete if it no longer exists locally or if its hash changed.
-   Obsolete mutations are downed along with everything that depends on them, recursively.
+2. Compute the delta, mutation by mutation and separately for `core` and `glue`. Statements are compared in order with what was recorded, and everything from the first one that differs onward is the "tail": the recorded tail comes down, the new tail goes up, and a pure append only goes up. A mutation that no longer exists locally is downed in full, along with everything that depends on it, recursively.
 3. Down the obsolete `glue`, down the obsolete `core`, up the new `core`, then up the new `glue`. If
    *any* `core` had to be downed, *all* `glue` in the namespace is downed and re-upped, since glue
    may depend on any object the core touched. That rebuild is logged as two records, not one per
    glue mutation (see [Logging](cli-reference.md#logging)).
+   When only `glue` changed and a tail has to come down, every mutation whose `glue` depends on it (`glue_needs`, directly or not) is downed first and re-upped after, in full, since it may use anything in that tail. `core` does not do this: rebuilding a dependent's `core` would destroy its data, so a blocked `core` tail fails the run, unless `-f` asks dmut to rebuild the dependents.
 4. Record the new state in `__dmut__.mutations`.
-5. Test, when anything changed: down all `glue`, then replay each mutation's `glue` chain
+5. Test, when anything changed. First, with everything up, try the `glue` changes that editing each single `glue` statement would cause: the tail comes down with whatever depends on it, goes back up, and is rolled back. This fails, naming the mutation and the statement, when something cannot be downed, which usually means a mutation uses what another one creates without listing it in `glue_needs`. Then, with all the `glue` down, do the same for `core`: each `core` statement is tried as edited, and since a dependent table normally blocks that, the rebuild of the mutation and its dependents that `-f` would do is accepted. It fails, naming the mutation and the statement, when even that cannot run, which usually means a mutation uses what another one creates without listing it in `needs`. Then replay each mutation's `glue` chain
    up-then-down on its own; then down all `core` and do the same for `core`. This runs against the
    target database behind savepoints and is rolled back afterwards, so no data is lost — but every
    mutation must be cleanly downable or the whole apply aborts.
