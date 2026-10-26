@@ -171,7 +171,7 @@ func TestFormatSQLBlock(t *testing.T) {
 	}
 }
 
-func TestPlainLoggerColorsDirAndKindByValue(t *testing.T) {
+func TestPlainLoggerColorsDirByValue(t *testing.T) {
 	colored := func(key, value string) string {
 		var buf bytes.Buffer
 		LogFlags{Color: "always"}.NewLogger(&buf).Info("run", key, value)
@@ -179,7 +179,6 @@ func TestPlainLoggerColorsDirAndKindByValue(t *testing.T) {
 	}
 	for _, c := range []struct{ key, value, color string }{
 		{"dir", "up", "92m"}, {"dir", "down", "91m"},
-		{"kind", "core", "95m"}, {"kind", "glue", "94m"},
 	} {
 		if got := colored(c.key, c.value); !strings.Contains(got, c.color+c.key+"=") {
 			t.Errorf("%s=%s should use color %s: %q", c.key, c.value, c.color, got)

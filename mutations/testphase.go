@@ -29,9 +29,16 @@ func (a *applier) testPhase(ctx context.Context, set *model.Revision) error {
 	}
 	a.r.logger.Info("performing tests", IconKey, IconTestsStarted, "namespace", set.Namespace, "revision", set.Number)
 	a.r.BeginCapture(Capture{Phase: "test"})
-	failed := true
-	defer func() { a.r.EndCapture(failed, "test steps before the failure:") }()
+	err = a.testSteps(ctx, set, state, order)
+	a.r.EndCapture(err != nil, "test steps before the failure:")
+	if err != nil {
+		return err
+	}
+	a.r.logger.Info("tests passed", IconKey, IconTestsPassed, "namespace", set.Namespace, "revision", set.Number)
+	return nil
+}
 
+func (a *applier) testSteps(ctx context.Context, set *model.Revision, state model.State, order []*model.Mutation) error {
 	all := make([]string, len(order))
 	for i, m := range order {
 		all[i] = m.Name
@@ -44,8 +51,6 @@ func (a *applier) testPhase(ctx context.Context, set *model.Revision) error {
 		return oops.In("test").With("namespace", set.Namespace).
 			Wrapf(err, "the test phase failed while taking every mutation down and up")
 	}
-	failed = false
-	a.r.logger.Info("tests passed", IconKey, IconTestsPassed, "namespace", set.Namespace, "revision", set.Number)
 	return nil
 }
 
