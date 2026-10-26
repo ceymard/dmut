@@ -16,6 +16,8 @@ type RecordedStatement struct {
 	Down string
 	// Digest is the text produced by Digest.
 	Digest string
+	// Saved holds the values of the saved settings, by name; a nil value was unset.
+	Saved map[string]*string
 }
 
 // RecordedDep is a dependency entry as stored: its pattern, triggers and the names it matched.

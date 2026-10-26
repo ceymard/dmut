@@ -1,0 +1,15 @@
+namespace: __dmut__
+structural: true
+sql:
+  - |
+    create table __dmut__.mutations (
+      namespace text not null,
+      name text not null,
+      file text not null,
+      revision int not null,
+      structural boolean not null,
+      reapply_on text[],
+      ts timestamp with time zone not null default now(),
+
+      primary key (namespace, name)
+    )

@@ -199,6 +199,8 @@ func TestStatementErrors(t *testing.T) {
 		"not a statement":     "- 12",
 		"bad setting":         "- {seed: select 1, settings: [foo.bar]}",
 		"short setting":       "- {seed: select 1, settings: [dmut.env]}",
+		"hyphen in setting":   "- {seed: select 1, settings: [dmut.env.a-b]}",
+		"digit first":         "- {seed: select 1, settings: [dmut.env.1a]}",
 		"duplicate setting":   "- {seed: select 1, settings: [dmut.env.A, DMUT.env.a]}",
 		"setting unknown key": "- {seed: select 1, settings: [{name: dmut.env.A, keep: true}]}",
 		"data row length":     "- {seed: 'insert into t values ($1, $2)', data: [[1, 2], [3]]}",

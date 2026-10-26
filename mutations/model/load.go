@@ -17,7 +17,18 @@ import (
 // Revisions are checked for gaps, and dependencies are resolved. Files that are not
 // .yml or .yaml are ignored.
 func LoadPaths(paths ...string) (*Project, error) {
+	return Load(nil, paths...)
+}
+
+// Load is LoadPaths preceded by the yaml files under the root of each fsys, which come first
+// in the namespace order.
+func Load(fsyss []fs.FS, paths ...string) (*Project, error) {
 	b := newBuilder()
+	for _, fsys := range fsyss {
+		if err := b.readDir(fsys, ".", ""); err != nil {
+			return nil, err
+		}
+	}
 	for _, p := range paths {
 		info, err := os.Stat(p)
 		if err != nil {
@@ -37,11 +48,7 @@ func LoadPaths(paths ...string) (*Project, error) {
 
 // LoadFS reads the yaml files under the root of fsys into a Project.
 func LoadFS(fsys fs.FS) (*Project, error) {
-	b := newBuilder()
-	if err := b.readDir(fsys, ".", ""); err != nil {
-		return nil, err
-	}
-	return b.finish()
+	return Load([]fs.FS{fsys})
 }
 
 type nsBuild struct {

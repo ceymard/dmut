@@ -1,0 +1,4 @@
+namespace: __dmut__
+structural: true
+sql:
+  - create schema __dmut__

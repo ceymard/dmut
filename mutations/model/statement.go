@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -257,15 +258,18 @@ func parseSettings(w where, raw any) ([]Setting, error) {
 	return out, nil
 }
 
-// validSettingName wants `dmut.` followed by at least one more dot-separated part.
+var settingPartRe = regexp.MustCompile(`^[\p{L}_][\p{L}\p{N}_$]*$`)
+
+// validSettingName wants `dmut.` followed by at least one more dot-separated part. Postgres
+// refuses a part that starts with a digit or holds anything but letters, digits, _ and $.
 func validSettingName(name string) error {
 	parts := strings.Split(name, ".")
 	if len(parts) < 3 || !strings.EqualFold(parts[0], "dmut") {
 		return fmt.Errorf("setting name %q must start with dmut. and have at least one more dot", name)
 	}
 	for _, p := range parts {
-		if p == "" {
-			return fmt.Errorf("setting name %q has an empty part", name)
+		if !settingPartRe.MatchString(p) {
+			return fmt.Errorf("setting name %q: %q must start with a letter or _ and hold only letters, digits, _ and $", name, p)
 		}
 	}
 	return nil

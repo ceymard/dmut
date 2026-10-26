@@ -1,0 +1,18 @@
+namespace: __dmut__
+structural: true
+deps: [dmut.mutations]
+sql:
+  - |
+    create table __dmut__.statements (
+      namespace text not null,
+      mutation text not null,
+      position int not null,
+      kind text not null check (kind in ('reversible', 'seed', 'check')),
+      up text not null,
+      down text,
+      digest text not null,
+      saved jsonb,
+
+      primary key (namespace, mutation, position),
+      foreign key (namespace, mutation) references __dmut__.mutations (namespace, name) on delete cascade
+    )
