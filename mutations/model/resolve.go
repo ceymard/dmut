@@ -154,3 +154,36 @@ func (r *Revision) UpOrder() ([]*Mutation, error) {
 	}
 	return order, nil
 }
+
+// OverrideSet returns a revision made of the override entries that delete: leaves, to test
+// what is recorded in their place, or nil when there are none. Dependencies on mutations
+// outside the set are dropped, as those are not part of what is tested.
+func (r *Revision) OverrideSet() *Revision {
+	deleted := map[string]bool{}
+	for _, name := range r.Delete {
+		deleted[name] = true
+	}
+	set := &Revision{Namespace: r.Namespace, Number: r.Number, byName: map[string]*Mutation{}}
+	for _, o := range r.Override {
+		if !deleted[o.Name] {
+			cp := *o
+			set.Mutations = append(set.Mutations, &cp)
+			set.byName[cp.Name] = &cp
+		}
+	}
+	if len(set.Mutations) == 0 {
+		return nil
+	}
+	for _, m := range set.Mutations {
+		kept := make([]DepEntry, 0, len(m.Deps))
+		for _, entry := range m.Deps {
+			if _, ok := set.byName[entry.Pattern]; ok || isPattern(entry.Pattern) {
+				kept = append(kept, entry)
+			}
+		}
+		m.Deps = kept
+		// The names were checked when the revision loaded, so resolving cannot fail.
+		_ = resolveMutation(m, set.byName, set.Mutations, set)
+	}
+	return set
+}

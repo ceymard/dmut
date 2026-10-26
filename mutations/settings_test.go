@@ -126,9 +126,9 @@ sql:
 	h.want("select saved::text from __dmut__.statements where namespace = '' and mutation = 'm'", `{"dmut.values.p": "b"}`)
 
 	// Not saved: the down reads an empty value, and so cannot drop the table.
+	// The test phase finds it at once.
 	h2 := newHarness(t)
-	h2.mustApply(mk("dmut.values.p"), set("a"))
-	err := h2.apply(mk("dmut.values.p"), set("b"))
+	err := h2.apply(mk("dmut.values.p"), set("a"))
 	if err == nil || !strings.Contains(err.Error(), "_t") {
 		t.Errorf("the down should have read an empty setting and failed, got %v", err)
 	}

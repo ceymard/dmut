@@ -50,6 +50,8 @@ type applier struct {
 	r      *Runner
 	opts   Options
 	values settingValues
+	// seedsTwice makes up() run each seed two times in a row, as the test phase does.
+	seedsTwice bool
 }
 
 // ApplyProject applies the namespaces of project, in order, in one transaction. A namespace
@@ -149,7 +151,19 @@ func (a *applier) applyRevision(ctx context.Context, project *model.Project, rev
 			return err
 		}
 	}
-	return a.recordOverrides(ctx, rev)
+	if !plan.Empty() {
+		if err := a.testPhase(ctx, rev); err != nil {
+			return err
+		}
+	}
+	if err := a.recordOverrides(ctx, rev); err != nil {
+		return err
+	}
+	// What is recorded in place of what ran must round-trip as well.
+	if set := rev.OverrideSet(); set != nil {
+		return a.testPhase(ctx, set)
+	}
+	return nil
 }
 
 // run executes the plan. In the mode force, a failing plan is rolled back and tried again with

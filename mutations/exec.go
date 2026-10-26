@@ -24,17 +24,23 @@ func (a *applier) up(ctx context.Context, ns string, m *model.Mutation, from int
 		if err := a.r.setSettings(ctx, loc, names, values); err != nil {
 			return err
 		}
-		var err error
-		switch {
-		case st.Kind == model.KindCheck:
-			err = a.r.check(ctx, loc, st.Up)
-		case st.Data != nil:
-			err = a.r.execRows(ctx, loc, st.Up, st.Data)
-		default:
-			err = a.r.execAt(ctx, loc, st.Up)
+		runs := 1
+		if a.seedsTwice && st.Kind == model.KindSeed {
+			runs = 2
 		}
-		if err != nil {
-			return err
+		for range runs {
+			var err error
+			switch {
+			case st.Kind == model.KindCheck:
+				err = a.r.check(ctx, loc, st.Up)
+			case st.Data != nil:
+				err = a.r.execRows(ctx, loc, st.Up, st.Data)
+			default:
+				err = a.r.execAt(ctx, loc, st.Up)
+			}
+			if err != nil {
+				return err
+			}
 		}
 		if err := a.r.clearSettings(ctx, loc, names); err != nil {
 			return err

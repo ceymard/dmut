@@ -74,7 +74,7 @@ func TestSeedDataBadValueNamesTheStatement(t *testing.T) {
 
 func TestChecks(t *testing.T) {
 	h := newHarness(t)
-	table := "structural: true\nsql:\n  - create table t (a int)\n  - seed: insert into t values (1)\n"
+	table := "structural: true\nsql:\n  - create table t (a int)\n  - seed: insert into t select 1 where not exists (select 1 from t)\n"
 	ok := "deps: [t]\nsql:\n  - ensure: select count(*) = 1 from t\n"
 	h.mustApply(f("t", table, "c", ok))
 

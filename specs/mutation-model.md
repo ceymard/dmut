@@ -229,8 +229,10 @@ Rules:
 The test phase runs when anything changed, inside the apply transaction, behind savepoints, and is rolled back. Each step that fails names the mutation and the statement. A down in the test phase receives the saved values that its up stored, as in a real run (section 7, rule 6).
 
 1. All mutations are up.
-2. For each mutation, in dependency order: dmut takes the mutation down in full, with every dependent that would reapply because of it, directly or not. Then it brings them all up again. Then it rolls back to the start of this step.
+2. For each mutation, in dependency order: dmut takes the mutation down in full, with all its dependents, directly or not, whatever their triggers say. Then it brings them all up again. Then it rolls back to the start of this step.
 3. dmut takes all mutations down in reverse dependency order, and brings them all up again. During the up, dmut runs each seed twice in a row. Then it rolls back.
+
+> 📜 **ADR**: Step 2 reapplies all dependents, as the mode `force` does, because a mutation such as a schema cannot go down while the structural mutations inside it stay up, and a project that declares them as it should is not asked to make them reapply by trigger.
 
 > 📜 **ADR**: Step 2 replaces the simulation of every single-statement edit. A tail that comes down removes a subset of the objects of a full down. If the full down works with the declared dependents, a tail down works with them. Step 3 covers the order of statements inside one mutation.
 

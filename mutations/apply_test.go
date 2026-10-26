@@ -238,14 +238,24 @@ func TestApplyForceModeFallsBackToReapplyingDependents(t *testing.T) {
 	h.want("select x from v", "2")
 }
 
-func TestApplyOverrideRecordsWithoutRunning(t *testing.T) {
+func TestApplyOverrideAdoptsExistingObjects(t *testing.T) {
 	h := newHarness(t)
-	h.mustApply(f("t", "structural: true\nsql:\n  - create table t (a int)\n"), func(o *Options) { o.Override = true })
-	h.want("select to_regclass('t') is null", "true")
+	h.mustApply(f()) // dmut's own tables first
+	h.query("create table t (a int)")
+	files := f("t", "structural: true\nsql:\n  - create table t (a int)\n")
+	h.mustApply(files, func(o *Options) { o.Override = true })
 	h.want("select count(*) from __dmut__.statements where namespace = '' and mutation = 't'", "1")
 	// What is recorded counts as applied.
-	h.mustApply(f("t", "structural: true\nsql:\n  - create table t (a int)\n"))
+	h.mustApply(files)
 	h.wantRan("")
+}
+
+func TestApplyOverrideOfMissingObjectsFails(t *testing.T) {
+	h := newHarness(t)
+	err := h.apply(f("t", "structural: true\nsql:\n  - create table t (a int)\n"), func(o *Options) { o.Override = true })
+	if err == nil || !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("the test phase should refuse to record what is not there, got %v", err)
+	}
 }
 
 func TestApplyRevisionsWithDeleteAndOverride(t *testing.T) {
