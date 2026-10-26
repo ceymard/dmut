@@ -14,28 +14,6 @@
 - NEVER rm -rf previously produced docs when testing them with zensical ; it messes up the live server
 - In markdown, **DO NOT WRAP** to an arbitrary column size ; editors soft-wrap. Editing \n wrapped paragraphs is a pain.
 
-# When authoring
-
-The redactor(s) write specs with you as a mirror, to help shape them as best as possible for a prompt implementation by a low/medium thinking agent.
-
-With lines starting by `>>` The user is prompting you and/or answering your questions. Remove those blocks when handling the file. DO NOT keep whole discussions ; if a question is answered, fold the answer into the spec and remove both question an answer. If a new question is to be asked, it goes back in a _new_ `> **Question:**` block.
-
-Spec language MUST be specification-only : no musing, rationale, or back-and-forth outside a blockquote. Everything outside a blockquote is a binding rule. A blockquote is optional context — skip it when implementing, and consult it only when a rule seems ambiguous or you want to check a judgment call. No remnant of our conversation may remain outside a blockquote ; code blocks are the one exception, where explanatory inline comments stay regardless.
-
-Blockquote types :
-
-- `> **Why:**` — rationale/justification for the rule immediately above it, only for rules that appear intentional or non-trivial that clearly raise eyebrows.
-- `> **Question:**` — a lingering question you need answered. Remove it once answered (in the text, or during conversation) ; amend it in place if the answer isn't sufficient yet.
-- `> **Thoughts:**` — your own scratch reasoning or advice. The redactor deletes these by default ; delete one yourself only once it's gone obsolete (superseded, or its question already resolved elsewhere).
-
-Style constraints on spec text (outside blockquotes):
-
-- **No self-narration.** Never describe how the spec came to say what it says — "this session's own convention," "an earlier draft had X," "corrected here rather than left to drift," "not an oversight." State the current rule only; don't narrate its history, not even in a `> Why:`.
-- DO NOT keep justifications about why a choice was made over an idea that is not and will not be implemented ; only keep _current_ and relevant information.
-- **One rule, one sentence.** If a bullet needs "not X, not Y either, but Z" hedging to land, the justification has leaked into the rule. Rewrite as a flat positive statement. Move the "why not X" reasoning to `> Why:`, or drop it if it isn't needed to resolve a real ambiguity.
-- **Rationale is opt-in reading, not load-bearing.** A rule must be fully implementable with every blockquote stripped from the doc. Test literally: if deleting all `>` blocks removes information needed to implement correctly, the split has failed — move that content out of the blockquote and into the rule, or accept it's optional context.
-- **Cross-references are citations, not sentences.** `` `specs/foo.md ## Bar` `` terminates a clause ; it doesn't spawn a subordinate clause explaining why that section is relevant.
-
 # When writing code
 
 ## Comment style
@@ -48,22 +26,21 @@ The reader is in godoc or an editor hover, not the source. The comment is the wh
 
 - Start with the identifier's name; first sentence is a complete summary that stands alone (it's what package listings and search show).
 - State what callers must know and can't infer from the signature: preconditions, which error conditions are distinguishable, concurrency safety, who owns/closes returned resources, whether an argument is retained or aliased, nil handling, whether the zero value is usable, whether it blocks or does I/O.
-- State the contract directly. Do NOT substitute a spec citation for it — an external consumer can't follow a repo-relative link. Cite the spec in addition, never instead.
-- Keep implementation rationale OUT. Why this approach beat another, what the internals do — inline, not here.
+- State the contract directly. Do NOT cite spec or link to it ; it will be deleted.
+- Keep implementation rationale OUT. Why this approach beat another, what the internals do — inline, not here. ADRs are the place for that.
 - Methods satisfying an interface may defer: "// Read implements io.Reader."
 
 ### Inline comments, and unexported identifiers
 
-The reader can see the code. Comment only non-obvious decisions, invariants, and ordering constraints. Two lines each. State the constraint and its reason; stop.
+The reader can see the code. Comment only non-obvious decisions, invariants, and ordering constraints. Two lines each max. State the constraint and its reason; stop.
 
 - Don't explain standard library or language semantics.
 - Don't restate what a referenced spec section, doc comment, or nearby log message already says — cite it instead.
 - Don't enumerate the consequences of violating a constraint.
 - Don't argue against alternatives unless one was tried and broke.
 - No parentheticals inside parentheticals.
-- Unexported identifiers get a doc comment only where the name doesn't carry it. 
+- Unexported identifiers get a doc comment only where the name doesn't carry it.
 
 # Golang code
 
 - Errors MUST use github.com/samber/oops and be provided relevant context. Always forward/wrap as needed.
-
