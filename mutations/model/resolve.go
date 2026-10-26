@@ -15,39 +15,78 @@ func (r *Revision) Mutation(name string) (*Mutation, bool) {
 }
 
 // Resolve fills Parents and Matched of every mutation and checks the dependency graph
-// for missing names and cycles. Override entries are recorded, not run, and are left alone.
+// for missing names and cycles. Override entries are resolved against the mutations that
+// will be recorded: the mutations not deleted, with the overrides in their place.
 func (r *Revision) Resolve() error {
 	for _, m := range r.Mutations {
-		w := where{file: m.File, mutation: m.Name}
-		m.Parents = nil
-		for i := len(m.Name); i > 0; i-- {
-			if m.Name[i-1] != '.' {
-				continue
-			}
-			if parent, ok := r.byName[m.Name[:i-1]]; ok {
-				m.Parents = append(m.Parents, parent)
-			}
-		}
-		m.Matched = make([][]*Mutation, len(m.Deps))
-		for i, entry := range m.Deps {
-			if !isPattern(entry.Pattern) {
-				dep, ok := r.byName[entry.Pattern]
-				if !ok {
-					return w.errf("depends on %s, which does not exist in revision %d of namespace %q", entry.Pattern, r.Number, r.Namespace)
-				}
-				m.Matched[i] = []*Mutation{dep}
-				continue
-			}
-			for _, other := range r.Mutations {
-				if other != m && matchPattern(entry.Pattern, other.Name) {
-					m.Matched[i] = append(m.Matched[i], other)
-				}
-			}
-			sort.Slice(m.Matched[i], func(a, b int) bool { return m.Matched[i][a].Name < m.Matched[i][b].Name })
+		if err := resolveMutation(m, r.byName, r.Mutations, r); err != nil {
+			return err
 		}
 	}
-	_, err := r.UpOrder()
-	return err
+	if _, err := r.UpOrder(); err != nil {
+		return err
+	}
+	if len(r.Override) == 0 {
+		return nil
+	}
+	deleted := map[string]bool{}
+	for _, name := range r.Delete {
+		deleted[name] = true
+	}
+	effective := map[string]*Mutation{}
+	for _, m := range r.Mutations {
+		if !deleted[m.Name] {
+			effective[m.Name] = m
+		}
+	}
+	for _, o := range r.Override {
+		if !deleted[o.Name] {
+			effective[o.Name] = o
+		}
+	}
+	all := make([]*Mutation, 0, len(effective))
+	for _, m := range effective {
+		all = append(all, m)
+	}
+	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
+	for _, o := range r.Override {
+		if err := resolveMutation(o, effective, all, r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// resolveMutation sets Parents and Matched of m from the mutations in byName and all.
+func resolveMutation(m *Mutation, byName map[string]*Mutation, all []*Mutation, r *Revision) error {
+	w := where{file: m.File, mutation: m.Name}
+	m.Parents = nil
+	for i := len(m.Name); i > 0; i-- {
+		if m.Name[i-1] != '.' {
+			continue
+		}
+		if parent, ok := byName[m.Name[:i-1]]; ok {
+			m.Parents = append(m.Parents, parent)
+		}
+	}
+	m.Matched = make([][]*Mutation, len(m.Deps))
+	for i, entry := range m.Deps {
+		if !isPattern(entry.Pattern) {
+			dep, ok := byName[entry.Pattern]
+			if !ok {
+				return w.errf("depends on %s, which does not exist in revision %d of namespace %q", entry.Pattern, r.Number, r.Namespace)
+			}
+			m.Matched[i] = []*Mutation{dep}
+			continue
+		}
+		for _, other := range all {
+			if other != m && matchPattern(entry.Pattern, other.Name) {
+				m.Matched[i] = append(m.Matched[i], other)
+			}
+		}
+		sort.Slice(m.Matched[i], func(a, b int) bool { return m.Matched[i][a].Name < m.Matched[i][b].Name })
+	}
+	return nil
 }
 
 // Dependencies returns the distinct mutations m depends on, sorted by name.

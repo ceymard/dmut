@@ -123,14 +123,7 @@ func (r *Runner) Exec(ctx context.Context, sql string, args ...any) error {
 func (r *Runner) execAt(ctx context.Context, loc location, sql string, args ...any) error {
 	r.logger.Debug("sql", "sql", sql)
 	if _, err := r.conn.Exec(ctx, sql, args...); err != nil {
-		oo := oops.In("pg")
-		if loc.Mutation != "" {
-			oo = oo.With("namespace", loc.Namespace).With("mutation", loc.Mutation).With("file", loc.File)
-			if loc.Position > 0 {
-				oo = oo.With("statement_index", loc.Position)
-			}
-		}
-		return oo.Wrap(wrapPgError(err, sql))
+		return locate(loc, wrapPgError(err, sql))
 	}
 	return nil
 }

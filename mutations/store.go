@@ -219,6 +219,11 @@ func (r *Runner) SaveMutation(ctx context.Context, namespace string, rec *model.
 	return r.sendBatch(ctx, b, upsert)
 }
 
+// SetRevision marks every mutation of the namespace as being at revision.
+func (r *Runner) SetRevision(ctx context.Context, namespace string, revision int) error {
+	return r.Exec(ctx, `update __dmut__.mutations set revision = $2 where namespace = $1 and revision <> $2`, namespace, revision)
+}
+
 // sendBatch runs the queued queries in one round trip; sql names the batch in errors.
 func (r *Runner) sendBatch(ctx context.Context, b *pgx.Batch, sql string) error {
 	if b.Len() == 0 {
