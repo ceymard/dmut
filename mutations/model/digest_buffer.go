@@ -1,4 +1,4 @@
-package mutations
+package model
 
 import (
 	"bytes"
@@ -35,18 +35,6 @@ func (dg *DigestBuffer) AddStatement(stmt string) error {
 		}
 		_, _ = dg.WriteString(tk.String())
 		_ = dg.WriteByte(' ')
-	}
-	return nil
-}
-
-func (dg *DigestBuffer) AddStatements(stmts ...MutationStatement) error {
-	for _, stmt := range stmts {
-		if err := dg.AddStatement(stmt.Up); err != nil {
-			return err
-		}
-		if err := dg.AddStatement(stmt.Down); err != nil {
-			return err
-		}
 	}
 	return nil
 }

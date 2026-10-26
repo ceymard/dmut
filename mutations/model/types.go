@@ -2,8 +2,6 @@
 // reapply triggers, and loads them from yaml.
 package model
 
-import "github.com/ceymard/dmut/v2/mutations"
-
 // Trigger names an event that makes a mutation reapply.
 type Trigger string
 
@@ -121,6 +119,3 @@ type Project struct {
 	Namespaces []*Namespace
 	Warnings   []Warning
 }
-
-// sqlLexer is the lexer shared with the old package until the swap.
-var sqlLexer = mutations.SqlLexer

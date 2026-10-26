@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ceymard/dmut/v2/mutations"
 	"github.com/goccy/go-yaml"
 	"github.com/samber/oops"
 )
@@ -174,7 +173,7 @@ func autoStatement(w where, sql string) (Statement, error) {
 		}
 		return Statement{Kind: KindSeed, Up: sql}, nil
 	}
-	down, noDown, err := mutations.AutoDowner.ParseAndGetDefault(sql)
+	down, noDown, err := AutoDowner.ParseAndGetDefault(sql)
 	if err != nil {
 		return Statement{}, w.errf("can't infer a down ; write it with up/down, or use seed: %v", err)
 	}
@@ -394,7 +393,7 @@ func (s *Statement) finish() error {
 // TextHash identifies a statement by its kind and its normalized up and down text:
 // whitespace and comments do not change it.
 func TextHash(kind Kind, up, down string) (string, error) {
-	dg := mutations.NewDigestBuffer()
+	dg := NewDigestBuffer()
 	dg.WriteString(string(kind))
 	dg.WriteByte(0)
 	if err := dg.AddStatement(up); err != nil {

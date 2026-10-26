@@ -8,16 +8,16 @@ import (
 )
 
 var (
-	tokSemicolon = sqlLexer.Symbols()["Semicolon"]
-	tokMultiOpen = sqlLexer.Symbols()["MultiStart"]
-	tokMultiStop = sqlLexer.Symbols()["MultiStop"]
-	tokRest      = sqlLexer.Symbols()["Rest"]
+	tokSemicolon = SqlLexer.Symbols()["Semicolon"]
+	tokMultiOpen = SqlLexer.Symbols()["MultiStart"]
+	tokMultiStop = SqlLexer.Symbols()["MultiStop"]
+	tokRest      = SqlLexer.Symbols()["Rest"]
 
 	ignoredTokens = map[lexer.TokenType]bool{
-		sqlLexer.Symbols()["whiteSpace"]:        true,
-		sqlLexer.Symbols()["multiCommentStart"]: true,
-		sqlLexer.Symbols()["multiCommentStop"]:  true,
-		sqlLexer.Symbols()["char"]:              true,
+		SqlLexer.Symbols()["whiteSpace"]:        true,
+		SqlLexer.Symbols()["multiCommentStart"]: true,
+		SqlLexer.Symbols()["multiCommentStop"]:  true,
+		SqlLexer.Symbols()["char"]:              true,
 	}
 )
 
@@ -36,7 +36,7 @@ var dataStatements = map[string]bool{
 // sqlStatements cuts sql into statements of meaningful tokens on top-level semicolons.
 // Dollar-quoted bodies and `begin atomic ... end` function bodies do not split.
 func sqlStatements(sql string) ([][]lexer.Token, error) {
-	lx, err := sqlLexer.LexString("", sql)
+	lx, err := SqlLexer.LexString("", sql)
 	if err != nil {
 		return nil, err
 	}

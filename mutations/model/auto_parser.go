@@ -1,4 +1,4 @@
-package mutations
+package model
 
 import (
 	"strings"
