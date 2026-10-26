@@ -1,27 +1,24 @@
 # yaml-embedded-languages: sql
 #
-# Revision 2 changes nothing about what actually runs against a database
-# sitting at revision 1 - every `core`, `needs` and `children` block under
-# `mutations:` below is restated byte-for-byte from r1.yml, because "each
-# revision must be self-contained" (see the docs). The new things are
-# `delete`, which retires all five children once revision 3 lands (they
-# already ran for real via `mutations:`, so they no longer need separate
-# tracking once folded into `customers`), and `override`, which is what a
-# database jumping straight from nothing to revision 3 will get for
-# `customers`.
+# Revision 2 changes nothing about what runs against a database sitting at
+# revision 1: everything under `mutations:` is restated unchanged from r1.yml,
+# because each revision must be self-contained. The new things are `delete`,
+# which forgets all five child mutations (they already ran for real via
+# `mutations:`, and forgetting them does not undo them), and `override`, which
+# is what dmut records for `customers` instead, and what a database jumping
+# straight from nothing to revision 3 gets.
 #
-# `customers`'s `override.core` has to match revision 3's actual `core`
-# exactly (dmut hashes the whole list) - it is, deliberately, the mechanical
-# result of applying every child mutation's own change to the base table by
-# hand: `full_name` gone, `first_name`/`last_name`/`marketing_opt_in` added,
-# `signed_up_at` renamed to `created_at`, `phone` never shows up at all
-# (added and dropped within this same revision). The seed data has to move
-# from `full_name` to `first_name`/`last_name` here too, since that's the
-# only column shape `override` ever creates - and it stays part of `core`,
-# not `glue`, matching where it actually lives (see r1.yml's comment on why).
+# `override` has to match revision 3's `customers` exactly. It is the
+# mechanical result of applying every child mutation to the base table by
+# hand: `full_name` gone, `first_name`, `last_name` and `marketing_opt_in`
+# added, `signed_up_at` renamed to `created_at`, and `phone` never showing up
+# (added and dropped within this same revision). The seed has to move from
+# `full_name` to `first_name` and `last_name` too, since that is the only
+# column shape the override ever creates. Restating the seed matters: the
+# override replaces the whole recorded mutation.
 
-__namespace: crm
-__revision: 2
+revision: 2
+namespace: crm
 
 delete:
   - customers.phone
@@ -32,7 +29,8 @@ delete:
 
 override:
   customers:
-    core:
+    structural: true
+    sql:
       - |
         create table customers (
           id serial primary key,
@@ -42,18 +40,16 @@ override:
           created_at timestamptz not null default now(),
           marketing_opt_in boolean not null default false
         );
-      - up: |
+      - seed: |
           insert into customers (first_name, last_name, email) values
             ('Jane', 'Cooper', 'jane@example.com'),
-            ('Wade', 'Warren', 'wade@example.com');
-        down: delete from customers where email in ('jane@example.com', 'wade@example.com');
+            ('Wade', 'Warren', 'wade@example.com')
+          on conflict (email) do nothing
 
 mutations:
   customers:
-    # Unchanged from r1.yml - still what actually runs to bring a revision-1
-    # database up to date, since every column change below still happens via
-    # the child mutations, not here.
-    core:
+    structural: true
+    sql:
       - |
         create table customers (
           id serial primary key,
@@ -61,40 +57,59 @@ mutations:
           email text not null unique,
           signed_up_at timestamptz not null default now()
         );
-      - up: |
+      # Seed data runs before the child mutations below (including the one
+      # that drops `full_name`), because they depend on `customers`.
+      - seed: |
           insert into customers (full_name, email) values
             ('Jane Cooper', 'jane@example.com'),
-            ('Wade Warren', 'wade@example.com');
-        down: delete from customers where email in ('jane@example.com', 'wade@example.com');
+            ('Wade Warren', 'wade@example.com')
+          on conflict (email) do nothing
 
-    children:
-      phone:
-        core:
-          - alter table customers add column phone text;
+  # Year one: a phone number field, nobody thought too hard about it.
+  customers.phone:
+    structural: true
+    sql:
+      - alter table customers add column phone text
 
-      marketing_opt_in:
-        core:
-          - alter table customers add column marketing_opt_in boolean not null default false;
+  # Year two: an opt-in flag for a marketing campaign.
+  customers.marketing_opt_in:
+    structural: true
+    sql:
+      - alter table customers add column marketing_opt_in boolean not null default false
 
-      split_name:
-        core:
-          - alter table customers add column first_name text;
-          - alter table customers add column last_name text;
-          - up: |
-              update customers set
-                first_name = split_part(full_name, ' ', 1),
-                last_name = nullif(split_part(full_name, ' ', 2), '');
-              alter table customers drop column full_name;
-            down: |
-              alter table customers add column full_name text;
-              update customers set full_name = trim(coalesce(first_name, '') || ' ' || coalesce(last_name, ''));
+  # Year three: `full_name` turned out to be the wrong shape; reports needed
+  # first and last name separately. This is the interesting one: the backfill
+  # and the drop of the old column cannot be inferred, so they are explicit
+  # up/down pairs. Downs run in the reverse order of the statements, so
+  # downing this mutation re-adds `full_name`, recomputes it from the two new
+  # columns, and only then drops them: a real, working down.
+  customers.split_name:
+    structural: true
+    sql:
+      - alter table customers add column first_name text
+      - alter table customers add column last_name text
+      - up: |
+          update customers set
+            first_name = split_part(full_name, ' ', 1),
+            last_name = nullif(split_part(full_name, ' ', 2), '')
+        down: |
+          update customers set full_name = trim(coalesce(first_name, '') || ' ' || coalesce(last_name, ''))
+      - up: alter table customers drop column full_name
+        down: alter table customers add column full_name text
 
-      retire_phone:
-        needs: [customers.phone]
-        core:
-          - up: alter table customers drop column phone;
-            down: alter table customers add column phone text;
+  # Year four: phone turned out to be unused (nothing ever texted anyone), so
+  # it was dropped. It depends on `customers.phone` explicitly: a dotted name
+  # only depends on its own ancestors, never on a sibling, so without this the
+  # column it drops might not exist yet when it runs.
+  customers.retire_phone:
+    structural: true
+    deps: [customers.phone]
+    sql:
+      - up: alter table customers drop column phone
+        down: alter table customers add column phone text
 
-      rename_signup:
-        core:
-          - alter table customers rename column signed_up_at to created_at;
+  # Year five: a naming-convention cleanup, unrelated to everything above.
+  customers.rename_signup:
+    structural: true
+    sql:
+      - alter table customers rename column signed_up_at to created_at

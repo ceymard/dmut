@@ -1,75 +1,10 @@
 # yaml-embedded-languages: sql
-__namespace: hotel
+namespace: hotel
 
-# The schema itself. Named `hotel`, not `schema`, so that every type below can
-# be named `hotel.types.<name>` and pick up a dependency on this mutation for
-# free - see "Naming rules and children" in the docs. A mutation named
-# `parent.child` automatically depends on `parent` if it exists; there's no
-# need for an intermediate `hotel.types` mutation to exist at all for that to
-# work, so none is declared here.
-#
-# The blanket grant to an unauthenticated role lives here, in `meta`, right
-# next to the schema it governs - this is exactly what `meta` is for: the
-# "how it's accessed" half of an object, kept with the object's own mutation
-# instead of off in a separate one. `~anonymous` itself is created in
-# roles.yml; no `needs` is required for that here, since all `sql` in the
-# namespace (including `create role "~anonymous"`) always runs before any
-# `meta`, in any mutation, regardless of declared dependencies.
-#
-# Every grant below is doubled with an `alter default privileges` statement,
-# and for the same reason in all three cases (tables, sequences, functions):
-# a plain `grant ... on all X in schema hotel` only covers what exists the
-# moment it runs, and a *purely additive* schema change later - a brand-new
-# table added in some future mutation, with nothing downed - does not force
-# this mutation's `meta` to re-run (dmut only redoes *all* meta in the
-# namespace when some `sql` had to be downed; see README, "How a run works").
-# Without the default-privileges half, a table added that way would silently
-# never get granted to `~anonymous` until something else in the namespace
-# happened to trigger a full meta rebuild. `alter default privileges` closes
-# that gap by applying to anything the same role creates afterward, with no
-# dmut involvement needed at all.
-hotel:
-  core:
-    - create schema hotel;
-
-  glue:
-    - grant usage on schema hotel to "~anonymous";
-    - grant select, insert, update, delete on all tables in schema hotel to "~anonymous";
-    - grant usage on all sequences in schema hotel to "~anonymous";
-    - grant execute on all functions in schema hotel to "~anonymous";
-    - alter default privileges in schema hotel grant select, insert, update, delete on tables to "~anonymous";
-    - alter default privileges in schema hotel grant usage on sequences to "~anonymous";
-    - alter default privileges in schema hotel grant execute on functions to "~anonymous";
-
-hotel.types.address:
-  core:
-    - |
-      create type hotel.address as (
-        street text,
-        city text,
-        region text,
-        postal_code text,
-        country text
-      );
-
-hotel.types.card_summary:
-  core:
-    - |
-      create type hotel.card_summary as (
-        brand text,
-        last4 char(4),
-        expiry_month smallint,
-        expiry_year smallint
-      );
-
-hotel.types.room_status:
-  core:
-    - create type hotel.room_status as enum ('clean', 'dirty', 'maintenance', 'out_of_order');
-
-hotel.types.booking_status:
-  core:
-    - create type hotel.booking_status as enum ('confirmed', 'cancelled', 'checked_in', 'checked_out');
-
-hotel.types.payment_status:
-  core:
-    - create type hotel.payment_status as enum ('pending', 'completed', 'refunded', 'failed');
+# The schema itself. Named `hotel`, not `schema`, so that every mutation named
+# `hotel.<something>` depends on it automatically (a dotted name depends on its
+# existing parent). Types are named `hotel.types.<name>`; no `hotel.types`
+# mutation has to exist for that to work.
+structural: true
+sql:
+  - create schema hotel;

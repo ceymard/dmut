@@ -1,0 +1,10 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+# A second, independent FTS corpus from hotel.properties.description_search.
+structural: true
+sql:
+  - |
+    alter table hotel.reviews add column comment_search tsvector
+      generated always as (to_tsvector('english', coalesce(comment, ''))) stored;
+  - create index reviews_comment_search_idx on hotel.reviews using gin (comment_search);

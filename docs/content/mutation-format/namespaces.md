@@ -1,12 +1,11 @@
 # Namespaces
 
-Mutations can be namespaced by setting `__namespace: <string>` at the toplevel of their file.
+Mutations can be namespaced by setting `namespace: <string>` at the toplevel of their file, or of a revision document.
 
 They act as silos; namespaced mutations will not touch mutations from other namespaces, and may be
 applied completely independently.
 
-`needs` and `glue_needs` cannot cross a namespace — naming a mutation from another namespace is a
-load-time error. Dmut cannot see through raw SQL, though, so make absolutely sure that no code from
+`deps` cannot cross a namespace — naming a mutation from another namespace is a load-time error. Dmut cannot see through raw SQL, though, so make absolutely sure that no code from
 a namespace references objects created in another. Namespaces are explicitly made for completely
 independent code and structures that live in the same database but never interact.
 

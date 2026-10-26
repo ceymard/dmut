@@ -1,0 +1,12 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+structural: true
+sql:
+  - |
+      create type hotel.card_summary as (
+        brand text,
+        last4 char(4),
+        expiry_month smallint,
+        expiry_year smallint
+      );

@@ -1,0 +1,6 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+structural: true
+sql:
+  - create type hotel.payment_status as enum ('pending', 'completed', 'refunded', 'failed');

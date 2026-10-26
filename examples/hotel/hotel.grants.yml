@@ -1,0 +1,18 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+# Access for the unauthenticated role `~anonymous` (created in roles.yml).
+#
+# `grant ... on all X in schema hotel` only covers what exists when it runs, so
+# this mutation reapplies whenever anything in the namespace is reapplied or
+# gets new statements appended (a new table, a new function...). That replaces
+# the old `alter default privileges` workaround.
+deps:
+  - roles
+  - name: hotel.**
+    reapply_on: [dep_reapplied, dep_appended]
+sql:
+  - grant usage on schema hotel to "~anonymous";
+  - grant select, insert, update, delete on all tables in schema hotel to "~anonymous";
+  - grant usage on all sequences in schema hotel to "~anonymous";
+  - grant execute on all functions in schema hotel to "~anonymous";

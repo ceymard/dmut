@@ -1,0 +1,6 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+structural: true
+sql:
+  - create type hotel.booking_status as enum ('confirmed', 'cancelled', 'checked_in', 'checked_out');

@@ -1,0 +1,15 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+# Table-valued/SETOF function: a joinable/selectable node in its own right,
+# not a computed column. Reads the FTS column added by
+# hotel.properties.description_search, so it depends on it.
+deps: [hotel.properties.description_search]
+reapply_on: [dep_reapplied, dep_appended]
+sql:
+  - |
+    create function hotel.search_properties(query text) returns setof hotel.properties
+    language sql stable as $$
+      select * from hotel.properties
+      where description_search @@ websearch_to_tsquery('english', query)
+    $$;

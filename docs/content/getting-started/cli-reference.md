@@ -4,6 +4,10 @@
 dmut apply <uri> <paths...>       apply mutations to a database
   -d, --dry                         run everything, then roll back instead of committing
   -o, --override                    record the mutations without applying them (see below)
+  -s, --safe                        refuse any change that is not an append
+  -f, --force                       if a change fails, reapply what it blocks and try again
+  -a, --all                         on an empty database, replay every revision from the first
+  --set N=value                     value of the setting dmut.values.N (repeatable)
 
 dmut test <paths...>              apply and test against a throwaway postgres (requires Docker)
   -a, --all                         replay every revision from 1, not just the latest
@@ -16,7 +20,8 @@ dmut down <uri> <namespace>       down everything dmut applied in a namespace
   -d, --dry
 
 dmut collect <outfile> <paths...> write every mutation back out as a single yaml file
-dmut explode --out-dir <dir> <paths...>  split a single-document yaml file into one file per mutation
+  -r, --revision <n>                write a revision shell at this number instead (see below)
+dmut explode --out-dir <dir> <paths...>  write one file per mutation
 dmut legacy <uri>                 dump a pre-1.0 dmut schema as yaml
 dmut version
 
@@ -39,9 +44,22 @@ The default namespace is the empty string, so downing unnamespaced mutations rea
 dmut down postgres://localhost/mydb ""
 ```
 
-Short flags are consistent across commands: `-d` is always `--dry`, `-o` is always `--override`. Options that don't share meaning with another command (`test`'s
-`--test-*` flags, `explode`'s `--out-dir`) have no short form, so a short flag never means two
-different things depending on which subcommand you're running.
+`-s` and `-f` exclude each other. See [Run modes](how-a-run-works.md#run-modes).
+
+`--set` gives a value to a [setting](../mutation-format/settings.md) named `dmut.values.N`. It can be
+repeated, and a value may contain commas: `--set greeting="hello, world"`. Settings named
+`dmut.env.X` read the environment variable `X`.
+
+Short flags are consistent across commands: `-d` is always `--dry`, `-o` is always `--override`,
+`-a` is always `--all`. Options that don't share meaning with another command (`test`'s `--test-*`
+flags, `explode`'s `--out-dir`) have no short form, so a short flag never means two different
+things depending on which subcommand you're running.
+
+`dmut collect -r <n>` writes, instead of a flat collect, a *revision shell* at revision `n`: the
+current definition of each namespace with room to write `override:` and `delete:`, ready to be
+filled in. Given a single `postgres://` URI instead of paths, it sources the shell from what the
+database has recorded; data of seeds and settings that are neither tracked nor saved are not stored,
+so they are left out with a warning. See [Revisions](../revisions/index.md).
 
 ## Logging
 
@@ -53,7 +71,7 @@ By default the log is plain text, with an icon in front of the main milestones (
 
 ```
 INF applying mutations namespace=api revision=3
-INF 🟢 run namespace=api revision=3 mutation=api.users dir=up kind=core
+INF 🟢 run namespace=api revision=3 mutation=api.users dir=up
 INF 🧪 performing tests namespace=api revision=3
 INF 🆗 tests passed namespace=api revision=3
 INF 🎉 no errors
@@ -64,7 +82,7 @@ With `-j`/`--json` every record is one JSON object per line instead, with the sa
 separate fields (and always a `time`). The icons are not part of JSON records, so `msg` stays plain text (`"committed"`):
 
 ```
-{"time":"…","level":"INFO","msg":"run","namespace":"api","revision":3,"mutation":"api.users","dir":"up","kind":"core"}
+{"time":"…","level":"INFO","msg":"run","namespace":"api","revision":3,"mutation":"api.users","dir":"up"}
 ```
 
 | Attribute | Meaning |
@@ -73,10 +91,9 @@ separate fields (and always a `time`). The icons are not part of JSON records, s
 | `revision` | revision being applied |
 | `mutation` | mutation name |
 | `dir` | `up` (green) or `down` (red) |
-| `kind` | `core` (the SQL half, magenta) or `glue` (the meta half, blue) |
+| `reason` | on a `run` record caused by something other than an edit: the trigger (`dep_reapplied`, `dep_appended`, `deps_grow`, `deps_shrink`) or `setting` |
+| `cause` | the dependency or the setting behind `reason` |
 | `icon` | the milestone icon; shown in front of the message in plain text and removed from JSON by the dmut CLI (a library caller's own handler sees it as an ordinary attribute) |
-| `mutations`, `statements` | on the two glue rebuild records (see below): how many mutations and statements they cover |
-| `changed` | on `glue back up`: the glue mutations whose own definition changed |
 | `phase` | `test` on records replayed from a failed test phase |
 | `sql` | the statement, at debug level (`-v`), or the failing one in an error |
 | `uri` | the connection URI, with its password replaced by `xxxxx` |
@@ -88,13 +105,6 @@ adds the Go source file and line to every record; it is only useful for debuggin
 The test phase is silent when it succeeds. When it fails, everything it did is printed after the
 fact, with `phase=test`, so that the failing statement can be seen in context.
 
-When a core change forces all the glue of a namespace to be rebuilt, the rebuild is two records
-instead of one per glue mutation: `🔴 downing all glue (core changed)` before the first core mutation,
-and `🟢 glue back up` once every glue mutation is back, listing in `changed` the ones that had
-changed on their own. `-v` brings back the per-mutation records. If the run fails, the per-mutation
-glue records are printed after `glue steps before the failure:`, just before the error. A change
-that only touches glue still logs each glue mutation it downs and re-ups.
-
 A rollback that is just the end of a dry run or of `dmut test` is logged as `rolling back, nothing to commit`, without the ⛔ icon.
 
 When a command fails, the error is logged last at error level, without a stack trace. For a
@@ -105,18 +115,24 @@ raw `sql` as fields.
 
 ### Using dmut as a library
 
-`mutations.NewPgRunner(ctx, uri, logger)` and `MutationRunnerOptions.Logger` take a `*slog.Logger`; when
-it is nil, `slog.Default()` is used. `mutations.ErrorAttrs(err)` flattens an error and its context
-into slog arguments.
+`mutations.Apply(ctx, uri, paths, mutations.Options{...})` loads the files and applies them in one
+call. `mutations.NewRunner(ctx, uri, logger)` gives a connection to drive by hand, with
+`LoadProject`, `ApplyProject`, `DownNamespace` and the `Collect` functions. `Options.Logger` takes a
+`*slog.Logger`; when it is nil, `slog.Default()` is used. `mutations.ErrorAttrs(err)` flattens an
+error and its context into slog arguments.
 
-Every function and `Executor` method that talks to the database takes a `context.Context` as its first
-argument (`ReadAndRunMutations`, `RunAllMutations`, `RunMutations`, `CollectRevisionFromDatabase`,
-`NewPgRunner`, ...). Cancelling it, or letting its deadline expire, aborts the statement in flight and
-makes the call return an error that wraps `ctx.Err()` (`errors.Is(err, context.Canceled)` works). The
-run is then rolled back, so nothing is applied: `RunAllMutations` rolls back and `Close` ends the
-connection on a fresh context that ignores the cancellation, each waiting at most
-`mutations.CleanupTimeout` (5 seconds). If the database does not answer in time, the connection is
-dropped and Postgres rolls the transaction back by itself. `NewPgRunner` uses its `ctx` only to connect.
+`Options` mirrors the flags: `Mode` (`model.ModeSafe`, `ModeNormal`, `ModeForce`), `Commit`,
+`Override`, `All`, and for settings `Values` (the `dmut.values.N` map) and `Settings`, a
+`func(path []string) *string` called for any setting that is neither `dmut.env.X` nor
+`dmut.values.N`, with the name split on dots; return nil for unset.
+
+Every function that talks to the database takes a `context.Context` as its first argument.
+Cancelling it, or letting its deadline expire, aborts the statement in flight and makes the call
+return an error that wraps `ctx.Err()` (`errors.Is(err, context.Canceled)` works). The run is then
+rolled back, so nothing is applied: the rollback and `Close` end on a fresh context that ignores the
+cancellation, each waiting at most `mutations.CleanupTimeout` (5 seconds). If the database does not
+answer in time, the connection is dropped and Postgres rolls the transaction back by itself.
+`NewRunner` uses its `ctx` only to connect.
 
 The `dmut` command cancels this context on Ctrl-C (SIGINT) and SIGTERM.
 
@@ -139,11 +155,19 @@ knows about must be downable, and an overriding definition is no exception, so i
 down-and-reup-behind-savepoints scrutiny as a normal apply before you can trust it. If the
 override's corrected `down` still doesn't round-trip, the test phase is what catches that.
 
-`--override` also cannot be the *first* thing dmut does on a database: it skips creating its own
-bookkeeping schema along with everything else, since that step assumes there's already a recorded
-state to correct. Run a plain apply once before adopting objects with `--override`.
+`--override` still creates dmut's own bookkeeping schema when it is missing, since that is what it
+records into.
 
 ## Bookkeeping
 
-Dmut keeps its own bookkeeping in the `__dmut__` schema (table `__dmut__.mutations`), which it
-creates on first run as a namespace of its own.
+Dmut keeps its own bookkeeping in the `__dmut__` schema, which it creates on first run as a namespace
+of its own, from three tables:
+
+- `__dmut__.mutations`: one row per mutation, with its file, revision, `structural` flag and
+  `reapply_on`.
+- `__dmut__.statements`: one row per statement, with its kind, its `up` and `down`, a digest of its
+  data and tracked settings, and the values of its saved settings.
+- `__dmut__.deps`: one row per entry of `deps`, with the names it matched at the last run.
+
+A database written by an earlier version of dmut cannot be read: dmut refuses it and tells you so.
+See [Migrating from dmut 2](../migrating.md).

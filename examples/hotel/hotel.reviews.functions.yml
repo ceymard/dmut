@@ -1,0 +1,15 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+deps: [hotel.properties]
+reapply_on: [dep_reapplied, dep_appended]
+sql:
+  # Computed column, aggregate over an incoming relation.
+  - |
+    create function hotel.property_average_rating(property hotel.properties) returns numeric
+    language sql stable strict as $$
+      select avg(rating)
+      from hotel.reviews
+      where property_id = property.id
+    $$;
+  - "comment on function hotel.property_average_rating(hotel.properties) is 'Computed column - average review rating for this property.';"

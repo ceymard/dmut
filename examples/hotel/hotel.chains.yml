@@ -1,0 +1,11 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+structural: true
+sql:
+  - |
+    create table hotel.chains (
+      id bigint generated always as identity primary key,
+      name text not null unique
+    );
+  - "comment on table hotel.chains is 'A hotel group operating one or more properties under a shared brand.';"

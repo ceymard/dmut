@@ -1,0 +1,18 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+structural: true
+deps: [hotel.chains]
+sql:
+  - |
+    create table hotel.properties (
+      id bigint generated always as identity primary key,
+      chain_id bigint references hotel.chains (id),
+      name text not null,
+      location point,
+      star_rating smallint check (star_rating between 1 and 5),
+      description text,
+      created_at timestamptz not null default now()
+    );
+  - create index properties_chain_id_idx on hotel.properties (chain_id);
+  - "comment on table hotel.properties is 'A single hotel property belonging to a chain.';"

@@ -1,0 +1,13 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+# A stored generated column plus its GIN index, a mutation of its own (named as
+# a child, so it depends on hotel.properties): it exists purely so full-text
+# search has something cheap to index, and it's a natural seam to alter or drop
+# later without touching the table's own definition.
+structural: true
+sql:
+  - |
+    alter table hotel.properties add column description_search tsvector
+      generated always as (to_tsvector('english', coalesce(description, ''))) stored;
+  - create index properties_description_search_idx on hotel.properties using gin (description_search);

@@ -1,0 +1,6 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+structural: true
+sql:
+  - create type hotel.room_status as enum ('clean', 'dirty', 'maintenance', 'out_of_order');

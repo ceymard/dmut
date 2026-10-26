@@ -1,7 +1,7 @@
 # Installation
 
 ```sh
-go install github.com/ceymard/dmut/v2@latest
+go install github.com/ceymard/dmut/v3@latest
 ```
 
 or, from a clone (needs Go 1.25 or later):
@@ -14,7 +14,7 @@ go build -o dmut .
 
 ```sh
 just test        # everything
-just test-unit   # parser, loader, hashing, collect — no database needed
+just test-unit   # loader, planner, parser — no database needed
 just test-db     # the integration tests only
 just test-ci     # everything, and a missing docker daemon fails instead of skipping
 ```

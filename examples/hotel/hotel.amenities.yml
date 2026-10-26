@@ -1,0 +1,11 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+structural: true
+sql:
+  - |
+    create table hotel.amenities (
+      id bigint generated always as identity primary key,
+      name text not null unique
+    );
+  - "comment on table hotel.amenities is 'A catalog of amenities a property can offer (pool, gym, parking, ...).';"

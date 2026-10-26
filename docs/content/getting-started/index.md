@@ -4,8 +4,8 @@ icon: material/rocket-launch
 
 # Getting started
 
-Dmut reads mutations from yaml files, computes what changed against what a database already has
-recorded, and applies the difference — down first, then up — inside a single transaction.
+Dmut reads mutations from yaml files, compares them with what a database already has recorded, and
+applies the difference — down first, then up — inside a single transaction.
 
 This section covers:
 
@@ -21,30 +21,50 @@ A minimal mutation file looks like this:
 
 ```yaml
 # yaml-embedded-languages: sql
-greeting:
-  core:
-    - |
-      create table greeting (
-        id serial primary key,
-        message text not null
-      );
+# greeting.yml
+structural: true
+sql:
+  - |
+    create table greeting (
+      id serial primary key,
+      message text not null
+    )
 ```
 
-Save it as `greeting.yml` and apply it:
+The mutation is named after its file: `greeting.yml` defines the mutation `greeting`. It is
+`structural` because it creates a table, which holds data. Save it and apply it:
 
 ```sh
 dmut apply postgres://user:pass@localhost/mydb ./greeting.yml
 ```
 
-Dmut creates its own bookkeeping schema (`__dmut__`) on first run, records that the `greeting`
-mutation is now applied, and — since something changed — replays it down-then-up behind a
-savepoint to make sure it's actually reversible, before committing.
+Dmut creates its own bookkeeping schema (`__dmut__`) on first run, runs the statement, records the
+mutation as applied, and — since something ran — tests it: it takes the mutation down and back up
+behind a savepoint to make sure it is actually reversible, before committing.
 
-Change the file (add a column, drop it, rename something) and apply again: dmut sees the hash of
-`greeting`'s `core` changed, downs it (`DROP TABLE greeting`, inferred automatically — see
-[Automatic down statements](../mutation-format/auto-down.md)) and re-creates it from the new
-definition. **This drops the table and any data in it.** That's fine in development; see
-[Revisions](../revisions/index.md) for how to change a schema in production without losing data.
+Now add a column. You do not edit the `create table`: you add a statement after it.
+
+```yaml
+structural: true
+sql:
+  - |
+    create table greeting (
+      id serial primary key,
+      message text not null
+    )
+  - alter table greeting add column lang text not null default 'en'
+```
+
+Apply again: dmut sees that the first statement is unchanged and that one was added at the end, so it
+runs only the new statement. Nothing comes down, and the table keeps its rows.
+
+If you change a statement that is already there (the `create table` itself), dmut takes down that
+statement and everything after it, then brings the new ones up. Here that means `DROP TABLE greeting`
+— inferred automatically, see [Automatic down statements](../mutation-format/auto-down.md) — and
+**the table and its data are gone**. That is fine in development; see
+[Revisions](../revisions/index.md) for how to fold changes back into a clean definition in
+production without losing data, and the `-s` flag in the [CLI reference](cli-reference.md) to make an
+automated pipeline refuse anything but appends.
 
 For something closer to a real schema — tables that reference each other, functions, generated
 columns, grants — see the [example database](../example-database/index.md), which is a full

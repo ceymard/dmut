@@ -1,11 +1,9 @@
-# Naming rules and children
+# Naming rules
 
 Dmut understands `.` separators in mutation names. A mutation named `parent1.parent2.child`
-automatically depends on `parent1` and `parent1.parent2` if they exist, for both `core` and `glue`.
-It will **not** depend on `parent1.unrelated`.
-
-Mutations declared under `children:` are named `<parent>.<child>` and therefore pick up that
-dependency automatically.
+automatically depends on `parent1` and `parent1.parent2` if they exist. It will **not** depend on
+`parent1.unrelated`. The name of a mutation file is its name, so `parent1.parent2.child.yml` defines
+it; the directory it is in does not matter.
 
 Duplicate mutation names within the same namespace and revision are an error, including across
 different files — the error names both files.

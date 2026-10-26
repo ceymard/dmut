@@ -1,0 +1,13 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+structural: true
+sql:
+  - |
+      create type hotel.address as (
+        street text,
+        city text,
+        region text,
+        postal_code text,
+        country text
+      );

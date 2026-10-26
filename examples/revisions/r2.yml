@@ -1,37 +1,32 @@
 # yaml-embedded-languages: sql
 #
-# Revision 2 adds full-text search over `description` as a child mutation -
-# an ALTER TABLE ADD COLUMN, kept separate from the table's own definition
-# exactly like examples/hotel/properties.yml's `description_search` child.
+# Revision 2 adds full-text search over `description` as its own mutation, an
+# ALTER TABLE ADD COLUMN kept separate from the table's definition. Its dotted
+# name makes it depend on `properties` automatically.
 #
-# `override` declares what the *next* revision will inherit as the recorded
-# truth for `properties`: the column folded straight into CREATE TABLE, as
-# if it had been there from the start. It has to match revision 3's actual
-# `core` for `properties` exactly (including the index, not just the table)
-# - dmut hashes the whole list, so a database that already has revision 2's
-# override recorded and a database that jumps straight to revision 3's core
-# need to land on the exact same hash, or dmut treats them as different
-# definitions and drops/recreates the table for no reason.
+# `mutations` is what really runs on a database that sits at revision 1.
+# `override` is what dmut records for `properties` instead: the column folded
+# straight into CREATE TABLE, as if it had been there from the start.
 #
-# `delete` retires the child mutation once revision 3 lands: it already ran
-# for real via `mutations` below, so once its column is folded into
-# `properties`'s override, it no longer needs separate tracking.
+# The override has to match revision 3's `properties` exactly, index and seed
+# included. It replaces the whole recorded mutation (statements, flags and
+# dependencies), so everything that should be kept is restated. That way a
+# database that stops at revision 2 and one that jumps to revision 3 hold the
+# same definition, and dmut sees no difference between them.
 #
-# override replaces a mutation's recorded core *and* glue *and* needs
-# wholesale - so the seed-data insert below has to be restated in the
-# override's core too, or revision 3 (whose core still has that insert)
-# would see it as new and run it again, duplicating the seeded rows. Override
-# is complete, which means restating everything you want kept, not just the
-# schema.
+# `delete` forgets the child mutation once its column is folded into the
+# override. It already ran for real via `mutations`, and forgetting it does
+# not drop the column.
 
-__namespace: revisions
-__revision: 2
+revision: 2
+namespace: revisions
 
 delete: [properties.description_search]
 
 override:
   properties:
-    core:
+    structural: true
+    sql:
       - |
         create table properties (
           id serial primary key,
@@ -40,35 +35,41 @@ override:
           description_search tsvector
             generated always as (to_tsvector('english', coalesce(description, ''))) stored
         );
-      - create index properties_description_search_idx on properties using gin (description_search);
-      - up: |
-          insert into properties (name, description) values
+      - create index properties_description_search_idx on properties using gin (description_search)
+      - seed: |
+          insert into properties (name, description)
+          select v.name, v.description
+          from (values
             ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),
-            ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.');
-        down: delete from properties where name in ('Seaside Inn', 'Mountain Lodge');
+            ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.')
+          ) as v (name, description)
+          where not exists (select 1 from properties p where p.name = v.name)
 
 mutations:
+  # What still has to run for a database at revision 1: unchanged from r1.yml,
+  # because the column is added by the child mutation below.
   properties:
-    # What actually still has to run to bring a database that's sitting at
-    # revision 1 up to date - unchanged from r1.yml, since the column is added
-    # by the child mutation below instead.
-    core:
+    structural: true
+    sql:
       - |
         create table properties (
           id serial primary key,
           name text not null,
           description text
         );
-      - up: |
-          insert into properties (name, description) values
+      - seed: |
+          insert into properties (name, description)
+          select v.name, v.description
+          from (values
             ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),
-            ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.');
-        down: delete from properties where name in ('Seaside Inn', 'Mountain Lodge');
+            ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.')
+          ) as v (name, description)
+          where not exists (select 1 from properties p where p.name = v.name)
 
-    children:
-      description_search:
-        core:
-          - |
-            alter table properties add column description_search tsvector
-              generated always as (to_tsvector('english', coalesce(description, ''))) stored;
-          - create index properties_description_search_idx on properties using gin (description_search);
+  properties.description_search:
+    structural: true
+    sql:
+      - |
+        alter table properties add column description_search tsvector
+          generated always as (to_tsvector('english', coalesce(description, ''))) stored
+      - create index properties_description_search_idx on properties using gin (description_search)

@@ -1,51 +1,42 @@
 # yaml-embedded-languages: sql
 #
-# Revision 3 ships the consolidated definition r2 promised via `override`:
-# `description_search` is now part of the table's own CREATE TABLE, and the
-# child mutation from r2 simply isn't restated here - r2's `delete` already
-# retired it from tracking, so it quietly drops out of the graph instead of
-# being downed.
+# Revision 3 ships the consolidated definition r2 promised with `override`:
+# `description_search` is now part of the table's own CREATE TABLE. The child
+# mutation from r2 is not restated here: r2's `delete` already forgot it, so
+# it just drops out instead of being taken down.
 #
-# The `do $$ ... $$` block below is a unit test for the revision itself: it
-# fails the mutation (and the whole apply) if the two rows inserted back in
-# r1 didn't survive the trip through r2, or if full-text search over the
-# now-consolidated column doesn't work. See README, "Considerations when
-# writing revisions".
+# `properties.revision_check` is a test for the revision itself. Its checks
+# fail the apply if the two rows inserted back in r1 did not survive the trip
+# through r2, or if full-text search over the consolidated column does not
+# work. It is a default (non-structural) mutation, so dmut reapplies it
+# whenever `properties` is reapplied.
 
-__namespace: revisions
-__revision: 3
+revision: 3
+namespace: revisions
 
-properties:
-  core:
-    - |
-      create table properties (
-        id serial primary key,
-        name text not null,
-        description text,
-        description_search tsvector
-          generated always as (to_tsvector('english', coalesce(description, ''))) stored
-      );
-    - create index properties_description_search_idx on properties using gin (description_search);
+mutations:
+  properties:
+    structural: true
+    sql:
+      - |
+        create table properties (
+          id serial primary key,
+          name text not null,
+          description text,
+          description_search tsvector
+            generated always as (to_tsvector('english', coalesce(description, ''))) stored
+        );
+      - create index properties_description_search_idx on properties using gin (description_search)
+      - seed: |
+          insert into properties (name, description)
+          select v.name, v.description
+          from (values
+            ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),
+            ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.')
+          ) as v (name, description)
+          where not exists (select 1 from properties p where p.name = v.name)
 
-    - up: |
-        insert into properties (name, description) values
-          ('Seaside Inn', 'A quiet hotel by the sea with a pool and lovely staff.'),
-          ('Mountain Lodge', 'A cozy retreat with mountain views and a fireplace.');
-      down: delete from properties where name in ('Seaside Inn', 'Mountain Lodge');
-
-    - up: |
-        do $$
-        declare
-          v_count integer;
-        begin
-          v_count := (select count(*) from properties);
-          if v_count <> 2 then
-            raise exception 'expected 2 properties to survive the revision, found %', v_count;
-          end if;
-          if not exists (
-            select 1 from properties where description_search @@ websearch_to_tsquery('english', 'pool')
-          ) then
-            raise exception 'full text search over description_search should still find the seaside inn';
-          end if;
-          raise notice 'revision check passed: % properties, full text search still works', v_count;
-        end $$ language plpgsql;
+  properties.revision_check:
+    sql:
+      - ensure: select count(*) = 2 from properties
+      - ensure: select exists (select 1 from properties where description_search @@ websearch_to_tsquery('english', 'pool'))

@@ -1,0 +1,34 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+deps: [hotel.bookings, hotel.rooms]
+reapply_on: [dep_reapplied, dep_appended]
+sql:
+  # Computed column, deliberately NOT a pure function of the row's own columns -
+  # it reads a related table, hence STABLE rather than IMMUTABLE.
+  - |
+    create function hotel.booking_total_paid(booking hotel.bookings) returns numeric
+    language sql stable strict as $$
+      select coalesce(sum(amount), 0)
+      from hotel.payments
+      where booking_id = booking.id and status = 'completed'
+    $$;
+  - "comment on function hotel.booking_total_paid(hotel.bookings) is 'Computed column - sum of completed payments for this booking.';"
+
+  # RETURNS TABLE(...): implemented via OUT-mode pseudo-arguments, not a
+  # registered composite type. Qualified with the function's own name
+  # (booking_stats.property_id) since the parameter shares a name with
+  # hotel.rooms.property_id.
+  - |
+    create function hotel.booking_stats(property_id bigint)
+    returns table (total_bookings bigint, total_revenue numeric, avg_nights numeric)
+    language sql stable as $$
+      select
+        count(distinct b.id),
+        coalesce(sum(p.amount), 0),
+        avg(extract(day from upper(b.stay) - lower(b.stay)))
+      from hotel.bookings b
+      join hotel.rooms r on r.id = b.room_id
+      left join hotel.payments p on p.booking_id = b.id and p.status = 'completed'
+      where r.property_id = booking_stats.property_id
+    $$;

@@ -1,0 +1,17 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+structural: true
+deps: [hotel.guests, hotel.properties, hotel.bookings]
+sql:
+  - |
+    create table hotel.reviews (
+      id bigint generated always as identity primary key,
+      guest_id bigint not null references hotel.guests (id),
+      property_id bigint not null references hotel.properties (id),
+      booking_id uuid references hotel.bookings (id),
+      rating smallint not null check (rating between 1 and 5),
+      comment text,
+      created_at timestamptz not null default now()
+    );
+  - "comment on table hotel.reviews is 'A guest''s review of a property, optionally tied to the specific booking it followed.';"

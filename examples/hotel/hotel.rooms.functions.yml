@@ -1,0 +1,20 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+deps: [hotel.room_types]
+reapply_on: [dep_reapplied, dep_appended]
+sql:
+  # Computed column: a one-hop lookup through an outgoing relation.
+  - |
+    create function hotel.room_effective_rate(room hotel.rooms) returns numeric
+    language sql stable strict as $$
+      select base_price from hotel.room_types where id = room.room_type_id
+    $$;
+  - "comment on function hotel.room_effective_rate(hotel.rooms) is 'Computed column - this room''s nightly rate, from its room type.';"
+
+  # Variadic argument, kept next to rooms.features (a plain text[] column).
+  - |
+    create function hotel.concat_features(sep text, variadic parts text[]) returns text
+    language sql immutable as $$
+      select array_to_string(parts, sep)
+    $$;

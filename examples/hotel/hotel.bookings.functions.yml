@@ -1,0 +1,32 @@
+# yaml-embedded-languages: sql
+namespace: hotel
+
+# Functions over bookings. Not structural: they reapply when hotel.bookings (or
+# hotel.rooms, which rooms_available returns) is reapplied or gets new statements.
+deps: [hotel.rooms]
+reapply_on: [dep_reapplied, dep_appended]
+sql:
+  # Computed column: derived purely from the row's own `stay` range.
+  - |
+    create function hotel.booking_nights(booking hotel.bookings) returns integer
+    language sql immutable strict as $$
+      select extract(day from upper(booking.stay) - lower(booking.stay))::integer
+    $$;
+  - "comment on function hotel.booking_nights(hotel.bookings) is 'Computed column - length of stay, in nights.';"
+
+  # Default argument value (on_date defaults to current_date). Qualified with
+  # the function's own name (rooms_available.property_id) because the parameter
+  # shares a name with the column it filters on.
+  - |
+    create function hotel.rooms_available(property_id bigint, on_date date default current_date)
+    returns setof hotel.rooms
+    language sql stable as $$
+      select r.* from hotel.rooms r
+      where r.property_id = rooms_available.property_id
+      and not exists (
+        select 1 from hotel.bookings b
+        where b.room_id = r.id
+        and b.stay @> on_date::timestamptz
+        and b.status in ('confirmed', 'checked_in')
+      )
+    $$;

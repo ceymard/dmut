@@ -1,71 +1,47 @@
 # yaml-embedded-languages: sql
 #
-# Revision 3 ships the consolidated definition r2 promised via `override`.
-# None of the five child mutations from r1/r2 are restated here - they don't
-# need to be. r2's `delete` already retired all of them from tracking, so
-# they simply drop out of the graph instead of being downed one by one.
+# Revision 3 ships the consolidated definition r2 promised with `override`.
+# None of the five child mutations from r1 and r2 are restated: r2's `delete`
+# already forgot them, so they simply drop out instead of being taken down one
+# by one.
 #
-# The `do $$ ... $$` block is a unit test for the revision itself: it fails
-# the whole apply if the two rows seeded back in r1 didn't survive the trip
-# through r2, if the name split lost data, or if any of the columns that
-# should be gone (`full_name`, `phone`, `signed_up_at`) are somehow still
-# there. See "Considerations when writing revisions" in the docs.
+# `customers.revision_check` is a test for the revision itself: its checks
+# fail the whole apply if the two rows seeded back in r1 did not survive the
+# trip through r2, if the name split lost data, or if a column that should be
+# gone (`full_name`, `phone`, `signed_up_at`) is still there. It is a default
+# (non-structural) mutation, so dmut reapplies it whenever `customers` is.
 
-__namespace: crm
-__revision: 3
+revision: 3
+namespace: crm
 
-customers:
-  # Byte-for-byte what r2.yml promised via `override` - including the seed
-  # data, which had to move here too since a fresh database applying
-  # revision 3 directly never has a `full_name` column to seed through.
-  core:
-    - |
-      create table customers (
-        id serial primary key,
-        first_name text,
-        last_name text,
-        email text not null unique,
-        created_at timestamptz not null default now(),
-        marketing_opt_in boolean not null default false
-      );
-    - up: |
-        insert into customers (first_name, last_name, email) values
-          ('Jane', 'Cooper', 'jane@example.com'),
-          ('Wade', 'Warren', 'wade@example.com');
-      down: delete from customers where email in ('jane@example.com', 'wade@example.com');
+mutations:
+  # Exactly what r2 promised with `override`, seed included.
+  customers:
+    structural: true
+    sql:
+      - |
+        create table customers (
+          id serial primary key,
+          first_name text,
+          last_name text,
+          email text not null unique,
+          created_at timestamptz not null default now(),
+          marketing_opt_in boolean not null default false
+        );
+      - seed: |
+          insert into customers (first_name, last_name, email) values
+            ('Jane', 'Cooper', 'jane@example.com'),
+            ('Wade', 'Warren', 'wade@example.com')
+          on conflict (email) do nothing
 
-    - up: |
-        do $$
-        declare
-          v_count integer;
-        begin
-          v_count := (select count(*) from customers);
-          if v_count <> 2 then
-            raise exception 'expected 2 customers to survive the revision, found %', v_count;
-          end if;
-
-          if not exists (
-            select 1 from customers where first_name = 'Jane' and last_name = 'Cooper' and email = 'jane@example.com'
-          ) then
-            raise exception 'full_name -> first_name/last_name split lost data for Jane Cooper';
-          end if;
-
-          if not exists (
-            select 1 from customers where first_name = 'Wade' and last_name = 'Warren' and email = 'wade@example.com'
-          ) then
-            raise exception 'full_name -> first_name/last_name split lost data for Wade Warren';
-          end if;
-
-          if not (select bool_and(marketing_opt_in = false) from customers) then
-            raise exception 'marketing_opt_in should still default to false';
-          end if;
-
-          if exists (
+  customers.revision_check:
+    sql:
+      - ensure: select count(*) = 2 from customers
+      - ensure: select exists (select 1 from customers where first_name = 'Jane' and last_name = 'Cooper' and email = 'jane@example.com')
+      - ensure: select exists (select 1 from customers where first_name = 'Wade' and last_name = 'Warren' and email = 'wade@example.com')
+      - ensure: select coalesce(bool_and(not marketing_opt_in), true) from customers
+      - ensure: |
+          select not exists (
             select 1 from information_schema.columns
             where table_name = 'customers' and column_name in ('full_name', 'phone', 'signed_up_at')
-          ) then
-            raise exception 'full_name, phone and signed_up_at should all be gone by revision 3';
-          end if;
-
-          raise notice 'revision check passed: % customers, name split and column cleanup both survived', v_count;
-        end $$ language plpgsql;
+          )

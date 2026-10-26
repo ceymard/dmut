@@ -1,11 +1,12 @@
 # yaml-embedded-languages: sql
-__namespace: hotel
+namespace: hotel
 
-# btree_gist is what lets hotel.bookings (see bookings.yml) use a GiST exclusion
-# constraint over a plain bigint column (room_id) alongside a range (stay).
+# btree_gist is what lets hotel.bookings (see hotel.bookings.yml) use a GiST
+# exclusion constraint over a plain bigint column (room_id) alongside a range
+# (stay).
 #
 # Not named `hotel.extensions`: an extension isn't scoped to any one schema
 # either, so it's kept flat - same reasoning as `roles`.
-extensions:
-  core:
-    - create extension btree_gist;
+structural: true
+sql:
+  - create extension btree_gist;
