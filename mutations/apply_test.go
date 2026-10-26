@@ -24,21 +24,28 @@ func newHarness(t *testing.T) *harness {
 	return &harness{t: t, uri: testdb(t), rec: newRecorder()}
 }
 
-// apply writes files in a fresh directory and applies them, committing unless opts say otherwise.
-func (h *harness) apply(files map[string]string, mods ...func(*Options)) error {
-	h.t.Helper()
-	dir := h.t.TempDir()
+// writeFiles writes files, keyed by name without extension, in a fresh directory and returns it as the path list.
+func writeFiles(t *testing.T, files map[string]string) []string {
+	t.Helper()
+	dir := t.TempDir()
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(dir, name+".yml"), []byte(content), 0o644); err != nil {
-			h.t.Fatal(err)
+			t.Fatal(err)
 		}
 	}
+	return []string{dir}
+}
+
+// apply applies files, committing unless opts say otherwise.
+func (h *harness) apply(files map[string]string, mods ...func(*Options)) error {
+	h.t.Helper()
+	paths := writeFiles(h.t, files)
 	*h.rec.out = nil
 	opts := Options{Commit: true, Logger: slog.New(h.rec)}
 	for _, mod := range mods {
 		mod(&opts)
 	}
-	return Apply(context.Background(), h.uri, []string{dir}, opts)
+	return Apply(context.Background(), h.uri, paths, opts)
 }
 
 func (h *harness) mustApply(files map[string]string, mods ...func(*Options)) {

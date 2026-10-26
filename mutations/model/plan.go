@@ -107,6 +107,9 @@ type Plan struct {
 	Save []string
 }
 
+// Runs reports whether the plan runs any statement.
+func (p *Plan) Runs() bool { return len(p.Downs)+len(p.Ups) > 0 }
+
 // Empty reports whether the plan does nothing.
 func (p *Plan) Empty() bool { return len(p.Downs) == 0 && len(p.Ups) == 0 && len(p.Save) == 0 }
 
@@ -403,10 +406,16 @@ func sameTriggers(a, b []Trigger) bool {
 func globalOrder(in PlanInput, live []*Mutation, removed map[string]bool) ([]string, error) {
 	deps := map[string][]string{}
 	nodes := []string{}
+	inLive := map[string]bool{}
+	for _, m := range live {
+		inLive[m.Name] = true
+	}
 	for _, m := range live {
 		nodes = append(nodes, m.Name)
 		for _, d := range m.Dependencies() {
-			deps[m.Name] = append(deps[m.Name], d.Name)
+			if inLive[d.Name] {
+				deps[m.Name] = append(deps[m.Name], d.Name)
+			}
 		}
 		if rec := in.Recorded[m.Name]; rec != nil {
 			for _, name := range recordedDependencies(rec, in.Recorded) {
@@ -503,4 +512,41 @@ func refuseNonAppends(plan *Plan, changes map[string]*change) error {
 	}
 	sort.Strings(refused)
 	return oops.In("model").Errorf("the mode safe only accepts appends: %s", strings.Join(refused, " ; "))
+}
+
+// FromRecorded rebuilds a mutation from what is stored. The settings that are neither tracked
+// nor saved were not stored, and the rows of a seed's data are only known by their hash: lost
+// reports the positions (1-based) of the statements that had data.
+func FromRecorded(rec *RecordedMutation, namespace string) (m *Mutation, lost []int) {
+	m = &Mutation{Name: rec.Name, Namespace: namespace, File: rec.File, Structural: rec.Structural, ReapplyOn: rec.ReapplyOn}
+	for _, d := range rec.Deps {
+		m.Deps = append(m.Deps, DepEntry{Pattern: d.Entry, ReapplyOn: d.ReapplyOn})
+	}
+	for i, rs := range rec.Statements {
+		st := Statement{Kind: rs.Kind, Up: rs.Up, Down: rs.Down, explicitDown: rs.Kind == KindReversible}
+		dataHash, tracked := ParseDigest(rs.Digest)
+		if dataHash != "" {
+			lost = append(lost, i+1)
+		}
+		names := map[string]*Setting{}
+		for _, t := range tracked {
+			s := Setting{Name: t.Name, Tracked: true}
+			st.Settings = append(st.Settings, s)
+			names[t.Name] = &st.Settings[len(st.Settings)-1]
+		}
+		savedNames := make([]string, 0, len(rs.Saved))
+		for name := range rs.Saved {
+			savedNames = append(savedNames, name)
+		}
+		sort.Strings(savedNames)
+		for _, name := range savedNames {
+			if s, ok := names[name]; ok {
+				s.Saved = true
+			} else {
+				st.Settings = append(st.Settings, Setting{Name: name, Saved: true})
+			}
+		}
+		m.Statements = append(m.Statements, st)
+	}
+	return m, lost
 }

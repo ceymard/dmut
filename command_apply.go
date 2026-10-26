@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ceymard/dmut/v2/mutations"
+	"github.com/ceymard/dmut/v2/mutations/model"
 	"github.com/samber/oops"
 )
 
@@ -12,23 +14,36 @@ type ApplyCmd struct {
 	Paths    []string `arg:"" help:"Paths to apply."`
 	Override bool     `short:"o" name:"override" help:"Save the mutations to the database, but don't run them."`
 	Dry      bool     `short:"d" help:"Dry run, don't apply the mutations."`
-	Full     bool     `short:"f" name:"full" help:"Try changes without downing dependants first, but down and rebuild them if that fails."`
-	Simple   bool     `short:"s" name:"simple" help:"Refuse to run if core has any change that isn't a pure append."`
+	Force    bool     `short:"f" name:"force" help:"Try changes without downing dependants first, and reapply them if that fails."`
+	Safe     bool     `short:"s" name:"safe" help:"Refuse to run if any change is not a pure append."`
+	All      bool     `short:"a" name:"all" help:"On an empty database, replay every revision from the first instead of the highest."`
+	Set      []string `name:"set" sep:"none" help:"Value of the setting dmut.values.N, as N=value. Can be repeated."`
 }
 
 func (a ApplyCmd) Run(ctx context.Context) error {
-
-	if a.Full && a.Simple {
-		return oops.In("apply").Errorf("-f/--full and -s/--simple are mutually exclusive")
+	if a.Force && a.Safe {
+		return oops.In("apply").Errorf("-f/--force and -s/--safe are mutually exclusive")
 	}
-
-	if err := mutations.ReadAndRunMutations(ctx, a.Uri, a.Paths, &mutations.MutationRunnerOptions{
+	values := map[string]string{}
+	for _, set := range a.Set {
+		name, value, ok := strings.Cut(set, "=")
+		if !ok {
+			return oops.In("apply").With("set", set).Errorf("--set wants N=value, got %q", set)
+		}
+		values[name] = value
+	}
+	mode := model.ModeNormal
+	switch {
+	case a.Force:
+		mode = model.ModeForce
+	case a.Safe:
+		mode = model.ModeSafe
+	}
+	return mutations.Apply(ctx, a.Uri, a.Paths, mutations.Options{
+		Mode:     mode,
 		Commit:   !a.Dry,
 		Override: a.Override,
-		Full:     a.Full,
-		Simple:   a.Simple,
-	}); err != nil {
-		return err
-	}
-	return nil
+		All:      a.All,
+		Values:   values,
+	})
 }

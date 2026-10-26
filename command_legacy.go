@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ceymard/dmut/v2/mutations"
+	"github.com/ceymard/dmut/v2/mutations/model"
 	"github.com/goccy/go-yaml"
 	"github.com/jackc/pgx/v5"
 )
@@ -59,35 +59,35 @@ func (c LegacyCmd) Run(ctx context.Context) error {
 		}
 	}
 
-	type YamlLegacyStatementUpDown struct {
-		Up   string `yaml:"up"`
-		Down string `yaml:"down"`
+	type YamlStatement struct {
+		Up   string `yaml:"up,omitempty"`
+		Down string `yaml:"down,omitempty"`
 	}
-	type YamlLegacyStatement interface{}
-	type YamlLegacyMigration struct {
-		Needs []string `yaml:"needs,omitempty,flow"`
-		Sql   []YamlLegacyStatement
+	type YamlMutation struct {
+		Structural bool     `yaml:"structural"`
+		Deps       []string `yaml:"deps,omitempty,flow"`
+		Sql        []any    `yaml:"sql"`
 	}
-	type YamlFile map[string]*YamlLegacyMigration
+	type YamlFile struct {
+		Revision  int                      `yaml:"revision"`
+		Mutations map[string]*YamlMutation `yaml:"mutations"`
+	}
 
-	var yaml_file = make(YamlFile)
+	// Everything the old system did is arbitrary SQL: the mutations are structural, to be
+	// narrowed by hand. A statement with no matching up or down is written with only the
+	// half it has, so that loading the file fails there and it gets written by hand.
+	var yaml_file = YamlFile{Revision: 1, Mutations: make(map[string]*YamlMutation)}
 	for _, mut := range mut_map {
-		var statements = make([]YamlLegacyStatement, 0)
+		var statements = make([]any, 0)
 		if len(mut.Up) != len(mut.Down) {
 
 			for _, up := range mut.Up {
-				statements = append(statements, mutations.MutationStatement{
-					Up: replaceLineComments(up),
-					// Down: mut.Down[len(mut.Down)-i-1],
-				})
+				statements = append(statements, YamlStatement{Up: replaceLineComments(up)})
 			}
 
 			// add down in reverse order
 			for i := len(mut.Down) - 1; i >= 0; i-- {
-				down := mut.Down[i]
-				statements = append(statements, mutations.MutationStatement{
-					Down: replaceLineComments(down),
-				})
+				statements = append(statements, YamlStatement{Down: replaceLineComments(mut.Down[i])})
 			}
 		} else {
 			for i, up := range mut.Up {
@@ -95,12 +95,11 @@ func (c LegacyCmd) Run(ctx context.Context) error {
 				up = replaceLineComments(up)
 				down := replaceLineComments(mut.Down[len(mut.Down)-i-1])
 
-				if _, _, err := mutations.AutoDowner.ParseAndGetDefault(up); err == nil {
-					// if we can undo it, just put the string
-					// os.Stdout.WriteString(up + "\n")
+				if inferred, err := model.Infer(up); err == nil && inferred.Down == down {
+					// if we can undo it as it was, just put the string
 					statements = append(statements, up)
 				} else {
-					statements = append(statements, mutations.MutationStatement{
+					statements = append(statements, YamlStatement{
 						Up:   up,
 						Down: down,
 					})
@@ -108,9 +107,10 @@ func (c LegacyCmd) Run(ctx context.Context) error {
 			}
 		}
 
-		yaml_file[mut.Name] = &YamlLegacyMigration{
-			Needs: mut.Needs,
-			Sql:   statements,
+		yaml_file.Mutations[mut.Name] = &YamlMutation{
+			Structural: true,
+			Deps:       mut.Needs,
+			Sql:        statements,
 		}
 	}
 

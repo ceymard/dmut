@@ -123,7 +123,13 @@ func (a *applier) applyRevision(ctx context.Context, project *model.Project, rev
 	if rev.Mode != "" {
 		mode = rev.Mode
 	}
-	input := model.PlanInput{Recorded: state, Revision: rev, Mode: mode, Settings: a.values.digests(rev.Namespace)}
+	// A revision the database is already at is compared to what it recorded, which may be the
+	// override entries and not the mutations that ran.
+	target := rev
+	if current == rev.Number {
+		target = rev.AsApplied()
+	}
+	input := model.PlanInput{Recorded: state, Revision: target, Mode: mode, Settings: a.values.digests(rev.Namespace)}
 	plan, err := model.BuildPlan(input)
 	if err != nil {
 		return err
@@ -135,9 +141,10 @@ func (a *applier) applyRevision(ctx context.Context, project *model.Project, rev
 		return err
 	}
 
-	if plan.Empty() {
+	if !plan.Runs() {
 		a.r.logger.Info("no changes to apply", "namespace", rev.Namespace, "revision", rev.Number)
-	} else {
+	}
+	if !plan.Empty() {
 		a.r.logger.Info("applying mutations", "namespace", rev.Namespace, "revision", rev.Number)
 		if plan, err = a.run(ctx, rev, state, input, plan); err != nil {
 			return err
@@ -151,7 +158,7 @@ func (a *applier) applyRevision(ctx context.Context, project *model.Project, rev
 			return err
 		}
 	}
-	if !plan.Empty() {
+	if plan.Runs() {
 		if err := a.testPhase(ctx, rev); err != nil {
 			return err
 		}
@@ -323,4 +330,49 @@ func (a *applier) recordOverrides(ctx context.Context, rev *model.Revision) erro
 		}
 	}
 	return nil
+}
+
+// DownNamespace takes every recorded mutation of a namespace down, in reverse dependency order,
+// and forgets them, in one transaction that is committed only if commit is set. dmut's own
+// namespace cannot be taken down.
+func (r *Runner) DownNamespace(ctx context.Context, namespace string, commit bool) (err error) {
+	if namespace == DmutNamespace {
+		return oops.In("down").Errorf("the namespace %s holds dmut's own state and cannot be taken down", namespace)
+	}
+	if err := r.Begin(ctx); err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			r.logger.Info("rolling back", IconKey, IconRolledBack)
+			cleanup, cancel := CleanupContext(ctx)
+			defer cancel()
+			_ = r.Rollback(cleanup)
+		}
+	}()
+
+	state, current, err := r.LoadState(ctx, namespace)
+	if err != nil {
+		return err
+	}
+	empty := &model.Revision{Namespace: namespace, Number: current}
+	plan, err := model.BuildPlan(model.PlanInput{Recorded: state, Revision: empty, Mode: model.ModeNormal})
+	if err != nil {
+		return err
+	}
+	a := &applier{r: r}
+	if err := r.clearSettings(ctx, location{}, usedSettingNames(&model.Project{}, state)); err != nil {
+		return err
+	}
+	if err := a.execute(ctx, empty, state, plan); err != nil {
+		return err
+	}
+	if err := a.writeRecords(ctx, empty, state, plan); err != nil {
+		return err
+	}
+	if commit {
+		return r.Commit(ctx)
+	}
+	r.logger.Info("rolling back, dry run")
+	return r.Rollback(ctx)
 }

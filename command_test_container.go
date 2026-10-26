@@ -42,7 +42,7 @@ func (t TestCmd) Run(ctx context.Context) error {
 		t.Password = "test"
 	}
 
-	_, err := mutations.LoadYamlMutations(t.Paths...)
+	project, err := mutations.LoadProject(t.Paths...)
 	if err != nil {
 		return err
 	}
@@ -80,12 +80,10 @@ func (t TestCmd) Run(ctx context.Context) error {
 		return err
 	}
 
-	if err := mutations.ReadAndRunMutations(ctx, uri, t.Paths, &mutations.MutationRunnerOptions{
-		Commit: false,
-		All:    t.All,
-	}); err != nil {
+	runner, err := mutations.NewRunner(ctx, uri, nil)
+	if err != nil {
 		return err
 	}
-
-	return nil
+	defer runner.Close(ctx)
+	return runner.ApplyProject(ctx, project, mutations.Options{All: t.All})
 }

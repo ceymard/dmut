@@ -18,6 +18,7 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/ceymard/dmut/v2/mutations"
+	"github.com/ceymard/dmut/v2/mutations/model"
 )
 
 // VERSION is set at build time (-ldflags "-X main.VERSION=..."). When empty, it is
@@ -52,7 +53,7 @@ type CLI struct {
 type CollectCmd struct {
 	Outfile  string   `arg:"" help:"Output YAML file, or - for stdout."`
 	Paths    []string `arg:"" help:"Paths to collect, or a single postgres:// URI to source from a live database (only with -r)."`
-	Revision int      `short:"r" name:"revision" help:"Emit a revision shell at this number instead of a flat collect (see specs/changes.md, Squash revisions)."`
+	Revision int      `short:"r" name:"revision" help:"Emit a revision shell at this number instead of a flat collect."`
 }
 
 func (c CollectCmd) Run(ctx context.Context) error {
@@ -63,36 +64,33 @@ func (c CollectCmd) Run(ctx context.Context) error {
 	defer close_out()
 
 	if c.Revision == 0 {
-		muts, err := mutations.LoadYamlMutations(c.Paths...)
+		project, err := model.LoadPaths(c.Paths...)
 		if err != nil {
 			return err
 		}
-		return mutations.Collect(muts, out)
+		return mutations.Collect(project, out)
 	}
 
-	var shells []*mutations.MutationSet
+	var shells []*mutations.Shell
 	var warnings []string
 
 	if len(c.Paths) == 1 && isPostgresURI(c.Paths[0]) {
-		runner, err := mutations.NewPgRunner(ctx, c.Paths[0], nil)
+		runner, err := mutations.NewRunner(ctx, c.Paths[0], nil)
 		if err != nil {
 			return err
 		}
 		defer runner.Close(ctx)
 
-		shells, warnings, err = mutations.CollectRevisionFromDatabase(ctx, runner, c.Revision)
+		shells, warnings, err = runner.CollectRevisionFromDatabase(ctx, c.Revision)
 		if err != nil {
 			return err
 		}
 	} else {
-		muts, err := mutations.LoadYamlMutations(c.Paths...)
+		project, err := model.LoadPaths(c.Paths...)
 		if err != nil {
 			return err
 		}
-		shells, warnings, err = mutations.CollectRevisionFromLocal(muts, c.Revision)
-		if err != nil {
-			return err
-		}
+		shells, warnings = mutations.CollectRevisionFromLocal(project, c.Revision)
 	}
 
 	for _, w := range warnings {

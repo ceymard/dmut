@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/ceymard/dmut/v2/mutations"
 )
@@ -14,35 +13,10 @@ type DownCmd struct {
 }
 
 func (c DownCmd) Run(ctx context.Context) error {
-	var fake_empty_local_set *mutations.MutationSet = mutations.NewMutationSet(c.Namespace, 0, "")
-
-	runner, err := mutations.NewPgRunner(ctx, c.Uri, nil)
+	runner, err := mutations.NewRunner(ctx, c.Uri, nil)
 	if err != nil {
 		return err
 	}
 	defer runner.Close(ctx)
-
-	db_mutations, err := runner.GetDBMutationsFromDb(ctx, c.Namespace)
-	if err != nil {
-		return err
-	}
-
-	fake_empty_local_set.Revision = db_mutations.Revision
-
-	if err := runner.Begin(ctx); err != nil {
-		return err
-	}
-
-	if err := mutations.RunMutations(ctx, runner, fake_empty_local_set, &mutations.MutationRunnerOptions{
-		Commit: !c.Dry,
-	}); err != nil {
-		return err
-	}
-
-	if c.Dry {
-		slog.Info("rolling back, dry run")
-		return runner.Rollback(ctx)
-	}
-
-	return runner.Commit(ctx)
+	return runner.DownNamespace(ctx, c.Namespace, !c.Dry)
 }

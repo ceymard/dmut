@@ -157,32 +157,44 @@ func parseStatementMap(w where, m yaml.MapSlice) (Statement, error) {
 	return st, nil
 }
 
-// autoStatement builds a statement whose down dmut infers from its up. A statement with
-// nothing to undo (COMMENT ON, ALTER TYPE ... ADD VALUE IF NOT EXISTS) becomes a seed.
+// autoStatement is Infer with the place of the statement in the error.
 func autoStatement(w where, sql string) (Statement, error) {
-	if strings.TrimSpace(sql) == "" {
-		return Statement{}, w.errf("statement is empty")
+	st, err := Infer(sql)
+	if err != nil {
+		return st, w.errf("%v", err)
 	}
-	if stmts, err := sqlStatements(sql); err != nil {
-		return Statement{}, w.wrap(err)
-	} else if len(stmts) > 1 {
-		return Statement{}, w.errf("an automatic statement must be a single SQL statement ; use up/down for several")
+	return st, nil
+}
+
+// Infer builds the statement dmut makes of a plain string: a single SQL statement whose down
+// it works out. A statement with nothing to undo (COMMENT ON, ALTER TYPE ... ADD VALUE IF NOT
+// EXISTS) becomes a seed.
+func Infer(sql string) (Statement, error) {
+	if strings.TrimSpace(sql) == "" {
+		return Statement{}, fmt.Errorf("statement is empty")
+	}
+	stmts, err := sqlStatements(sql)
+	if err != nil {
+		return Statement{}, err
+	}
+	if len(stmts) > 1 {
+		return Statement{}, fmt.Errorf("an automatic statement must be a single SQL statement ; use up/down for several")
 	}
 	if add, ifNotExists := alterTypeAddValue(sql); add {
 		if !ifNotExists {
-			return Statement{}, w.errf("ALTER TYPE ... ADD VALUE has no automatic down ; write IF NOT EXISTS, or use up/down or seed")
+			return Statement{}, fmt.Errorf("ALTER TYPE ... ADD VALUE has no automatic down ; write IF NOT EXISTS, or use up/down or seed")
 		}
 		return Statement{Kind: KindSeed, Up: sql}, nil
 	}
 	down, noDown, err := AutoDowner.ParseAndGetDefault(sql)
 	if err != nil {
-		return Statement{}, w.errf("can't infer a down ; write it with up/down, or use seed: %v", err)
+		return Statement{}, fmt.Errorf("can't infer a down ; write it with up/down, or use seed: %v", err)
 	}
 	if noDown {
 		return Statement{Kind: KindSeed, Up: sql}, nil
 	}
 	if down == "" {
-		return Statement{}, w.errf("empty down inferred ; write it with up/down")
+		return Statement{}, fmt.Errorf("empty down inferred ; write it with up/down")
 	}
 	return Statement{Kind: KindReversible, Up: sql, Down: down}, nil
 }

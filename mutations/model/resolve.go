@@ -29,32 +29,43 @@ func (r *Revision) Resolve() error {
 	if len(r.Override) == 0 {
 		return nil
 	}
-	deleted := map[string]bool{}
-	for _, name := range r.Delete {
-		deleted[name] = true
+	all := r.Effective()
+	effective := make(map[string]*Mutation, len(all))
+	for _, m := range all {
+		effective[m.Name] = m
 	}
-	effective := map[string]*Mutation{}
-	for _, m := range r.Mutations {
-		if !deleted[m.Name] {
-			effective[m.Name] = m
-		}
-	}
-	for _, o := range r.Override {
-		if !deleted[o.Name] {
-			effective[o.Name] = o
-		}
-	}
-	all := make([]*Mutation, 0, len(effective))
-	for _, m := range effective {
-		all = append(all, m)
-	}
-	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
 	for _, o := range r.Override {
 		if err := resolveMutation(o, effective, all, r); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// Effective returns, sorted by name, the mutations as they are recorded once the revision is
+// applied: those that delete: leaves, with the override entries in their place.
+func (r *Revision) Effective() []*Mutation {
+	deleted := map[string]bool{}
+	for _, name := range r.Delete {
+		deleted[name] = true
+	}
+	byName := map[string]*Mutation{}
+	for _, m := range r.Mutations {
+		if !deleted[m.Name] {
+			byName[m.Name] = m
+		}
+	}
+	for _, o := range r.Override {
+		if !deleted[o.Name] {
+			byName[o.Name] = o
+		}
+	}
+	out := make([]*Mutation, 0, len(byName))
+	for _, m := range byName {
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // resolveMutation sets Parents and Matched of m from the mutations in byName and all.
@@ -136,6 +147,9 @@ func (r *Revision) UpOrder() ([]*Mutation, error) {
 		state[m] = visiting
 		path = append(path, m)
 		for _, d := range m.Dependencies() {
+			if r.byName[d.Name] != d {
+				continue // left out of the revision
+			}
 			if err := visit(d); err != nil {
 				return err
 			}
@@ -186,4 +200,15 @@ func (r *Revision) OverrideSet() *Revision {
 		_ = resolveMutation(m, set.byName, set.Mutations, set)
 	}
 	return set
+}
+
+// AsApplied returns the revision as it stands once applied: its effective mutations, with
+// nothing to run or record in their place. It is what an already applied revision is compared to.
+// Dependencies on mutations that delete: left out stay in the resolved lists, as they were recorded.
+func (r *Revision) AsApplied() *Revision {
+	applied := &Revision{Namespace: r.Namespace, Number: r.Number, Mode: r.Mode, Mutations: r.Effective(), byName: map[string]*Mutation{}}
+	for _, m := range applied.Mutations {
+		applied.byName[m.Name] = m
+	}
+	return applied
 }

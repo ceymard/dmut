@@ -17,6 +17,12 @@ func (a *applier) testPhase(ctx context.Context, set *model.Revision) error {
 	if err != nil {
 		return err
 	}
+	// Only the mutations of the set are tested: the others stay as they are.
+	for name := range state {
+		if _, ok := set.Mutation(name); !ok {
+			delete(state, name)
+		}
+	}
 	order, err := set.UpOrder()
 	if err != nil {
 		return err

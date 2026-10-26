@@ -47,8 +47,7 @@ var attrColors = map[string]uint8{
 
 // Colors of attributes whose meaning depends on their value.
 var valueColors = map[string]map[string]uint8{
-	"dir":  {"up": 10, "down": 9},    // bright green, bright red
-	"kind": {"core": 13, "glue": 12}, // bright magenta, bright blue
+	"dir": {"up": 10, "down": 9}, // bright green, bright red
 }
 
 // iconHandler takes the mutations.IconKey attribute out of each record. In plain
