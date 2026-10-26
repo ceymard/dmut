@@ -163,6 +163,11 @@ func autoStatement(w where, sql string) (Statement, error) {
 	if strings.TrimSpace(sql) == "" {
 		return Statement{}, w.errf("statement is empty")
 	}
+	if stmts, err := sqlStatements(sql); err != nil {
+		return Statement{}, w.wrap(err)
+	} else if len(stmts) > 1 {
+		return Statement{}, w.errf("an automatic statement must be a single SQL statement ; use up/down for several")
+	}
 	if add, ifNotExists := alterTypeAddValue(sql); add {
 		if !ifNotExists {
 			return Statement{}, w.errf("ALTER TYPE ... ADD VALUE has no automatic down ; write IF NOT EXISTS, or use up/down or seed")
@@ -375,21 +380,42 @@ func jsonable(v any) any {
 	return v
 }
 
-// finish computes the hash, which is the only place the statement text is lexed for comparison.
+// finish computes the text and data hashes.
 func (s *Statement) finish() error {
-	dg := mutations.NewDigestBuffer()
-	dg.WriteString(string(s.Kind))
-	dg.WriteByte(0)
-	if err := dg.AddStatement(s.Up); err != nil {
+	th, err := TextHash(s.Kind, s.Up, s.Down)
+	if err != nil {
 		return err
 	}
-	if err := dg.AddStatement(s.Down); err != nil {
-		return err
+	s.TextHash = th
+	s.DataHash = dataHash(s.Data)
+	return nil
+}
+
+// TextHash identifies a statement by its kind and its normalized up and down text:
+// whitespace and comments do not change it.
+func TextHash(kind Kind, up, down string) (string, error) {
+	dg := mutations.NewDigestBuffer()
+	dg.WriteString(string(kind))
+	dg.WriteByte(0)
+	if err := dg.AddStatement(up); err != nil {
+		return "", err
+	}
+	dg.WriteByte(0)
+	if err := dg.AddStatement(down); err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(dg.Bytes())
+	return base64.StdEncoding.EncodeToString(sum[:]), nil
+}
+
+// dataHash is empty for a statement with no data, so it does not show in its digest.
+func dataHash(rows [][]*string) string {
+	if rows == nil {
+		return ""
 	}
 	h := sha256.New()
-	h.Write(dg.Bytes())
 	var n [8]byte
-	for _, row := range s.Data {
+	for _, row := range rows {
 		binary.BigEndian.PutUint64(n[:], uint64(len(row)))
 		h.Write(n[:])
 		for _, v := range row {
@@ -403,6 +429,5 @@ func (s *Statement) finish() error {
 			h.Write([]byte(*v))
 		}
 	}
-	s.Hash = base64.StdEncoding.EncodeToString(h.Sum(nil))
-	return nil
+	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }

@@ -54,8 +54,9 @@ type Statement struct {
 	Settings []Setting
 	// Data holds the rows of a seed, each value as text; a nil value is NULL.
 	Data [][]*string
-	// Hash identifies the statement text, kind and data; settings values are not part of it.
-	Hash string
+	// TextHash and DataHash identify the statement; settings values are not part of them.
+	TextHash string
+	DataHash string
 
 	explicitDown bool
 }

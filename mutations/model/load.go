@@ -104,17 +104,23 @@ func (b *builder) readFile(fsys fs.FS, name, shown string) error {
 	// The name of a mutation file is its name without extension, wherever it sits.
 	base := strings.TrimSuffix(path.Base(name), ext)
 	dec := yaml.NewDecoder(f, yaml.UseOrderedMap())
+	documents := 0
 	for {
 		var doc any
 		if err := dec.Decode(&doc); errors.Is(err, io.EOF) {
+			if documents == 0 {
+				(where{file: shown, warnings: &b.warnings}).warn("empty yaml file, ignored")
+			}
 			return nil
 		} else if err != nil {
 			return oops.In("model").With("file", shown).Wrapf(err, "%s: can't read yaml", shown)
 		}
+		documents++
+		w := where{file: shown, warnings: &b.warnings}
 		if doc == nil {
+			w.warn("empty yaml document, ignored")
 			continue
 		}
-		w := where{file: shown, warnings: &b.warnings}
 		m, ok := doc.(yaml.MapSlice)
 		if !ok {
 			return w.errf("a document must be a mapping, got %T", doc)

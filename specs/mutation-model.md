@@ -33,6 +33,7 @@ An `override:` entry replaces `sql`, `structural`, `deps` and `reapply_on` as a 
 4. A mutation file is at the unnamed revision, which is the revision after the highest numbered revision of its namespace (or `1` when there is none), as today.
 5. Two definitions of one name in one namespace and revision are a load error. The error names both files.
 6. The name of a file may contain letters, digits, `_`, `-` and dots only. Another name is a load error.
+7. A file with no YAML document, or a document that is empty, is ignored with a warning. A file without `namespace` is in the namespace named by the empty string.
 
 `collect` writes the form of rule 2, with every mutation nested under `mutations:`. `explode` writes one file for each mutation, named `<mutation>.yml` in the output directory, with `namespace` and without `revision`.
 
@@ -42,7 +43,7 @@ A statement is a plain string, or an object with exactly one of the keys of the 
 
 | Form | Meaning |
 |---|---|
-| plain string | A reversible statement. dmut infers the down. Not allowed if dmut cannot infer it. |
+| plain string | A reversible statement. dmut infers the down. It must be a single SQL statement, and dmut must be able to infer its down. |
 | `auto: <sql>` | Same as a plain string. It exists so that the statement can carry `settings`. |
 | `up: <sql>` with `down: <sql>` | A reversible statement with an explicit down. The `down` must not be empty. |
 | `seed: <sql>` | A seed. It has no down. It may carry `data` (see below). |
@@ -116,7 +117,7 @@ Rules:
 An entry of `deps` is one of: an exact mutation name, a name pattern, or an object `{name: <name or pattern>, reapply_on: [...]}`.
 
 1. An exact name that does not exist in the namespace is a load error.
-2. A pattern is matched against mutation names in the same namespace. `*` matches one name segment (the text between two dots). `**` matches any number of segments. They are the only pattern characters.
+2. A pattern is matched against mutation names in the same namespace. `*` and `**` are whole segments of the pattern (the text between two dots), so `a*` is a load error. `*` matches one name segment. `**` matches any number of segments. They are the only pattern characters.
 3. A pattern that matches no mutation is allowed.
 4. A mutation never matches its own pattern.
 5. A dependency cycle is a load error. The error names the mutations in the cycle.
@@ -145,15 +146,16 @@ A mutation has a set of reapply triggers for each entry of its `deps`. The set f
 
 Rules:
 
-1. A mutation reapplies when any of its triggers fires in the same run.
+1. A mutation reapplies when any of its triggers fires in the same run. When several fire, the reason is the first in this order: `dep_reapplied`, `dep_appended`, `deps_grow`, `deps_shrink`.
 2. When a mutation reapplies, the mutations that depend on it are checked for `dep_reapplied`, in dependency order, with the same rules. A mutation downed because of a trigger is brought back up in the same run.
 3. A mutation that reapplies is not also reapplied for a second trigger in the same run.
 4. When the statements of a mutation change, dmut takes down the tail and brings up the new tail. When the statements only grow at the end (an append), dmut runs the new statements only. A change of the settings of a statement (section 7) is a change of that statement.
-5. dmut detects `deps_grow` and `deps_shrink` by comparing the stored lists with the new lists before it stores the new lists.
+5. dmut detects `deps_grow` and `deps_shrink` by comparing, for each entry, the stored list of the entry with the same pattern with the new list, before it stores the new lists. An entry with a new pattern has an empty stored list. An entry that no longer exists is compared with an empty new list, and the triggers that apply are those of the mutation, or the default.
 6. A mutation that is new in this run has no stored lists, and no trigger fires for it.
 7. In the mode `force`, a mutation that blocks a dependent tail is handled as today: dmut reapplies the dependents in full, whatever their `reapply_on` says. In the mode `safe`, a reapply of a structural mutation is refused as a non-append change.
 8. A reapply of a structural mutation in the mode `normal` drops the objects it created, with their data.
 9. A change of the order of the statements of a mutation is a change of the statements (rule 4). The tail starts at the first statement whose position holds a different statement.
+10. The triggers of a removed dependency are those of the entries of the mutation that matched it, or the triggers of the mutation when no such entry is left.
 
 > 📜 **ADR**: dmut does not accept a reorder of statements as "no change". Two orders that both run without error can build different databases. Example: `alter table t add column b; alter table t add column c;` swapped gives the column order `(a, c, b)` on a new database and `(a, b, c)` on a database built before. The same happens with `grant` followed by `revoke`, two `create or replace function` of one name, and seeds that write the same rows. The test phase does not compare schemas, so it cannot detect this, and databases built in the old order and in the new order would differ without notice. An author who needs to change the recorded order without running anything uses `override:` in a revision (see the revisions documentation). That makes the divergence an explicit and reviewed decision.
 
@@ -186,7 +188,7 @@ A statement lists its settings with the key `settings`. An entry is a setting na
 5. Before dmut runs a statement in the up direction, it sets each name that the statement lists, with `set_config(name, value, true)` and the value as a bind parameter. An unset name stays the empty string. After the statement, dmut sets each of its names to the empty string again.
 6. Before dmut runs a statement in the down direction, it sets each saved name that the statement lists to the value stored with the statement, as in rule 5. Every other name reads as the empty string. A stored unset reads as the empty string. A down that needs a value must list the name with `saved: true`.
 7. A statement reads a setting with `current_setting(name)`. A name that a statement does not list reads as the empty string. A name that no statement lists is unknown to Postgres, and `current_setting(name)` raises an error.
-8. The identity of a statement is its text, plus the settings digest. The settings digest is a hash of the list of its tracked entries, in order, each as the name and either the hash of its value or a marker for unset. The marker differs from the empty string. The hash is SHA-256 of the namespace, the mutation, the position, the name and the value, so that equal values in two statements give different hashes. dmut stores the digest with the statement. It stores a value only for a saved entry (rule 12).
+8. The identity of a statement is its text, plus the settings digest. The settings digest is the list of its tracked entries, in order, each as the name and either the hash of its value or a marker for unset, so that dmut can name the setting that changed. The marker differs from the empty string. The hash is SHA-256 of the namespace, the mutation, the position, the name and the value, so that equal values in two statements give different hashes. dmut stores the digest with the statement. It stores a value only for a saved entry (rule 12).
 9. When the stored identity of a statement differs from the new one, the statement is the first statement of a changed tail (section 5, rule 4). Adding, removing or reordering an entry changes the identity.
 10. A new statement has no stored identity, and runs as a new statement.
 11. A run that is caused by a settings change has the `reason` field `setting` and the `cause` field with the name of the setting (section 10).

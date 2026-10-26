@@ -205,6 +205,7 @@ func TestStatementErrors(t *testing.T) {
 		"data two statements": "- {seed: 'insert into t values ($1); select 1', data: [[1]]}",
 		"data row not list":   "- {seed: 'insert into t values ($1)', data: [1]}",
 		"transaction control": "- {seed: commit}",
+		"several statements":  "- create table a (a int); create table b (a int)",
 	}
 	for name, sql := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -257,7 +258,7 @@ func TestSeedDataAliasesAndHash(t *testing.T) {
       - [1, x]
       - [1, x]
 `)[0]
-	if a.Hash != b.Hash {
+	if a.DataHash != b.DataHash {
 		t.Error("equal data should hash equal")
 	}
 	c := statementsOf(t, `
@@ -266,7 +267,7 @@ func TestSeedDataAliasesAndHash(t *testing.T) {
       - [1, x]
       - [1, y]
 `)[0]
-	if a.Hash == c.Hash {
+	if a.DataHash == c.DataHash {
 		t.Error("different data should hash differently")
 	}
 }
@@ -280,7 +281,7 @@ func TestSeedWithoutRowsAndHashIgnoresWhitespace(t *testing.T) {
 	if len(sts[0].Data) != 0 {
 		t.Error("no rows expected")
 	}
-	if sts[1].Hash != sts[2].Hash {
+	if sts[1].TextHash != sts[2].TextHash {
 		t.Error("whitespace should not change the hash")
 	}
 }
@@ -542,5 +543,12 @@ func TestLoadPathsFileAndDirectory(t *testing.T) {
 	}
 	if _, err := LoadPaths(dir + "/missing"); err == nil {
 		t.Error("a missing path should fail")
+	}
+}
+
+func TestEmptyDocumentWarns(t *testing.T) {
+	p := mustLoad(t, map[string]string{"a.yml": "# nothing\n", "b.yml": "sql: [{seed: select 1}]\n"})
+	if len(p.Warnings) != 1 || p.Warnings[0].File != "a.yml" {
+		t.Errorf("want one warning on a.yml, got %v", p.Warnings)
 	}
 }
