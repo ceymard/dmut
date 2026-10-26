@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ceymard/dmut/v2/mutations/model"
+	"github.com/ceymard/dmut/v3/mutations/model"
 )
 
 // bootstrap creates dmut's tables by running the ups of its own definition in order.

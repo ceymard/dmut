@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"sort"
 
-	"github.com/ceymard/dmut/v2/mutations/model"
+	"github.com/ceymard/dmut/v3/mutations/model"
 	"github.com/samber/oops"
 )
 

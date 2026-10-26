@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ceymard/dmut/v2/mutations/model"
+	"github.com/ceymard/dmut/v3/mutations/model"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/samber/oops"

@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ceymard/dmut/v2/mutations"
-	"github.com/ceymard/dmut/v2/mutations/model"
+	"github.com/ceymard/dmut/v3/mutations"
+	"github.com/ceymard/dmut/v3/mutations/model"
 )
 
 type ExplodeCmd struct {

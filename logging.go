@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ceymard/dmut/v2/mutations"
+	"github.com/ceymard/dmut/v3/mutations"
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
 )

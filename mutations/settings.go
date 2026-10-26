@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ceymard/dmut/v2/mutations/model"
+	"github.com/ceymard/dmut/v3/mutations/model"
 )
 
 // settingValues holds the resolved value of each setting name used in a project, as written in

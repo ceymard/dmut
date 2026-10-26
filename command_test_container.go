@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ceymard/dmut/v2/mutations"
+	"github.com/ceymard/dmut/v3/mutations"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"

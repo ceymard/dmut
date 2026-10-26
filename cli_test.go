@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ceymard/dmut/v2/mutations"
+	"github.com/ceymard/dmut/v3/mutations"
 )
 
 // basic is a schema and a table, with no roles: roles are cluster-wide and would collide

@@ -21,9 +21,9 @@ grant in `examples/hotel/` corresponds to something in that original `schema.sql
 - **[Schema reference](reference.md)** — the full list of mutations, in dependency order, and what
   each one covers.
 - **[Walkthrough](walkthrough.md)** — how the schema is actually laid out as mutations: dotting
-  every mutation under `hotel.` to get the schema dependency for free, `needs` for the dependencies
-  that aren't free, `children` for generated columns, and a real case where ordering among `glue`
-  blocks looks like it matters and turns out not to.
+  every mutation under `hotel.` to get the schema dependency for free, `deps` for the dependencies
+  that aren't free, dotted child mutations for generated columns and functions, and a grants
+  mutation that reapplies itself when the schema grows.
 
 ## It's a real, running database
 

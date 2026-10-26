@@ -17,8 +17,8 @@ import (
 	"syscall"
 
 	"github.com/alecthomas/kong"
-	"github.com/ceymard/dmut/v2/mutations"
-	"github.com/ceymard/dmut/v2/mutations/model"
+	"github.com/ceymard/dmut/v3/mutations"
+	"github.com/ceymard/dmut/v3/mutations/model"
 )
 
 // VERSION is set at build time (-ldflags "-X main.VERSION=..."). When empty, it is

@@ -28,7 +28,7 @@ func CleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
 type Runner struct {
 	conn   *pgx.Conn
 	logger *slog.Logger
-	core   *captureCore
+	state  *captureState
 }
 
 // location says where a statement comes from, to put in the error if it fails.
@@ -46,8 +46,8 @@ func NewRunner(ctx context.Context, url string, logger *slog.Logger) (*Runner, e
 	if logger == nil {
 		logger = slog.Default()
 	}
-	core := &captureCore{}
-	r := &Runner{core: core, logger: slog.New(captureHandler{core: core, inner: logger.Handler()})}
+	state := &captureState{}
+	r := &Runner{state: state, logger: slog.New(captureHandler{state: state, inner: logger.Handler()})}
 
 	r.logger.Info("connecting", "uri", redactURI(url))
 	config, err := pgx.ParseConfig(url)
@@ -77,7 +77,7 @@ func (r *Runner) Close(ctx context.Context) error {
 
 // BeginCapture holds back the records capture accepts, logged through Logger()
 // from now on, until EndCapture. Captures don't nest.
-func (r *Runner) BeginCapture(capture Capture) { r.core.beginCapture(capture) }
+func (r *Runner) BeginCapture(capture Capture) { r.state.beginCapture(capture) }
 
 // EndCapture stops the capture started by BeginCapture. The held records are emitted in
 // order if replay is true, and dropped otherwise. A non-empty note is logged before a
@@ -87,7 +87,7 @@ func (r *Runner) EndCapture(replay bool, note string) {
 	if note != "" {
 		announce = func() { r.logger.Info(note) }
 	}
-	r.core.endCapture(replay, announce)
+	r.state.endCapture(replay, announce)
 }
 
 // wrapPgError attaches the failing sql and, for server errors, the position, detail,

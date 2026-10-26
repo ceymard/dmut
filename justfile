@@ -7,11 +7,11 @@ test:
 
 # Only the tests that need no database : parser, loader, hashing, collect.
 test-unit:
-    go test ./mutations/ -count=1
+    go test ./mutations/model/ -count=1
 
 # Only the tests that run against a real postgres.
 test-db:
-    go test . -count=1
+    go test . ./mutations/ -count=1
 
 # Same as test, but a missing docker daemon is a failure rather than a skip.
 test-ci:

@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	"github.com/ceymard/dmut/v2/mutations"
+	"github.com/ceymard/dmut/v3/mutations"
 )
 
 type DownCmd struct {

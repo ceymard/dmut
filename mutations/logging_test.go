@@ -41,8 +41,8 @@ func (r *recorder) WithGroup(string) slog.Handler { return r }
 
 func TestCaptureHandlerPassesThroughWhenNotCapturing(t *testing.T) {
 	rec := newRecorder()
-	core := &captureCore{}
-	log := slog.New(captureHandler{core: core, inner: rec})
+	state := &captureState{}
+	log := slog.New(captureHandler{state: state, inner: rec})
 
 	log.Info("hello", "k", "v")
 
@@ -56,18 +56,18 @@ func TestCaptureHandlerPassesThroughWhenNotCapturing(t *testing.T) {
 
 func TestCaptureHandlerReplaysHeldRecordsInOrderWithTheirAttributes(t *testing.T) {
 	rec := newRecorder()
-	core := &captureCore{}
-	log := slog.New(captureHandler{core: core, inner: rec})
+	state := &captureState{}
+	log := slog.New(captureHandler{state: state, inner: rec})
 	child := log.With("namespace", "api")
 
-	core.beginCapture(Capture{Phase: "test"})
+	state.beginCapture(Capture{Phase: "test"})
 	log.Info("first")
 	child.Info("second", "n", 2)
 	if len(*rec.out) != 0 {
 		t.Fatalf("nothing must be emitted while capturing, got %v", *rec.out)
 	}
 
-	core.endCapture(true, nil)
+	state.endCapture(true, nil)
 	got := *rec.out
 	if len(got) != 2 || got[0]["msg"] != "first" || got[1]["msg"] != "second" {
 		t.Fatalf("expected both records replayed in order, got %v", got)
@@ -89,19 +89,19 @@ func TestCaptureHandlerReplaysHeldRecordsInOrderWithTheirAttributes(t *testing.T
 
 func TestCaptureHandlerDropsHeldRecordsWithoutReplay(t *testing.T) {
 	rec := newRecorder()
-	core := &captureCore{}
-	log := slog.New(captureHandler{core: core, inner: rec})
+	state := &captureState{}
+	log := slog.New(captureHandler{state: state, inner: rec})
 
-	core.beginCapture(Capture{Phase: "test"})
+	state.beginCapture(Capture{Phase: "test"})
 	log.Info("hidden")
-	core.endCapture(false, nil)
+	state.endCapture(false, nil)
 
 	if len(*rec.out) != 0 {
 		t.Fatalf("records of a successful capture must be dropped, got %v", *rec.out)
 	}
 	// a later capture must not resurrect them either
-	core.beginCapture(Capture{Phase: "test"})
-	core.endCapture(true, nil)
+	state.beginCapture(Capture{Phase: "test"})
+	state.endCapture(true, nil)
 	if len(*rec.out) != 0 {
 		t.Fatalf("dropped records came back: %v", *rec.out)
 	}
@@ -151,17 +151,17 @@ func TestErrorAttrsFlattensOopsContextWithoutStack(t *testing.T) {
 
 func TestCaptureOnlyHoldsWhatMatchAccepts(t *testing.T) {
 	rec := newRecorder()
-	core := &captureCore{}
-	log := slog.New(captureHandler{core: core, inner: rec})
+	state := &captureState{}
+	log := slog.New(captureHandler{state: state, inner: rec})
 
-	core.beginCapture(Capture{Match: func(r slog.Record) bool { return r.Message == "held" }})
+	state.beginCapture(Capture{Match: func(r slog.Record) bool { return r.Message == "held" }})
 	log.Info("live")
 	log.Info("held")
 	if len(*rec.out) != 1 || (*rec.out)[0]["msg"] != "live" {
 		t.Fatalf("only the rejected record goes through while capturing, got %v", *rec.out)
 	}
 
-	core.endCapture(true, nil)
+	state.endCapture(true, nil)
 	if len(*rec.out) != 2 || (*rec.out)[1]["msg"] != "held" {
 		t.Fatalf("expected the held record to be replayed, got %v", *rec.out)
 	}
@@ -172,19 +172,19 @@ func TestCaptureOnlyHoldsWhatMatchAccepts(t *testing.T) {
 
 func TestCaptureNoteIntroducesAReplayOnlyWhenThereIsOne(t *testing.T) {
 	rec := newRecorder()
-	core := &captureCore{}
-	log := slog.New(captureHandler{core: core, inner: rec})
+	state := &captureState{}
+	log := slog.New(captureHandler{state: state, inner: rec})
 	note := func() { log.Info("note") }
 
-	core.beginCapture(Capture{})
-	core.endCapture(true, note)
+	state.beginCapture(Capture{})
+	state.endCapture(true, note)
 	if len(*rec.out) != 0 {
 		t.Fatalf("nothing was held, so no note either, got %v", *rec.out)
 	}
 
-	core.beginCapture(Capture{})
+	state.beginCapture(Capture{})
 	log.Info("a")
-	core.endCapture(true, note)
+	state.endCapture(true, note)
 	if len(*rec.out) != 2 || (*rec.out)[0]["msg"] != "note" || (*rec.out)[1]["msg"] != "a" {
 		t.Fatalf("expected the note before the replayed record, got %v", *rec.out)
 	}

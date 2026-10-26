@@ -36,10 +36,10 @@ type Capture struct {
 	Match func(slog.Record) bool
 }
 
-// captureCore is the state shared by every logger derived from one runner's
+// captureState is the state shared by every logger derived from one runner's
 // Logger(): whether records are currently being held back, which ones, and the
 // held records.
-type captureCore struct {
+type captureState struct {
 	mu        sync.Mutex
 	capturing bool
 	capture   Capture
@@ -54,10 +54,10 @@ type heldRecord struct {
 	record  slog.Record
 }
 
-// captureHandler forwards records to inner, unless its core is capturing: then
-// records the capture accepts are held until the core is flushed.
+// captureHandler forwards records to inner, unless its state is capturing: then
+// records the capture accepts are held until the state is flushed.
 type captureHandler struct {
-	core  *captureCore
+	state *captureState
 	inner slog.Handler
 }
 
@@ -66,30 +66,30 @@ func (h captureHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h captureHandler) Handle(ctx context.Context, r slog.Record) error {
-	h.core.mu.Lock()
-	if h.core.capturing && (h.core.capture.Match == nil || h.core.capture.Match(r)) {
+	h.state.mu.Lock()
+	if h.state.capturing && (h.state.capture.Match == nil || h.state.capture.Match(r)) {
 		r = r.Clone()
-		if h.core.capture.Phase != "" {
-			r.AddAttrs(slog.String("phase", h.core.capture.Phase))
+		if h.state.capture.Phase != "" {
+			r.AddAttrs(slog.String("phase", h.state.capture.Phase))
 		}
-		h.core.held = append(h.core.held, heldRecord{handler: h.inner, record: r})
-		h.core.mu.Unlock()
+		h.state.held = append(h.state.held, heldRecord{handler: h.inner, record: r})
+		h.state.mu.Unlock()
 		return nil
 	}
-	h.core.mu.Unlock()
+	h.state.mu.Unlock()
 	return h.inner.Handle(ctx, r)
 }
 
 func (h captureHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return captureHandler{core: h.core, inner: h.inner.WithAttrs(attrs)}
+	return captureHandler{state: h.state, inner: h.inner.WithAttrs(attrs)}
 }
 
 func (h captureHandler) WithGroup(name string) slog.Handler {
-	return captureHandler{core: h.core, inner: h.inner.WithGroup(name)}
+	return captureHandler{state: h.state, inner: h.inner.WithGroup(name)}
 }
 
 // beginCapture starts holding back the records c accepts instead of emitting them.
-func (c *captureCore) beginCapture(capture Capture) {
+func (c *captureState) beginCapture(capture Capture) {
 	c.mu.Lock()
 	c.capturing = true
 	c.capture = capture
@@ -100,7 +100,7 @@ func (c *captureCore) beginCapture(capture Capture) {
 // endCapture stops holding records back; when replay is true the held records
 // are emitted, in order, otherwise they are dropped. note, when not nil, is
 // called right before a non-empty replay so it can introduce it.
-func (c *captureCore) endCapture(replay bool, note func()) {
+func (c *captureState) endCapture(replay bool, note func()) {
 	c.mu.Lock()
 	held := c.held
 	c.held = nil

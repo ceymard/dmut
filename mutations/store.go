@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"io/fs"
 
-	"github.com/ceymard/dmut/v2/mutations/model"
+	"github.com/ceymard/dmut/v3/mutations/model"
 	"github.com/jackc/pgx/v5"
 	"github.com/samber/oops"
 )

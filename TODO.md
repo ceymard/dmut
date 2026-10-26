@@ -7,8 +7,8 @@ Branch `mutation-model`. The model (types, loader, planner, SQL knowledge) is `m
 - [x] 3. Storage: new `__dmut__` definition (three tables), single read query, tail replace and append.
 - [x] 4. Executor: settings resolution and `set_config`, seeds, checks, `data` rows, `force` retry, logging fields.
 - [x] 5. Test phase: three steps in a rolled-back transaction.
-- [ ] 6. Commands and API: `-s`/`-f`/`--set`, `Values`/`Settings` options, `collect`, `explode`, `down`, `overwrite`, revision documents (`mode`, `delete`, `override`).
-- [ ] 7. Swap and docs: delete the old package, module path to v3, replace the docs pages (structural mutations, dependencies and reapply triggers, seeds, settings), add a page that migrates v2 source files (`core`/`glue`) to the new format, update examples and README.
+- [x] 6. Commands and API: `-s`/`-f`/`--set`, `Values`/`Settings` options, `collect`, `explode`, `down`, `overwrite`, revision documents (`mode`, `delete`, `override`).
+- [x] 7. Swap and docs: delete the old package, module path to v3, replace the docs pages (structural mutations, dependencies and reapply triggers, seeds, settings), add a page that migrates v2 source files (`core`/`glue`) to the new format, update examples and README.
 
 ## Notes for later stages
 
@@ -18,3 +18,5 @@ Branch `mutation-model`. The model (types, loader, planner, SQL knowledge) is `m
 - Stage 1 decisions to confirm: `*` and `**` only match whole name segments (`a*` is a load error); a plain string with several SQL statements keeps the old behaviour (the down is inferred from the first); an empty yaml file is ignored; a file without `namespace` is in the namespace named "".
 - Stage 5 decision to confirm: test step 2 reapplies each mutation with all its dependents (as `force` does), not only those whose triggers would fire, because a schema cannot go down under structural children that do not reapply.
 - Stage 4: `--override` no longer breaks on an empty database; the `__dmut__` namespace always runs for real.
+- Done in stage 7: module path is v3, `sprig` and its dependencies are gone (the old template helper was dead code), docs and README are rewritten, `test/` fixtures are gone, examples are converted.
+- Left for the author: delete `specs/mutation-model.md` once reviewed, decide what to do with `report.md` (a review of the old model), merge or tag the branch.

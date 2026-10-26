@@ -17,9 +17,12 @@ nav = [
   ] },
   { "Mutation format" = [
       { "Overview" = "mutation-format/index.md" },
-      { "core vs glue" = "mutation-format/core-vs-glue.md" },
+      { "Structural and default mutations" = "mutation-format/structural.md" },
+      { "Statements, seeds and checks" = "mutation-format/statements.md" },
+      { "Dependencies and reapply triggers" = "mutation-format/dependencies.md" },
+      { "Settings" = "mutation-format/settings.md" },
       { "Automatic down statements" = "mutation-format/auto-down.md" },
-      { "Naming rules and children" = "mutation-format/naming-rules.md" },
+      { "Naming rules" = "mutation-format/naming-rules.md" },
       { "Namespaces" = "mutation-format/namespaces.md" },
       { "Collecting and exploding" = "mutation-format/collect-explode.md" },
   ] },
@@ -33,6 +36,7 @@ nav = [
       { "Schema reference" = "example-database/reference.md" },
       { "Walkthrough" = "example-database/walkthrough.md" },
   ] },
+  { "Migrating from dmut 2" = "migrating.md" },
   { "Considerations" = "considerations.md" },
 ]
 

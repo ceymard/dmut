@@ -1,19 +1,19 @@
 # Worked example
 
 This walks through [`examples/revisions`](https://github.com/ceymard/dmut/tree/main/examples/revisions), a small, self-contained schema
-(one table, no foreign keys) that tells the same story as the [example database](../example-database/index.md)'s `properties.description_search` child: full-text search over a
+(one table, no foreign keys) that tells the same story as the [example database](../example-database/index.md)'s `hotel.properties.description_search` mutation: full-text search over a
 `description` column, added after the fact via a stored generated column — except here it's told
 across three revisions of the same table, the way it would actually happen against a database
 that's already in production.
 
 Every statement below has actually been run — this documentation's build pipeline verifies it with
 `dmut test -a examples/revisions` (replaying revision 1 → 2 → 3 against a throwaway Postgres
-container) and, separately, with three real `dmut apply` calls against a running Postgres,
-inspected with `psql` afterward.
+container).
 
 ## Revision 1: the starting point
 
-A plain table, seeded with two rows.
+A plain table, seeded with two rows. The seed is written so that running it twice does nothing,
+which dmut checks.
 
 ```yaml
 --8<-- "examples/revisions/r1.yml"
@@ -29,21 +29,18 @@ table isn't dropped and recreated:
 --8<-- "examples/revisions/r2.yml"
 ```
 
-This revision declares `delete` and `override` (see [Squash revisions](index.md)), which makes it
-*override-shaped* — mutation definitions have to live nested under `mutations:` instead of as flat
-top-level keys, so a mutation can never collide with one of the reserved names (`mode`, `delete`,
-`override`, `mutations`). Two things are declared here that only matter for *later*:
+This revision declares `delete` and `override` (see [Squash revisions](index.md)). Two things are
+declared here that only matter for *later*:
 
 - `override.properties` describes what a **brand-new** database will get once revision 3 also
   exists: the column and its index folded directly into `CREATE TABLE`, as if they'd always been
-  there. It has to match revision 3's actual `core` for `properties` byte-for-byte (including the
-  index, not just the table) — dmut hashes the whole `core` list, so a database that already has
-  revision 2's override recorded and a database that jumps straight to revision 3's `core` need to
-  land on the exact same hash, or dmut treats them as different definitions and drops/recreates the
-  table for no reason. `override` replaces a mutation's recorded `core` *and* `glue` *and* `needs`
-  wholesale, so the seed-data insert has to be restated here too — leaving it out wouldn't fail
-  loudly, it would just make the *recorded* core shorter, and a later revision that still has that
-  insert in its own `core` would see it as new and run it again.
+  there. It has to match revision 3's actual `properties` exactly (including the index and the seed,
+  not just the table) — a database that already has revision 2's override recorded and a database
+  that jumps straight to revision 3 need to hold the same definition, or dmut treats them as
+  different and drops and recreates the table for no reason. `override` replaces a mutation's
+  recorded statements and keys wholesale, so the seed has to be restated here too — leaving it out
+  wouldn't fail loudly, it would just make the *recorded* mutation shorter, and revision 3, which
+  still has the seed, would see it as new and run it again.
 - `delete: [properties.description_search]` retires the child mutation once revision 3 lands: it
   already ran for real via `mutations:` below, so once its column is folded into `properties`'s
   override, it no longer needs separate tracking. `delete` only forgets it was being tracked — it
@@ -51,7 +48,7 @@ top-level keys, so a mutation can never collide with one of the reserved names (
 
 Applying revision 2 against a database that already has revision 1 only runs the *actual* new
 thing, via `mutations:` — the child mutation's `ALTER TABLE ADD COLUMN` and its index. `properties`
-itself doesn't move at all, because its own `core` there is unchanged from revision 1.
+itself doesn't move at all, because its own statements there are unchanged from revision 1.
 
 ## Revision 3: consolidating
 
@@ -60,30 +57,21 @@ itself doesn't move at all, because its own `core` there is unchanged from revis
 ```
 
 `properties.description_search` isn't mentioned here at all — it doesn't need to be. Revision 2's
-`delete` already told dmut it drops out of tracking once revision 3 lands. `properties`'s own `core`
-here is exactly what revision 2's `override` recorded, so — for a database that walked through
-revision 2 first — nothing physically changes at all when revision 3 is applied: dmut compares
-revision 3's `core` against what's actually recorded (the override, since that's what got saved),
-finds them identical, and does nothing. The `do $$ ... $$` block is the payoff: it runs inside the
-same transaction as everything else and fails the whole apply if the two rows from revision 1
-didn't survive, or if full-text search over the now-consolidated column doesn't work.
+`delete` already told dmut it drops out of tracking once revision 3 lands. `properties` here is
+exactly what revision 2's `override` recorded, so — for a database that walked through revision 2
+first — nothing physically changes at all for it: dmut compares revision 3's statements against what
+is actually recorded (the override, since that's what got saved), finds them identical, and does
+nothing to the table.
 
-Running `dmut test -v -a examples/revisions` against a fresh throwaway database shows this
-directly — in the revision 2 → 3 transition, `properties` runs only its new `core` statement (the
-`do $$` check, appended after the statements revision 2's override already accounts for — the table,
-the index and the seed insert don't run again), and the table is never dropped:
-
-```
-INF applying mutations namespace=revisions revision=2
-INF run namespace=revisions revision=2 mutation=properties.description_search dir=up kind=core
-INF applying mutations namespace=revisions revision=3
-INF run namespace=revisions revision=3 mutation=properties dir=up kind=core
-INF revision check passed: 2 properties, full text search still works notice=true severity=NOTICE
-```
+`properties.revision_check` is the payoff. It is a default mutation of two `ensure:` checks, which
+run inside the same transaction as everything else and fail the whole apply if the two rows from
+revision 1 didn't survive, or if full-text search over the now-consolidated column doesn't work. It
+depends on `properties` through its name, and it is new at revision 3, so only that mutation runs
+when a database at revision 2 is carried to revision 3.
 
 A **fresh** database only ever sees the final, consolidated shape — `dmut test examples/revisions`
-(without `-a`) applies revision 3 directly, and `properties·core` is exactly the consolidated
-`CREATE TABLE` plus its index, in one step, with no intermediate `ALTER TABLE` in sight.
+(without `-a`) applies revision 3 directly, and `properties` is exactly the consolidated
+`CREATE TABLE` plus its index and seed, in one step, with no intermediate `ALTER TABLE` in sight.
 
 ## Running it yourself
 

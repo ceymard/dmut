@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ceymard/dmut/v2/mutations/model"
+	"github.com/ceymard/dmut/v3/mutations/model"
 	"github.com/jackc/pgx/v5"
 )
 

@@ -32,10 +32,10 @@ particular:
   `DETACH PARTITION`, does not auto-down: reattaching needs the original `FOR VALUES` bounds, which
   aren't present in the `DETACH` statement itself, so it needs an explicit `down`.
 - `ALTER TYPE ... ADD VALUE` (adding an enum value) can never be auto-downed, not just today but in
-  principle: Postgres has no way to remove a value from an enum type short of rebuilding the type,
+  principle: Postgres has no way to remove a value from an enum type short of recreating the type,
   which is destructive if anything already stored that value. With `IF NOT EXISTS` dmut takes it as a
   [seed](statements.md#seeds), which is safe to run more than once and is left alone when the
-  mutation goes down. Without it, write an explicit `down` — typically a type rebuild — or the
+  mutation goes down. Without it, write an explicit `down` — typically recreating the type — or the
   `seed:` prefix.
 - `CREATE INDEX CONCURRENTLY` (and other `CONCURRENTLY` variants) will auto-down and load fine, but
   fails at execution: Postgres refuses to run `CONCURRENTLY` statements inside a transaction block,

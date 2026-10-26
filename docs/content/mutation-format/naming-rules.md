@@ -17,7 +17,7 @@ names *every mutation that creates something inside that schema* `hotel.<name>` 
 `hotel.chains`, `hotel.properties`, `hotel.rooms`, and so on for every table — instead of leaving
 them as flat top-level names like `chains` or `rooms`. That's a deliberate convention, not
 something dmut requires: every one of those mutations picks up a dependency on `hotel` **for
-free**, with no `needs: [hotel]` anywhere, because dotted names automatically depend on whichever
+free**, with no `deps: [hotel]` anywhere, because dotted names automatically depend on whichever
 of their ancestor segments happen to be declared mutations.
 
 Two things in this schema are deliberately *not* dotted under `hotel`: `roles` and `extensions`.
@@ -25,49 +25,36 @@ A role is cluster-wide and an extension isn't scoped to any one schema either, s
 actually an object "in" the `hotel` schema — dotting them under it would claim a relationship that
 isn't real.
 
-## `needs` targets a mutation, not its descendants
+## `deps` targets a mutation, not its descendants
 
-One subtlety worth calling out explicitly: naming a mutation in `needs` does **not** transitively
-pull in mutations dotted underneath it. `hotel.rooms` uses the `hotel.room_status` enum type,
-declared as `hotel.types.room_status` in `hotel.yml`. Depending on `hotel` alone would only
-guarantee the schema itself exists first, not that the enum type does:
+Naming a mutation in `deps` does **not** transitively pull in mutations dotted underneath it.
+`hotel.rooms` uses the `hotel.room_status` enum type, declared as `hotel.types.room_status`.
+Depending on `hotel` alone would only guarantee the schema itself exists first, not that the enum
+type does:
 
 ```yaml
---8<-- "examples/hotel/rooms.yml:1:5"
+--8<-- "examples/hotel/hotel.rooms.yml:1:6"
 ```
 
-The same pattern shows up for every other composite/enum type used by a table further down the
-dependency graph — `hotel.guests` needs `hotel.types.address`, `hotel.payment_methods` needs
-`hotel.types.card_summary`, `hotel.bookings` needs `hotel.types.booking_status`, `hotel.payments`
-needs `hotel.types.payment_status`. Each names the specific type it actually uses, not just
-`hotel`. It works the same way one level up, too: `hotel.properties` needs `hotel.chains`
-explicitly, `hotel.room_types` needs `hotel.properties` explicitly, and so on down the whole
-dependency graph in [the schema reference](../example-database/reference.md) — dotting everything
-under `hotel` only ever buys the one shared ancestor, never a sibling.
+The same pattern shows up for every other composite/enum type used by a table: `hotel.guests`
+depends on `hotel.types.address`, `hotel.payment_methods` on `hotel.types.card_summary`,
+`hotel.bookings` on `hotel.types.booking_status`, `hotel.payments` on `hotel.types.payment_status`.
+Each names the specific type it actually uses, not just `hotel`. It works the same way one level up:
+`hotel.properties` depends on `hotel.chains` explicitly, `hotel.room_types` on `hotel.properties`
+explicitly, and so on down the whole dependency graph in [the schema
+reference](../example-database/reference.md) — dotting everything under `hotel` only ever buys the
+one shared ancestor, never a sibling.
 
-## When to reach for `children` instead
+## Child mutations
 
-Dotted names and `children:` both produce the same `<parent>.<child>` mutation name and the same
-automatic dependency — `children:` is just a way to write the child's block nested inside the
-parent's, in the same file, instead of as its own top-level key. Reach for it when the child is
-genuinely subordinate to one specific parent and likely to be added, changed or dropped on its own
-later, without disturbing the parent's own definition — not for a shared dependency between things
-that aren't otherwise related to each other (that's what dotting everything under `hotel` is for,
-above).
-
-The [example database](../example-database/index.md)'s `hotel.properties` mutation uses `children`
-for exactly that case — a generated column and its index, kept separate from the table's own
-definition:
+A child is just a mutation whose name extends its parent's: `hotel.properties.description_search`
+is written in its own file and depends on `hotel.properties` through its name. Reach for one when
+the child is genuinely subordinate to one specific parent and likely to be added, changed or dropped
+on its own later, without disturbing the parent's definition. Adding a column to a table can also be
+just one more statement at the end of the table's `sql`; a child is for what has a life of its own.
 
 ```yaml
---8<-- "examples/hotel/properties.yml"
-```
-
-`examples/hotel/hotel.yml` shows the other shape — the schema itself and every composite/enum type
-it uses, as flat, top-level, dotted names in one file, with no intermediate grouping mutation:
-
-```yaml
---8<-- "examples/hotel/hotel.yml"
+--8<-- "examples/hotel/hotel.properties.description_search.yml"
 ```
 
 `hotel.types.address` automatically depends on `hotel` even though no mutation named `hotel.types`
