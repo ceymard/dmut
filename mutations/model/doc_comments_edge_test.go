@@ -34,6 +34,8 @@ func TestExtractDocsEdgeCases(t *testing.T) {
 		{"empty block", "/*?*/ create schema s", []string{"COMMENT ON schema s IS ''"}},
 		{"marker inside the text", "--? a --? b /*? c\ncreate schema s", []string{"COMMENT ON schema s IS 'a --? b /*? c'"}},
 		{"dollar and backslash", "--? $$ \\n\ncreate schema s", []string{"COMMENT ON schema s IS '$$ \\n'"}},
+		{"unicode names", "--? café ☕\ncreate table tâble (\n --? ünï\n cöl int,\n --? 名前\n 名前 text)", []string{"COMMENT ON table tâble IS 'café ☕'", "COMMENT ON COLUMN tâble.cöl IS 'ünï'", "COMMENT ON COLUMN tâble.名前 IS '名前'"}},
+		{"add column without the keyword", "--? c\nalter table t add c int", []string{"COMMENT ON COLUMN t.c IS 'c'"}},
 		{"unicode text", "--? café ☕\ncreate table t (\n --? ünï\n c int)", []string{"COMMENT ON table t IS 'café ☕'", "COMMENT ON COLUMN t.c IS 'ünï'"}},
 		{"trailing semicolon", "--? x\ncreate table t (\n --? c\n a int\n);", []string{"COMMENT ON table t IS 'x'", "COMMENT ON COLUMN t.a IS 'c'"}},
 		{"or replace view with columns", "--? v\ncreate or replace view s.v (\n --? a\n a, b) with (security_barrier) as select 1, 2", []string{"COMMENT ON view s.v IS 'v'", "COMMENT ON COLUMN s.v.a IS 'a'"}},
@@ -76,26 +78,26 @@ func TestExtractDocsEdgeCases(t *testing.T) {
 
 func TestExtractDocsEdgeErrors(t *testing.T) {
 	tests := map[string]string{
-		"unnamed primary key":        "create table t (\n a int,\n --? pk\n primary key (a))",
-		"unnamed unique":             "create table t (\n a int,\n --? u\n unique (a))",
-		"unnamed foreign key":        "create table t (\n a int,\n --? u\n foreign key (a) references o (id))",
-		"like":                       "create table t (\n --? u\n like o)",
-		"doc before references":      "create table t (\n a int --? u\n references o (id))",
-		"doc before not null":        "create table t (\n a int --? u\n not null)",
-		"two statements deep":        "--? x\ncreate table t (a int) partition by range (a)\n--? y",
-		"typed table":                "create table t of ty (\n --? a\n a with options not null)",
-		"partition":                  "create table p partition of t (\n --? a\n a) for values in (1)",
-		"second add column":          "--? a\nalter table t add column a int,\n --? b\n add column b int",
-		"alter other":                "--? a\nalter table t drop column a",
-		"add without column keyword": "--? a\nalter table t add c int",
-		"grant":                      "--? a\ngrant select on t to bob",
-		"drop":                       "--? a\ndrop table t",
-		"doc after create keyword":   "create --? a\ntable t (a int)",
-		"doc between name and body":  "create table t --? a\n(a int)",
-		"doc in function params":     "create function f(--? a\n a int) returns int language sql as 'select 1'",
-		"doc in an index":            "create index i on t (--? a\n a)",
-		"view body not a list":       "create view v as select (\n--? a\n 1)",
-		"aggregate":                  "create aggregate a(\n--? a\n int) (sfunc = f, stype = int)",
+		"unnamed primary key":       "create table t (\n a int,\n --? pk\n primary key (a))",
+		"unnamed unique":            "create table t (\n a int,\n --? u\n unique (a))",
+		"unnamed foreign key":       "create table t (\n a int,\n --? u\n foreign key (a) references o (id))",
+		"like":                      "create table t (\n --? u\n like o)",
+		"doc before references":     "create table t (\n a int --? u\n references o (id))",
+		"doc before not null":       "create table t (\n a int --? u\n not null)",
+		"two statements deep":       "--? x\ncreate table t (a int) partition by range (a)\n--? y",
+		"typed table":               "create table t of ty (\n --? a\n a with options not null)",
+		"partition":                 "create table p partition of t (\n --? a\n a) for values in (1)",
+		"second add column":         "--? a\nalter table t add column a int,\n --? b\n add column b int",
+		"alter other":               "--? a\nalter table t drop column a",
+		"add primary key":           "--? a\nalter table t add primary key (id)",
+		"grant":                     "--? a\ngrant select on t to bob",
+		"drop":                      "--? a\ndrop table t",
+		"doc after create keyword":  "create --? a\ntable t (a int)",
+		"doc between name and body": "create table t --? a\n(a int)",
+		"doc in function params":    "create function f(--? a\n a int) returns int language sql as 'select 1'",
+		"doc in an index":           "create index i on t (--? a\n a)",
+		"view body not a list":      "create view v as select (\n--? a\n 1)",
+		"aggregate":                 "create aggregate a(\n--? a\n int) (sfunc = f, stype = int)",
 	}
 	for name, sql := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -145,5 +147,18 @@ func TestDocCommentsInTheLoader(t *testing.T) {
 	}
 	if !strings.Contains(sts[2].Up, "--? kept") {
 		t.Errorf("up: is not scanned, got %q", sts[2].Up)
+	}
+}
+
+// Identifiers may hold any character from U+0080 up, in statements that are not scanned for
+// doc comments as well.
+func TestNonAsciiIdentifiersLoad(t *testing.T) {
+	sts := statementsOf(t, `
+  - up: create table café (naïve int)
+    down: drop table café
+  - create function größe(zahl int) returns int language sql as $$ select zahl + 1 as größer $$
+`)
+	if sts[0].Up != "create table café (naïve int)" || !strings.Contains(sts[1].Down, "größe(zahl int)") {
+		t.Errorf("unexpected statements: %+v", sts)
 	}
 }

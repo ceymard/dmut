@@ -351,7 +351,11 @@ var auto_alter_table = seq(c("alter", "table", capture("tbl", id)),
 	either(
 		seq(str("inherit").Produce("no inherit"), c(id)),
 		seq("enable", c("row", "level", "security")).Produce("disable", captured),
-		seq("add", c("column"), if_not_exists, c(capture("col", id))).Produce("drop", captured, keepDocs),
+		// The word COLUMN is optional, unless the name could start a constraint.
+		seq("add", either(
+			seq("column", if_not_exists, c(capture("col", id))),
+			c(capture("col", id_except("constraint", "primary", "unique", "check", "foreign", "exclude"))),
+		)).Produce("drop column", captured, keepDocs),
 		seq(c("alter", "column", id), str("set").Produce("drop"), c("default")),
 		seq("add", c("constraint", id)).Produce("drop", captured),
 		seq(c("rename", either("constraint", "column")), capture("from", id), "to", capture("to", id)).Produce(captured, group("to"), "to", group("from")),

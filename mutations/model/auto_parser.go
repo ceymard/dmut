@@ -9,6 +9,9 @@ import (
 )
 
 var (
+	// IdPattern is an identifier, quoted or not, with its dotted path. Postgres takes any
+	// character from U+0080 up as a letter in an unquoted identifier.
+	IdPattern   = `(?:"(""|[^"])*"|[$a-zA-Z_\x{80}-\x{10FFFF}][\w$\x{80}-\x{10FFFF}]*|\[[^\]]+\])(?:\.(?:"(""|[^"])*"|[@$a-zA-Z_\x{80}-\x{10FFFF}][\w$\x{80}-\x{10FFFF}]*|\[[^\]]+\]))*`
 	RestPattern = `\d+|::|<>|!=|<=|>=|[-+?!~|^#*/%,.()=<>:\[\]{}]`
 	// The sql lexer
 	SqlLexer = lexer.MustStateful(lexer.Rules{
@@ -20,7 +23,7 @@ var (
 			{Name: "MultiStart", Pattern: `(\$[a-zA-Z_0-9]*\$)`, Action: lexer.Push("MultilineString")},
 			{Name: "whiteSpace", Pattern: `( |\s|\n)+|--[^\n]*\n?|/\*(.|\n)*?\*/`},
 			{Name: "Semicolon", Pattern: `;`},
-			{Name: "Id", Pattern: `(?:"(""|[^"])*"|[$a-zA-Z_][\w$]*|\[[^\]]+\])(?:\.(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\]))*`},
+			{Name: "Id", Pattern: IdPattern},
 			{Name: "Operator", Pattern: "[+\\-*/<>=~!@#%^&|`?$]{1,63}"},
 			{Name: "String", Pattern: `'(?:''|[^'])*'`},
 			{Name: "Rest", Pattern: RestPattern},
@@ -38,7 +41,7 @@ var (
 			{Name: "MultiStart", Pattern: `(\$[a-zA-Z_0-9]*\$)`, Action: lexer.Push("MultilineString")},
 			{Name: "whiteSpace", Pattern: `( |\s|\n)+|--[^\n]*\n?|/\*(.|\n)*?\*/`},
 			{Name: "Semicolon", Pattern: `;`},
-			{Name: "Id", Pattern: `(?:"(""|[^"])*"|[$a-zA-Z_][\w$]*|\[[^\]]+\])(?:\.(?:"(""|[^"])*"|[@$a-zA-Z_][\w$]*|\[[^\]]+\]))*`},
+			{Name: "Id", Pattern: IdPattern},
 			{Name: "Operator", Pattern: "[+\\-*/<>=~!@#%^&|`?$]{1,63}"},
 			{Name: "String", Pattern: `'(?:''|[^'])*'`},
 			{Name: "Rest", Pattern: RestPattern},
@@ -641,6 +644,28 @@ func (t *tokenCombinator) Parse(st state) state {
 		return st
 	}
 	return st.noMatch()
+}
+
+// id_except matches an identifier that is none of words.
+func id_except(words ...string) *combinator {
+	return &combinator{parser: &idExceptParser{words: words}}
+}
+
+type idExceptParser struct {
+	words []string
+}
+
+func (p *idExceptParser) Parse(st state) state {
+	if st.isEOF() || st.tokens[st.pos].Type != SqlLexer.Symbols()["Id"] {
+		return st.noMatch()
+	}
+	for _, w := range p.words {
+		if strings.EqualFold(st.tokens[st.pos].Value, w) {
+			return st.noMatch()
+		}
+	}
+	st.pos++
+	return st
 }
 
 func token(tok lexer.TokenType) *combinator {

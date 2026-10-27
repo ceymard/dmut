@@ -91,6 +91,12 @@ sql:
     --? Plain english.
     create text search configuration shop.english2 (copy = english)
   - |
+    --? Un café.
+    create table shop.café (
+      --? Naïve.
+      naïve int
+    )
+  - |
     --? A new column.
     alter table shop.orders add column note text
 `
@@ -105,6 +111,8 @@ func TestDocCommentsEndUpInTheDatabase(t *testing.T) {
 		"select col_description('shop.orders'::regclass, 1)":                                                                       "The key.",
 		"select col_description('shop.orders'::regclass, 2)":                                                                       "Who\nordered.",
 		"select col_description('shop.orders'::regclass, 4)":                                                                       "Positive quantity.",
+		"select obj_description('shop.café'::regclass, 'pg_class')":                                                                "Un café.",
+		"select col_description('shop.café'::regclass, 1)":                                                                         "Naïve.",
 		"select col_description('shop.orders'::regclass, 5)":                                                                       "A new column.",
 		"select obj_description(oid, 'pg_constraint') from pg_constraint where conname = 'orders_unique'":                          "Unique customer and total.",
 		"select obj_description('shop.point'::regtype::oid, 'pg_type')":                                                            "A point.",
