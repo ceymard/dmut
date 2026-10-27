@@ -33,6 +33,9 @@ func (dg *DigestBuffer) AddStatement(stmt string) error {
 		if err != nil {
 			return oops.In("mutations").With("statement", stmt).Wrap(err)
 		}
+		if tk.Type == tokDoc {
+			continue
+		}
 		_, _ = dg.WriteString(tk.String())
 		_ = dg.WriteByte(' ')
 	}

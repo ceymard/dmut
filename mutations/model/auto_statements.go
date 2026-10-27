@@ -26,6 +26,40 @@ var if_not_exists = opt("if", "not", "exists")
 
 // var balanced_expr = c("balanced_expr")
 
+// Doc comments (--? and /*?) are tokens of their own. The rules below let them through only
+// where one documents something, and capture them into groups that Produce keeps through keepDocs:
+//
+//	doc         a doc comment
+//	spec        the tokens that name the created object, as in its DROP
+//	column      a column of a column list
+//	constraint  a named constraint
+//	unnamed     a constraint with no name, which can't be documented
+//	tbl, col    the table and the column of ALTER TABLE ... ADD COLUMN
+//
+// docs reads the doc comments that precede a statement or an item.
+var docs = capture("doc", zero_or_more(token(tokDoc)))
+
+// column_item is one entry of a column list: its doc comments, then a column, a named constraint
+// or an unnamed one, then whatever follows up to the next comma.
+var column_item = seq(
+	docs,
+	either(
+		seq("constraint", capture("constraint", id)),
+		capture("unnamed", either("primary", "unique", "check", "foreign", "exclude", "like")),
+		capture("column", id),
+	),
+	zero_or_more(either(
+		// A named constraint in the middle of a column definition.
+		seq(capture("doc", token(tokDoc), zero_or_more(token(tokDoc))), "constraint", capture("constraint", id)),
+		balanced_any("(", ")"),
+		not(",", ")"),
+	)),
+)
+
+// column_list is the list of columns of a table, a composite type or a view, in which every
+// column and every named constraint may have doc comments before it.
+var column_list = seq("(", column_item, zero_or_more(",", column_item), ")")
+
 var auto_create = seq("create",
 	opt("or", "replace"),
 	either(
@@ -129,7 +163,7 @@ var auto_create = seq("create",
 		// FOREIGN TABLE
 		// https://www.postgresql.org/docs/18/sql-createtable.html
 		// https://www.postgresql.org/docs/18/sql-droptable.html
-		c("foreign", "table", id),
+		seq(c("foreign", "table"), if_not_exists, c(id), opt(column_list)),
 
 		// POLICY
 		// https://www.postgresql.org/docs/18/sql-createpolicy.html
@@ -178,7 +212,7 @@ var auto_create = seq("create",
 		// COLLATION
 		// https://www.postgresql.org/docs/18/sql-createcollation.html
 		// https://www.postgresql.org/docs/18/sql-dropcollation.html
-		c("collation", id),
+		seq(c("collation"), if_not_exists, c(id)),
 
 		// CONVERSION
 		// https://www.postgresql.org/docs/18/sql-createconversion.html
@@ -193,7 +227,7 @@ var auto_create = seq("create",
 			either("before", "after", seq("instead", "of")),
 			separated_by("or", either(
 				"insert",
-				seq("update", opt("of", id, zero_or_more(",", c(id)))),
+				seq("update", opt("of", id, zero_or_more(",", id))),
 				"delete",
 				"truncate",
 			)),
@@ -203,7 +237,7 @@ var auto_create = seq("create",
 		// SEQUENCE
 		// https://www.postgresql.org/docs/18/sql-createsequence.html
 		// https://www.postgresql.org/docs/18/sql-dropsequence.html
-		seq(zero_or_more(either("unlogged", "temporary", "temp")), c("sequence", id)),
+		seq(zero_or_more(either("unlogged", "temporary", "temp")), c("sequence"), if_not_exists, c(id)),
 
 		// RULE
 		// https://www.postgresql.org/docs/18/sql-createrule.html
@@ -213,12 +247,12 @@ var auto_create = seq("create",
 		// TYPE
 		// https://www.postgresql.org/docs/18/sql-createtype.html
 		// https://www.postgresql.org/docs/18/sql-droptype.html
-		c("type", id),
+		seq(c("type", id), opt("as", column_list)),
 
 		// SCHEMA
 		// https://www.postgresql.org/docs/18/sql-createschema.html
 		// https://www.postgresql.org/docs/18/sql-dropschema.html
-		c("schema", id),
+		seq(c("schema"), if_not_exists, c(id)),
 
 		// TABLE
 		// https://www.postgresql.org/docs/18/sql-createtable.html
@@ -230,6 +264,7 @@ var auto_create = seq("create",
 			c("table"),
 			if_not_exists,
 			c(id),
+			opt(column_list),
 		),
 
 		// TABLESPACE
@@ -261,17 +296,18 @@ var auto_create = seq("create",
 		// MATERIALIZED VIEW / VIEW
 		// https://www.postgresql.org/docs/18/sql-createview.html
 		// https://www.postgresql.org/docs/18/sql-dropview.html
-		c("materialized", "view", id),
+		seq(c("materialized", "view"), if_not_exists, c(id), opt(column_list)),
 		seq(
 			opt(either("temp", "temporary")),
 			opt("recursive"),
 			c("view", id),
+			opt(column_list),
 		),
 
 		// EXTENSION
 		// https://www.postgresql.org/docs/18/sql-createextension.html
 		// https://www.postgresql.org/docs/18/sql-dropextension.html
-		c("extension", id),
+		seq(c("extension"), if_not_exists, c(id)),
 
 		// DOMAIN
 		// https://www.postgresql.org/docs/18/sql-createdomain.html
@@ -286,12 +322,12 @@ var auto_create = seq("create",
 		// SERVER
 		// https://www.postgresql.org/docs/18/sql-createserver.html
 		// https://www.postgresql.org/docs/18/sql-dropserver.html
-		c("server", id),
+		seq(c("server"), if_not_exists, c(id)),
 
 		// STATISTICS
 		// https://www.postgresql.org/docs/18/sql-createstatistics.html
 		// https://www.postgresql.org/docs/18/sql-dropstatistics.html
-		c("statistics", id),
+		seq(c("statistics"), if_not_exists, c(id)),
 
 		// SUBSCRIPTION
 		// https://www.postgresql.org/docs/18/sql-createsubscription.html
@@ -305,17 +341,17 @@ var auto_create = seq("create",
 	),
 	// Get everything until a terminating ;
 
-).Produce("DROP", captured, ";")
+).Produce("DROP", captured, ";", specOf, keepDocs)
 
 // COMMENT ON has no reverse : we leave the comment in place rather than guess what
 // it used to be, so it can be written as a plain statement with no `down`.
 var auto_comment = seq("comment", "on", until_opt(";")).Produce(noDown())
 
-var auto_alter_table = seq(c("alter", "table", id),
+var auto_alter_table = seq(c("alter", "table", capture("tbl", id)),
 	either(
 		seq(str("inherit").Produce("no inherit"), c(id)),
 		seq("enable", c("row", "level", "security")).Produce("disable", captured),
-		seq("add", c("column", id)).Produce("drop", captured),
+		seq("add", c("column"), if_not_exists, c(capture("col", id))).Produce("drop", captured, keepDocs),
 		seq(c("alter", "column", id), str("set").Produce("drop"), c("default")),
 		seq("add", c("constraint", id)).Produce("drop", captured),
 		seq(c("rename", either("constraint", "column")), capture("from", id), "to", capture("to", id)).Produce(captured, group("to"), "to", group("from")),
@@ -327,7 +363,7 @@ var auto_alter_table = seq(c("alter", "table", id),
 		// here and falls through to requiring a manual down.
 		seq("attach", c("partition", id)).Produce("detach", captured),
 	),
-).Produce(captured, ";")
+).Produce(captured, ";", keepDocs)
 
 var auto_grant = seq(
 	"grant",
@@ -372,4 +408,4 @@ var default_privileges = seq(
 	c(opt(";")),
 )
 
-var AutoDowner = seq(either(default_privileges, auto_create, auto_alter_table, auto_grant, auto_comment), until_opt(";"))
+var AutoDowner = seq(docs, either(default_privileges, auto_create, auto_alter_table, auto_grant, auto_comment), until_opt(";"))

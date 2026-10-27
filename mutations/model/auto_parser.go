@@ -1,6 +1,7 @@
 package model
 
 import (
+	"slices"
 	"strings"
 
 	lexer "github.com/alecthomas/participle/v2/lexer"
@@ -12,6 +13,9 @@ var (
 	// The sql lexer
 	SqlLexer = lexer.MustStateful(lexer.Rules{
 		"Root": {
+			// A doc comment (--? or /*? */) is the one comment the parser keeps. It is not nested,
+			// and inside a dollar-quoted body it stays an ordinary comment.
+			{Name: "DocComment", Pattern: `--\?[^\n]*\n?|/\*\?(?:.|\n)*?\*/`},
 			{Name: "multiCommentStart", Pattern: `/\*`, Action: lexer.Push("MultiComment")},
 			{Name: "MultiStart", Pattern: `(\$[a-zA-Z_0-9]*\$)`, Action: lexer.Push("MultilineString")},
 			{Name: "whiteSpace", Pattern: `( |\s|\n)+|--[^\n]*\n?|/\*(.|\n)*?\*/`},
@@ -42,7 +46,17 @@ var (
 	})
 )
 
+// split lexes s for the grammars that build a down: doc comments are left out.
 func split(s string) ([]lexer.Token, error) {
+	tokens, err := splitDocs(s)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(tokens, func(t lexer.Token) bool { return t.Type == tokDoc }), nil
+}
+
+// splitDocs lexes s and keeps the doc comments.
+func splitDocs(s string) ([]lexer.Token, error) {
 	lx, err := SqlLexer.LexString("", s)
 	if err != nil {
 		return nil, err
@@ -130,12 +144,17 @@ func (c *combinator) Parse(s string) (state, error) {
 	if err != nil {
 		return state{}, err
 	}
+	return c.parseTokens(s, tokens), nil
+}
+
+// parseTokens runs c on tokens, which may hold doc comments if c wants to see them.
+func (c *combinator) parseTokens(file string, tokens []lexer.Token) state {
 	return c.ParseState(state{
-		file:    s,
+		file:    file,
 		tokens:  tokens,
 		results: []result{},
 		pos:     0,
-	}), nil
+	})
 }
 
 func wantSpace(s string) (want_left bool, want_right bool) {
@@ -157,15 +176,30 @@ func (c *combinator) ParseAndGetDefault(s string) (down string, no_down bool, er
 	if err != nil {
 		return "", false, err
 	}
+	return res.down(s)
+}
+
+// down is the text the default group of a parse stands for. no_down is true when the rule
+// that matched has nothing to undo; input is only used in the error of a statement that
+// did not match.
+func (res state) down(input string) (down string, no_down bool, err error) {
 	if res.isNoMatch() {
-		return "", false, oops.In("auto_parser").With("input", s).Errorf("no match")
+		return "", false, oops.In("auto_parser").With("input", input).Errorf("no match")
 	}
 	if res.no_down {
 		return "", true, nil
 	}
+	return render(res.results, ""), false, nil
+}
+
+// render writes the tokens of one group of results, spaced the way SQL reads best.
+func render(results []result, group string) string {
 	var acc = strings.Builder{}
 	var last_want_right = false
-	for _, result := range res.results {
+	for _, result := range results {
+		if result.group != group {
+			continue
+		}
 		str := result.value.Value
 		want_left, want_right := wantSpace(str)
 		if last_want_right && want_left {
@@ -174,7 +208,7 @@ func (c *combinator) ParseAndGetDefault(s string) (down string, no_down bool, er
 		last_want_right = want_right
 		acc.WriteString(str)
 	}
-	return acc.String(), false, nil
+	return acc.String()
 }
 
 // ///////////////////////////////////////////////
@@ -232,6 +266,30 @@ func newStringProducer(group string, s string) producer {
 		value: s,
 	}
 }
+
+// docGroups are the groups that carry what a doc comment needs, and survive a Produce.
+var docGroups = map[string]bool{"doc": true, "spec": true, "tbl": true, "col": true, "column": true, "constraint": true, "unnamed": true}
+
+// keepDocs lets the doc groups of the matched tokens through a Produce, which would drop them.
+var keepDocs = produceFunc(func(st state, old_results []result) state {
+	for _, r := range old_results {
+		if docGroups[r.group] {
+			st.results = append(st.results, r)
+		}
+	}
+	return st
+})
+
+// specOf copies the default group into "spec": the tokens that name the created object, which
+// are those of its DROP.
+var specOf = produceFunc(func(st state, old_results []result) state {
+	for _, r := range old_results {
+		if r.group == "" {
+			st.addResult("spec", r.value)
+		}
+	}
+	return st
+})
 
 // noDown marks a rule as having no reverse statement at all, as opposed to one
 // whose reverse could not be computed.

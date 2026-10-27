@@ -167,7 +167,7 @@ func TestStatementForms(t *testing.T) {
   - comment on table t is 'x'
   - alter type color add value if not exists 'a'
 `)
-	kinds := []Kind{KindReversible, KindReversible, KindReversible, KindSeed, KindCheck, KindSeed, KindSeed}
+	kinds := []Kind{KindReversible, KindReversible, KindReversible, KindSeed, KindCheck, KindDoc, KindSeed}
 	if len(sts) != len(kinds) {
 		t.Fatalf("got %d statements, want %d", len(sts), len(kinds))
 	}

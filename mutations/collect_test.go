@@ -77,7 +77,7 @@ func TestCollectRoundTrips(t *testing.T) {
 	}
 	seed, _ := rev.Mutation("items.seed")
 	st := seed.Statements
-	if st[0].Kind != model.KindSeed || st[1].Down != "drop function f()" || st[2].Kind != model.KindReversible {
+	if st[0].Kind != model.KindDoc || st[1].Down != "drop function f()" || st[2].Kind != model.KindReversible {
 		t.Errorf("statements changed: %+v", st)
 	}
 	if !st[2].Settings[1].Saved || st[2].Settings[1].Tracked {

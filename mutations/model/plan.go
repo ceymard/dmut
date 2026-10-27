@@ -131,10 +131,35 @@ type change struct {
 	// k is the number of leading statements that are unchanged.
 	k             int
 	reason, cause string
+	// recBody and mBody are the numbers of statements before the trailing doc statements.
+	recBody, mBody int
 }
 
-func (c *change) edited() bool   { return c.rec != nil && c.k < len(c.rec.Statements) }
-func (c *change) appended() bool { return c.rec != nil && !c.edited() && len(c.m.Statements) > c.k }
+// bodyLen is the number of statements before the doc statements that end a list.
+func bodyLen[T any](list []T, kind func(T) Kind) int {
+	n := len(list)
+	for n > 0 && kind(list[n-1]) == KindDoc {
+		n--
+	}
+	return n
+}
+
+// edited is true when a statement before the doc statements changed or went away.
+func (c *change) edited() bool { return c.rec != nil && c.k < c.recBody }
+
+// appended is true when statements were added after the recorded ones, doc statements aside.
+func (c *change) appended() bool { return c.rec != nil && !c.edited() && c.mBody > c.recBody }
+
+// docsChanged is true when only the trailing doc statements differ.
+func (c *change) docsChanged() bool {
+	return c.rec != nil && !c.edited() && !c.appended() && (c.k < len(c.rec.Statements) || c.k < len(c.m.Statements))
+}
+
+// tails is true when the statements from c.k on go down and up again. When all the recorded
+// ones are doc statements that does nothing on the way down, so it never harms the rest.
+func (c *change) tails() bool {
+	return c.edited() || ((c.docsChanged() || c.appended()) && len(c.rec.Statements) > c.recBody)
+}
 
 // BuildPlan works out what has to go down and up to carry the recorded state to the new
 // revision. It does not touch a database. In the mode safe it refuses anything but appends.
@@ -193,10 +218,10 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 			plan.Ups = append(plan.Ups, Step{Mutation: name, Kind: StepReapply, Reason: step.Reason, Cause: step.Cause})
 		case c.rec == nil:
 			plan.Ups = append(plan.Ups, Step{Mutation: name, Kind: StepNew})
-		case c.edited():
+		case c.tails():
 			plan.Downs = append(plan.Downs, Step{Mutation: name, Kind: StepTail, From: c.k, Reason: c.reason, Cause: c.cause})
 			plan.Ups = append(plan.Ups, Step{Mutation: name, Kind: StepTail, From: c.k, Reason: c.reason, Cause: c.cause})
-		case c.appended():
+		case c.appended() || c.docsChanged():
 			plan.Ups = append(plan.Ups, Step{Mutation: name, Kind: StepAppend, From: c.k})
 		}
 		if c.rec == nil || metaChanged(c, in.Settings) {
@@ -216,6 +241,8 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 // compare finds how many leading statements are unchanged, and why the first one differs.
 func (c *change) compare(settings SettingsFunc) {
 	rec, m := c.rec, c.m
+	c.recBody = bodyLen(rec.Statements, func(s RecordedStatement) Kind { return s.Kind })
+	c.mBody = bodyLen(m.Statements, func(s Statement) Kind { return s.Kind })
 	for c.k < len(rec.Statements) && c.k < len(m.Statements) {
 		r, s := rec.Statements[c.k], m.Statements[c.k]
 		digest := settings.digest(m, c.k)
@@ -496,7 +523,7 @@ func refuseNonAppends(plan *Plan, changes map[string]*change) error {
 		switch {
 		case step.Kind == StepRemove:
 			refused = append(refused, fmt.Sprintf("mutation %s is removed", step.Mutation))
-		case step.Kind == StepTail:
+		case step.Kind == StepTail && step.From < c.recBody:
 			refused = append(refused, fmt.Sprintf("mutation %s changes at statement %d", step.Mutation, step.From+1))
 		case step.Kind == StepReapply && c.m.Structural:
 			refused = append(refused, fmt.Sprintf("structural mutation %s would be reapplied", step.Mutation))

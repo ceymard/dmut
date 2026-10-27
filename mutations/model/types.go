@@ -24,6 +24,9 @@ const (
 	KindSeed Kind = "seed"
 	// KindCheck asserts a condition on every up, has no down and is skipped on down.
 	KindCheck Kind = "check"
+	// KindDoc is a COMMENT ON statement. It behaves as a seed, and the planner treats the doc
+	// statements at the end of a mutation as a tail that may change without touching the rest.
+	KindDoc Kind = "doc"
 )
 
 // Mode is how a run reacts to a change that is not an append.

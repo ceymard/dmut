@@ -25,9 +25,10 @@ particular:
 - A bare `DROP ...` never auto-downs. Dmut only understands `CREATE`, `ALTER TABLE`, `GRANT`,
   `ALTER DEFAULT PRIVILEGES` and `COMMENT ON`.
 - `COMMENT ON` has no down at all — dmut leaves the comment in place rather than guess what it used
-  to be. It is still written as a plain statement, and dmut treats it as a [seed](statements.md#seeds);
-  "no down" and "we could not find a down" are different outcomes, and only the second one is an
-  error.
+  to be. It is still written as a plain statement, and dmut treats it as a doc statement, which
+  behaves as a [seed](statements.md#seeds) and is kept at the end of the mutation's tail (see
+  [Doc comments](doc-comments.md)); "no down" and "we could not find a down" are different outcomes,
+  and only the second one is an error.
 - `ALTER TABLE ... ATTACH PARTITION` auto-downs to `DETACH PARTITION`. The reverse,
   `DETACH PARTITION`, does not auto-down: reattaching needs the original `FOR VALUES` bounds, which
   aren't present in the `DETACH` statement itself, so it needs an explicit `down`.

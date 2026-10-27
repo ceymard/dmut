@@ -20,3 +20,12 @@ Branch `mutation-model`. The model (types, loader, planner, SQL knowledge) is `m
 - Stage 4: `--override` no longer breaks on an empty database; the `__dmut__` namespace always runs for real.
 - Done in stage 7: module path is v3, `sprig` and its dependencies are gone (the old template helper was dead code), docs and README are rewritten, `test/` fixtures are gone, examples are converted.
 - Left for the author: delete `specs/mutation-model.md` once reviewed, decide what to do with `report.md` (a review of the old model), merge or tag the branch.
+
+## Doc comments
+
+- [x] Rename the `ensure:` statement key to `check:`.
+- [x] Lexer token for `--?` and `/*?`, kept out of the grammar for downs and out of the hash.
+- [x] Read doc comments before CREATE, columns, named constraints and ADD COLUMN; generate `COMMENT ON` doc statements after the mutation's statements.
+- [x] Kind `doc` (bootstrap table check constraint, planner tail rules, `safe` mode, dependents).
+- [x] Tests on postgres 14 and 18 (`just test-db-18`), docs page `mutation-format/doc-comments.md`.
+- Not done: doc comments on `ALTER TABLE ... ADD CONSTRAINT` and on domain constraints; unnamed constraints are refused on purpose.

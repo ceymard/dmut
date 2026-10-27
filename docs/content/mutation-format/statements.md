@@ -12,8 +12,9 @@ exactly one of `auto`, `up`, `seed` or `check`, and an optional `settings` (see
 | `seed: <sql>` | A seed: no down. It may carry `data`. |
 | `check: <sql>` | A check: no down. |
 
-A statement that dmut understands but that has nothing to undo, such as `COMMENT ON ...`, is a seed
-without writing `seed:`. So is `ALTER TYPE ... ADD VALUE IF NOT EXISTS ...`. `ALTER TYPE ... ADD
+A `COMMENT ON ...` statement has nothing to undo: it is a doc statement, which runs like a seed
+(see [Doc comments](doc-comments.md)). `ALTER TYPE ... ADD VALUE IF NOT EXISTS ...` is a seed
+without writing `seed:`. `ALTER TYPE ... ADD
 VALUE` without `IF NOT EXISTS` has no automatic down: write an explicit one, or `IF NOT EXISTS`, or
 `seed:`.
 

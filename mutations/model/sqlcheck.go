@@ -18,6 +18,7 @@ var (
 		SqlLexer.Symbols()["multiCommentStart"]: true,
 		SqlLexer.Symbols()["multiCommentStop"]:  true,
 		SqlLexer.Symbols()["char"]:              true,
+		tokDoc:                                  true,
 	}
 )
 

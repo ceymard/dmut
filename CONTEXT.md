@@ -52,6 +52,14 @@ _Avoid_: idempotent statement, one-way statement, forward-only
 A statement that asserts a condition: it runs a query when its mutation goes up, and the run fails if the query does not return true. It changes nothing and has no way back.
 _Avoid_: ensure statement, assertion, test
 
+**Doc comment**:
+A comment starting with `--?` or `/*?`, written right before a CREATE, a column or a named constraint. It is read as a `COMMENT ON` for that object and kept as a doc statement placed after all the other statements of the mutation, so it can change without touching what is before it. Other comments are ignored.
+_Avoid_: annotation, description
+
+**Doc statement**:
+A `COMMENT ON` statement. It runs on every up like a seed and does nothing on down. The doc statements that end a mutation are a tail that can change without being refused in the run mode `safe`, and without waking dependents.
+_Avoid_: comment statement
+
 **Run mode**:
 How a run reacts to a change that is not an append: `safe` refuses it, `normal` runs it and stops on a Postgres error, `force` falls back to reapplying the mutation and its dependents.
 _Avoid_: default mode, simple mode, full mode

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	lexer "github.com/alecthomas/participle/v2/lexer"
 	"github.com/goccy/go-yaml"
 	"github.com/samber/oops"
 )
@@ -49,32 +50,41 @@ func (w where) warn(format string, args ...any) {
 
 // parseStatement reads one entry of a sql list: a string, or a mapping with one of
 // auto, up (with down), seed or check, plus optional settings and, for seeds, data.
-func parseStatement(w where, raw any) (Statement, error) {
+//
+// The doc statements an automatic statement asks for through its doc comments come with it.
+func parseStatement(w where, raw any) (Statement, []Statement, error) {
 	var st Statement
+	var docs []Statement
 	switch v := raw.(type) {
 	case string:
-		auto, err := autoStatement(w, v)
+		auto, autoDocs, err := autoStatement(w, v)
 		if err != nil {
-			return st, err
+			return st, nil, err
 		}
-		st = auto
+		st, docs = auto, autoDocs
 	case yaml.MapSlice:
-		parsed, err := parseStatementMap(w, v)
+		parsed, parsedDocs, err := parseStatementMap(w, v)
 		if err != nil {
-			return st, err
+			return st, nil, err
 		}
-		st = parsed
+		st, docs = parsed, parsedDocs
 	default:
-		return st, w.errf("expected a string or a mapping, got %T", raw)
+		return st, nil, w.errf("expected a string or a mapping, got %T", raw)
 	}
 	if err := st.finish(); err != nil {
-		return st, w.wrap(err)
+		return st, nil, w.wrap(err)
 	}
-	return st, nil
+	for i := range docs {
+		if err := docs[i].finish(); err != nil {
+			return st, nil, w.wrap(err)
+		}
+	}
+	return st, docs, nil
 }
 
-func parseStatementMap(w where, m yaml.MapSlice) (Statement, error) {
+func parseStatementMap(w where, m yaml.MapSlice) (Statement, []Statement, error) {
 	var st Statement
+	var docs []Statement
 	var mainKey, text, down string
 	var hasDown, hasData bool
 	var settings, data any
@@ -83,17 +93,17 @@ func parseStatementMap(w where, m yaml.MapSlice) (Statement, error) {
 		switch key {
 		case "auto", "up", "seed", "check":
 			if mainKey != "" {
-				return st, w.errf("a statement has one of auto, up, seed or check, got %s and %s", mainKey, key)
+				return st, nil, w.errf("a statement has one of auto, up, seed or check, got %s and %s", mainKey, key)
 			}
 			s, ok := item.Value.(string)
 			if !ok {
-				return st, w.errf("%s must be a string, got %T", key, item.Value)
+				return st, nil, w.errf("%s must be a string, got %T", key, item.Value)
 			}
 			mainKey, text = key, s
 		case "down":
 			s, ok := item.Value.(string)
 			if !ok {
-				return st, w.errf("down must be a string, got %T", item.Value)
+				return st, nil, w.errf("down must be a string, got %T", item.Value)
 			}
 			down, hasDown = s, true
 		case "settings":
@@ -101,32 +111,32 @@ func parseStatementMap(w where, m yaml.MapSlice) (Statement, error) {
 		case "data":
 			data, hasData = item.Value, true
 		default:
-			return st, w.errf("unknown statement key %v", item.Key)
+			return st, nil, w.errf("unknown statement key %v", item.Key)
 		}
 	}
 	if mainKey == "" {
-		return st, w.errf("a statement needs one of auto, up, seed or check")
+		return st, nil, w.errf("a statement needs one of auto, up, seed or check")
 	}
 	if strings.TrimSpace(text) == "" {
-		return st, w.errf("%s is empty", mainKey)
+		return st, nil, w.errf("%s is empty", mainKey)
 	}
 	if hasDown && mainKey != "up" {
-		return st, w.errf("down is only allowed next to up")
+		return st, nil, w.errf("down is only allowed next to up")
 	}
 	if hasData && mainKey != "seed" {
-		return st, w.errf("data is only allowed next to seed")
+		return st, nil, w.errf("data is only allowed next to seed")
 	}
 
 	switch mainKey {
 	case "auto":
-		auto, err := autoStatement(w, text)
+		auto, autoDocs, err := autoStatement(w, text)
 		if err != nil {
-			return st, err
+			return st, nil, err
 		}
-		st = auto
+		st, docs = auto, autoDocs
 	case "up":
 		if !hasDown || strings.TrimSpace(down) == "" {
-			return st, w.errf("up needs a non-empty down ; use seed for a statement with no way back")
+			return st, nil, w.errf("up needs a non-empty down ; use seed for a statement with no way back")
 		}
 		st = Statement{Kind: KindReversible, Up: text, Down: down, explicitDown: true}
 	case "seed":
@@ -134,69 +144,118 @@ func parseStatementMap(w where, m yaml.MapSlice) (Statement, error) {
 		if hasData {
 			rows, err := parseData(w, data, text)
 			if err != nil {
-				return st, err
+				return st, nil, err
 			}
 			st.Data = rows
 		}
 	case "check":
 		toks, err := sqlStatements(text)
 		if err != nil {
-			return st, w.wrap(err)
+			return st, nil, w.wrap(err)
 		}
 		if len(toks) != 1 || (words(toks[0], 1)[0] != "select" && words(toks[0], 1)[0] != "with") {
-			return st, w.errf("check must be a single SELECT or WITH statement")
+			return st, nil, w.errf("check must be a single SELECT or WITH statement")
 		}
 		st = Statement{Kind: KindCheck, Up: text}
 	}
 
 	list, err := parseSettings(w, settings)
 	if err != nil {
-		return st, err
+		return st, nil, err
 	}
 	st.Settings = list
-	return st, nil
+	return st, docs, nil
 }
 
-// autoStatement is Infer with the place of the statement in the error.
-func autoStatement(w where, sql string) (Statement, error) {
-	st, err := Infer(sql)
+// autoStatement is Infer with the place of the statement in the error. It also returns the doc
+// statements asked for by the doc comments of sql, which Infer never sees.
+func autoStatement(w where, sql string) (Statement, []Statement, error) {
+	st, comments, err := inferDocs(sql, true)
 	if err != nil {
-		return st, w.errf("%v", err)
+		return st, nil, w.errf("%v", err)
 	}
-	return st, nil
+	var docs []Statement
+	for _, c := range comments {
+		docs = append(docs, Statement{Kind: KindDoc, Up: c})
+	}
+	return st, docs, nil
 }
 
 // Infer builds the statement dmut makes of a plain string: a single SQL statement whose down
-// it works out. A statement with nothing to undo (COMMENT ON, ALTER TYPE ... ADD VALUE IF NOT
-// EXISTS) becomes a seed.
+// it works out. COMMENT ON becomes a doc statement, and ALTER TYPE ... ADD VALUE IF NOT EXISTS
+// a seed: neither has anything to undo.
 func Infer(sql string) (Statement, error) {
+	st, _, err := inferDocs(sql, false)
+	return st, err
+}
+
+// inferDocs is Infer. When docs is set, doc comments are read: they are taken out of the
+// statement and the COMMENT ON statements they ask for are returned. Otherwise they are plain comments.
+func inferDocs(sql string, docs bool) (Statement, []string, error) {
 	if strings.TrimSpace(sql) == "" {
-		return Statement{}, fmt.Errorf("statement is empty")
+		return Statement{}, nil, fmt.Errorf("statement is empty")
 	}
 	stmts, err := sqlStatements(sql)
 	if err != nil {
-		return Statement{}, err
+		return Statement{}, nil, err
 	}
 	if len(stmts) > 1 {
-		return Statement{}, fmt.Errorf("an automatic statement must be a single SQL statement ; use up/down for several")
+		return Statement{}, nil, fmt.Errorf("an automatic statement must be a single SQL statement ; use up/down for several")
 	}
+
+	// With doc comments, the grammar sees them, and the statement keeps the text without them.
+	up := sql
+	var toks []lexer.Token
+	if docs && hasDocMarker(sql) {
+		if toks, err = splitDocs(sql); err != nil {
+			return Statement{}, nil, err
+		}
+		var comments []lexer.Token
+		for _, t := range toks {
+			if t.Type == tokDoc {
+				comments = append(comments, t)
+			}
+		}
+		if len(comments) == 0 {
+			toks = nil
+		} else {
+			up = cutDocs(sql, comments)
+		}
+	}
+
 	if add, ifNotExists := alterTypeAddValue(sql); add {
 		if !ifNotExists {
-			return Statement{}, fmt.Errorf("ALTER TYPE ... ADD VALUE has no automatic down ; write IF NOT EXISTS, or use up/down or seed")
+			return Statement{}, nil, fmt.Errorf("ALTER TYPE ... ADD VALUE has no automatic down ; write IF NOT EXISTS, or use up/down or seed")
 		}
-		return Statement{Kind: KindSeed, Up: sql}, nil
+		if _, err := docStatements(state{}, toks); err != nil {
+			return Statement{}, nil, err
+		}
+		return Statement{Kind: KindSeed, Up: up}, nil, nil
 	}
-	down, noDown, err := AutoDowner.ParseAndGetDefault(sql)
+
+	var res state
+	if toks != nil {
+		res = AutoDowner.parseTokens(sql, toks)
+	} else if res, err = AutoDowner.Parse(sql); err != nil {
+		return Statement{}, nil, err
+	}
+	down, noDown, err := res.down(sql)
 	if err != nil {
-		return Statement{}, fmt.Errorf("can't infer a down ; write it with up/down, or use seed: %v", err)
+		return Statement{}, nil, fmt.Errorf("can't infer a down ; write it with up/down, or use seed: %v", err)
+	}
+	var comments []string
+	if toks != nil {
+		if comments, err = docStatements(res, toks); err != nil {
+			return Statement{}, nil, err
+		}
 	}
 	if noDown {
-		return Statement{Kind: KindSeed, Up: sql}, nil
+		return Statement{Kind: KindDoc, Up: up}, comments, nil
 	}
 	if down == "" {
-		return Statement{}, fmt.Errorf("empty down inferred ; write it with up/down")
+		return Statement{}, nil, fmt.Errorf("empty down inferred ; write it with up/down")
 	}
-	return Statement{Kind: KindReversible, Up: sql, Down: down}, nil
+	return Statement{Kind: KindReversible, Up: up, Down: down}, comments, nil
 }
 
 // alterTypeAddValue reports whether sql is ALTER TYPE ... ADD VALUE, and whether it says IF NOT EXISTS.

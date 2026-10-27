@@ -182,6 +182,9 @@ func (r *Runner) DeleteMutations(ctx context.Context, namespace string, names []
 func (r *Runner) InsertStatements(ctx context.Context, namespace, mutation string, from int, stmts []model.RecordedStatement) error {
 	const sql = `insert into __dmut__.statements (namespace, mutation, position, kind, up, down, digest, saved)
 		values ($1, $2, $3, $4, $5, nullif($6, ''), $7, $8)`
+	if len(stmts) == 0 {
+		return nil
+	}
 	b := &pgx.Batch{}
 	for i, s := range stmts {
 		var saved any

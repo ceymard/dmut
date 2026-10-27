@@ -132,3 +132,23 @@
   down: ALTER DEFAULT PRIVILEGES IN SCHEMA pgmq REVOKE SELECT, INSERT, UPDATE ON TABLES FROM pg_monitor;
 - up: CREATE INDEX IF NOT EXISTS idx_topic_bindings_covering ON pgmq.topic_bindings (pattern) INCLUDE (queue_name, compiled_regex);
   down: DROP INDEX pgmq.idx_topic_bindings_covering;
+# IF NOT EXISTS is not part of the name
+- up: CREATE MATERIALIZED VIEW IF NOT EXISTS mv AS SELECT 1;
+  down: DROP MATERIALIZED VIEW mv;
+- up: CREATE EXTENSION IF NOT EXISTS pgcrypto;
+  down: DROP EXTENSION pgcrypto;
+- up: CREATE SCHEMA IF NOT EXISTS app;
+  down: DROP SCHEMA app;
+- up: CREATE SEQUENCE IF NOT EXISTS s.seq;
+  down: DROP SEQUENCE s.seq;
+- up: CREATE FOREIGN TABLE IF NOT EXISTS f (a int) SERVER s;
+  down: DROP FOREIGN TABLE f;
+- up: CREATE SERVER IF NOT EXISTS remote FOREIGN DATA WRAPPER w;
+  down: DROP SERVER remote;
+- up: CREATE COLLATION IF NOT EXISTS c (locale = 'C');
+  down: DROP COLLATION c;
+- up: CREATE STATISTICS IF NOT EXISTS st ON a, b FROM t;
+  down: DROP STATISTICS st;
+# the columns of UPDATE OF are not part of the trigger name
+- up: CREATE TRIGGER tr AFTER INSERT OR UPDATE OF a, b ON s.t FOR EACH ROW EXECUTE FUNCTION f();
+  down: DROP TRIGGER tr ON s.t;

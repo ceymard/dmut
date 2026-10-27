@@ -95,7 +95,7 @@ wherever a grant or a policy needs the role.
 ## Changes
 
 Dmut compares each mutation with the version it recorded, statement by statement and in order. A
-statement is different when its text changes (whitespace and comments are normalised away), when its
+statement is different when its text changes (whitespace and comments are normalised away, [doc comments](doc-comments.md) included), when its
 kind changes, when the `down` of an `up`/`down` pair changes, when the `data` of a seed changes, or
 when the value of one of its [tracked settings](settings.md) changes.
 

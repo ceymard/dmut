@@ -7,7 +7,7 @@ sql:
       namespace text not null,
       mutation text not null,
       position int not null,
-      kind text not null check (kind in ('reversible', 'seed', 'check')),
+      kind text not null check (kind in ('reversible', 'seed', 'check', 'doc')),
       up text not null,
       down text,
       digest text not null,

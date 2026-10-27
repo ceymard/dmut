@@ -54,10 +54,13 @@ func parseMutation(w where, name, namespace string, raw any) (*Mutation, error) 
 	if !ok {
 		return nil, w.errf("sql must be a list of statements, got %T", sqlRaw)
 	}
+	// Doc statements go after everything the author wrote, so that they can change without
+	// disturbing the statements before them.
+	var docs []Statement
 	for i, rawStmt := range list {
 		sw := w
 		sw.position = i + 1
-		st, err := parseStatement(sw, rawStmt)
+		st, stDocs, err := parseStatement(sw, rawStmt)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +68,16 @@ func parseMutation(w where, name, namespace string, raw any) (*Mutation, error) 
 			return nil, err
 		}
 		mut.Statements = append(mut.Statements, st)
+		docs = append(docs, stDocs...)
 	}
+	for i, st := range docs {
+		sw := w
+		sw.position = len(list) + i + 1
+		if err := checkStatement(sw, st, mut.Structural); err != nil {
+			return nil, err
+		}
+	}
+	mut.Statements = append(mut.Statements, docs...)
 	return mut, nil
 }
 

@@ -22,6 +22,7 @@ nav = [
       { "Dependencies and reapply triggers" = "mutation-format/dependencies.md" },
       { "Settings" = "mutation-format/settings.md" },
       { "Automatic down statements" = "mutation-format/auto-down.md" },
+      { "Doc comments" = "mutation-format/doc-comments.md" },
       { "Naming rules" = "mutation-format/naming-rules.md" },
       { "Namespaces" = "mutation-format/namespaces.md" },
       { "Collecting and exploding" = "mutation-format/collect-explode.md" },

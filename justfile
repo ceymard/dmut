@@ -13,6 +13,10 @@ test-unit:
 test-db:
     go test . ./mutations/ -count=1
 
+# The same tests on the newest postgres.
+test-db-18:
+    DMUT_TEST_IMAGE=postgres:18 go test . ./mutations/ -count=1
+
 # Same as test, but a missing docker daemon is a failure rather than a skip.
 test-ci:
     DMUT_REQUIRE_DOCKER=1 go test ./... -count=1
