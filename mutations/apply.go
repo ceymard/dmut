@@ -3,7 +3,8 @@ package mutations
 import (
 	"context"
 	"log/slog"
-	"sort"
+	"maps"
+	"slices"
 
 	"github.com/ceymard/dmut/v3/mutations/model"
 	"github.com/samber/oops"
@@ -218,14 +219,14 @@ func (a *applier) run(ctx context.Context, rev *model.Revision, state model.Stat
 // execute runs the downs, then the ups, of a plan.
 func (a *applier) execute(ctx context.Context, rev *model.Revision, state model.State, plan *model.Plan) error {
 	for _, step := range plan.Downs {
-		a.logStep(rev, step, "down", IconDown)
+		a.logStep(rev, step, "down", IconDown, state[step.Mutation].Structural)
 		if err := a.down(ctx, rev.Namespace, state[step.Mutation], step.From); err != nil {
 			return err
 		}
 	}
 	for _, step := range plan.Ups {
-		a.logStep(rev, step, "up", IconUp)
 		m, _ := rev.Mutation(step.Mutation)
+		a.logStep(rev, step, "up", IconUp, m.Structural)
 		if err := a.up(ctx, rev.Namespace, m, step.From); err != nil {
 			return err
 		}
@@ -233,8 +234,11 @@ func (a *applier) execute(ctx context.Context, rev *model.Revision, state model.
 	return nil
 }
 
-func (a *applier) logStep(rev *model.Revision, step model.Step, dir, icon string) {
+func (a *applier) logStep(rev *model.Revision, step model.Step, dir, icon string, structural bool) {
 	attrs := []any{IconKey, icon, "namespace", rev.Namespace, "revision", rev.Number, "mutation", step.Mutation, "dir", dir}
+	if structural {
+		attrs = append(attrs, "structural", true)
+	}
 	if step.Reason != "" {
 		attrs = append(attrs, "reason", step.Reason, "cause", step.Cause)
 	}
@@ -273,20 +277,16 @@ func (a *applier) writeRecords(ctx context.Context, rev *model.Revision, state m
 		saved[name] = true
 	}
 	ups := map[string]model.Step{}
+	// named holds each mutation to write once, whether it is saved, has ups, or both.
+	named := maps.Clone(saved)
 	for _, step := range plan.Ups {
 		ups[step.Mutation] = step
-		saved[step.Mutation] = saved[step.Mutation] || state[step.Mutation] == nil
-	}
-	names := make([]string, 0, len(saved)+len(ups))
-	for name := range saved {
-		names = append(names, name)
-	}
-	for name := range ups {
-		if !saved[name] {
-			names = append(names, name)
+		named[step.Mutation] = true
+		if state[step.Mutation] == nil {
+			saved[step.Mutation] = true
 		}
 	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(named))
 	for _, name := range names {
 		m, _ := rev.Mutation(name)
 		rec := a.recordOf(rev, m)

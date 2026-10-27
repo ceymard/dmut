@@ -38,5 +38,5 @@ mutations:
 
   properties.revision_check:
     sql:
-      - ensure: select count(*) = 2 from properties
-      - ensure: select exists (select 1 from properties where description_search @@ websearch_to_tsquery('english', 'pool'))
+      - check: select count(*) = 2 from properties
+      - check: select exists (select 1 from properties where description_search @@ websearch_to_tsquery('english', 'pool'))

@@ -127,6 +127,16 @@ func TestApplyLogsStructuredAttributes(t *testing.T) {
 	if _, ok := run["kind"]; ok {
 		t.Errorf("a run record has no kind: %v", run)
 	}
+	if run["structural"] != true {
+		t.Errorf("a structural mutation's run record should say so: %v", run)
+	}
+	grant := findRecord(all, func(r map[string]any) bool { return r["msg"] == "run" && r["mutation"] == "api.users.grant" })
+	if grant == nil {
+		t.Fatal("expected a run record for api.users.grant")
+	}
+	if _, ok := grant["structural"]; ok {
+		t.Errorf("a default mutation's run record has no structural attribute: %v", grant)
+	}
 	if findRecord(all, func(r map[string]any) bool { return r["msg"] == "no errors" }) == nil ||
 		findRecord(all, func(r map[string]any) bool { return r["msg"] == "committed" }) == nil {
 		t.Error("expected the no errors and committed milestones")

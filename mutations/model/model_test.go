@@ -163,7 +163,7 @@ func TestStatementForms(t *testing.T) {
   - up: create table v (a int)
     down: drop table v
   - seed: insert into t values (1)
-  - ensure: select true
+  - check: select true
   - comment on table t is 'x'
   - alter type color add value if not exists 'a'
 `)
@@ -186,7 +186,7 @@ func TestStatementForms(t *testing.T) {
 
 func TestStatementErrors(t *testing.T) {
 	cases := map[string]string{
-		"two kinds":           "- {seed: select 1, ensure: select true}",
+		"two kinds":           "- {seed: select 1, check: select true}",
 		"up without down":     "- {up: create table v (a int)}",
 		"empty down":          "- {up: create table v (a int), down: ''}",
 		"down with seed":      "- {seed: select 1, down: select 2}",
@@ -194,8 +194,8 @@ func TestStatementErrors(t *testing.T) {
 		"unknown key":         "- {seed: select 1, foo: 1}",
 		"not inferable":       "- insert into t values (1)",
 		"add value no ine":    "- alter type color add value 'a'",
-		"ensure not select":   "- {ensure: delete from t}",
-		"ensure two":          "- {ensure: 'select true; select true'}",
+		"check not select":   "- {check: delete from t}",
+		"check two":          "- {check: 'select true; select true'}",
 		"not a statement":     "- 12",
 		"bad setting":         "- {seed: select 1, settings: [foo.bar]}",
 		"short setting":       "- {seed: select 1, settings: [dmut.env]}",

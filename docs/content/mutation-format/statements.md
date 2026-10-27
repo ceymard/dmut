@@ -1,7 +1,7 @@
 # Statements, seeds and checks
 
 The `sql` list of a mutation holds statements. A statement is a plain string, or a mapping with
-exactly one of `auto`, `up`, `seed` or `ensure`, and an optional `settings` (see
+exactly one of `auto`, `up`, `seed` or `check`, and an optional `settings` (see
 [Settings](settings.md)). `data` is allowed with `seed` only, and `down` with `up` only.
 
 | Form | Meaning |
@@ -10,7 +10,7 @@ exactly one of `auto`, `up`, `seed` or `ensure`, and an optional `settings` (see
 | `auto: <sql>` | Same as a plain string. It exists so that the statement can carry `settings`. |
 | `up: <sql>` with `down: <sql>` | A reversible statement with an explicit down. The `down` may not be empty, and may hold several SQL statements. |
 | `seed: <sql>` | A seed: no down. It may carry `data`. |
-| `ensure: <sql>` | A check: no down. |
+| `check: <sql>` | A check: no down. |
 
 A statement that dmut understands but that has nothing to undo, such as `COMMENT ON ...`, is a seed
 without writing `seed:`. So is `ALTER TYPE ... ADD VALUE IF NOT EXISTS ...`. `ALTER TYPE ... ADD
@@ -56,7 +56,7 @@ data and not the data itself.
 
 ## Checks
 
-A check asserts a condition: `ensure: <sql>`. The query must start with `SELECT` or `WITH` and
+A check asserts a condition: `check: <sql>`. The query must start with `SELECT` or `WITH` and
 return exactly one row with exactly one column of type boolean. `true` passes. `false` fails the
 run, and so does any other result, with a message that names the problem. A failed check names the
 namespace, the mutation, the position and the first words of the statement.
@@ -68,5 +68,5 @@ rechecked whenever that mutation is reapplied. It may carry `settings` and appea
 ```yaml
 deps: [accounts]
 sql:
-  - ensure: select count(*) = 0 from accounts where balance < 0
+  - check: select count(*) = 0 from accounts where balance < 0
 ```

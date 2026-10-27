@@ -36,11 +36,11 @@ mutations:
 
   customers.revision_check:
     sql:
-      - ensure: select count(*) = 2 from customers
-      - ensure: select exists (select 1 from customers where first_name = 'Jane' and last_name = 'Cooper' and email = 'jane@example.com')
-      - ensure: select exists (select 1 from customers where first_name = 'Wade' and last_name = 'Warren' and email = 'wade@example.com')
-      - ensure: select coalesce(bool_and(not marketing_opt_in), true) from customers
-      - ensure: |
+      - check: select count(*) = 2 from customers
+      - check: select exists (select 1 from customers where first_name = 'Jane' and last_name = 'Cooper' and email = 'jane@example.com')
+      - check: select exists (select 1 from customers where first_name = 'Wade' and last_name = 'Warren' and email = 'wade@example.com')
+      - check: select coalesce(bool_and(not marketing_opt_in), true) from customers
+      - check: |
           select not exists (
             select 1 from information_schema.columns
             where table_name = 'customers' and column_name in ('full_name', 'phone', 'signed_up_at')

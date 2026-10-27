@@ -76,7 +76,7 @@ repository long after `r1.yml` and `r2.yml` could be deleted: it's the one a bra
 actually applies, and the one that reads like the table always looked this way.
 
 `customers.revision_check` is a unit test for the revision itself, in the same spirit as the worked
-example's: its `ensure:` statements fail the whole apply if the two seeded rows didn't survive the
+example's: its `check:` statements fail the whole apply if the two seeded rows didn't survive the
 trip through revision 2, if the name split lost data, or if `full_name`, `phone` or `signed_up_at`
 are somehow still around.
 

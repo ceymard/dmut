@@ -18,6 +18,8 @@ type harness struct {
 	t   *testing.T
 	uri string
 	rec *recorder
+	// dir, when set, is where every apply writes its files, so that the files keep their path.
+	dir string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -25,9 +27,11 @@ func newHarness(t *testing.T) *harness {
 }
 
 // writeFiles writes files, keyed by name without extension, in a fresh directory and returns it as the path list.
-func writeFiles(t *testing.T, files map[string]string) []string {
+func writeFiles(t *testing.T, dir string, files map[string]string) []string {
 	t.Helper()
-	dir := t.TempDir()
+	if dir == "" {
+		dir = t.TempDir()
+	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(dir, name+".yml"), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
@@ -39,7 +43,7 @@ func writeFiles(t *testing.T, files map[string]string) []string {
 // apply applies files, committing unless opts say otherwise.
 func (h *harness) apply(files map[string]string, mods ...func(*Options)) error {
 	h.t.Helper()
-	paths := writeFiles(h.t, files)
+	paths := writeFiles(h.t, h.dir, files)
 	*h.rec.out = nil
 	opts := Options{Commit: true, Logger: slog.New(h.rec)}
 	for _, mod := range mods {
@@ -243,6 +247,19 @@ func TestApplyForceModeFallsBackToReapplyingDependents(t *testing.T) {
 	h.mustApply(f("f", fn("2"), "v", view), mode(model.ModeForce))
 	h.wantRan("down:f down:v(dep_reapplied:f) down:f up:f up:v(dep_reapplied:f)") // the first attempt, then the retry
 	h.want("select x from v", "2")
+}
+
+func TestApplyForceModeRecordsEachReappliedMutationOnce(t *testing.T) {
+	h := newHarness(t)
+	h.dir = t.TempDir() // same paths each time: the stored rows of f and v do not change
+	fn := func(body string) string {
+		return "sql:\n  - up: create function f() returns int language sql as 'select " + body + "'\n    down: drop function f()\n"
+	}
+	view := "deps: [f]\nsql:\n  - create view v as select f() as x\n"
+	h.mustApply(f("f", fn("1"), "v", view))
+	h.mustApply(f("f", fn("2"), "v", view), mode(model.ModeForce))
+	h.want("select x from v", "2")
+	h.want("select count(*) from __dmut__.statements where namespace = '' and mutation = 'v'", "1")
 }
 
 func TestApplyOverrideAdoptsExistingObjects(t *testing.T) {

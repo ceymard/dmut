@@ -47,7 +47,7 @@ A statement is a plain string, or an object with exactly one of the keys of the 
 | `auto: <sql>` | Same as a plain string. It exists so that the statement can carry `settings`. |
 | `up: <sql>` with `down: <sql>` | A reversible statement with an explicit down. The `down` must not be empty. |
 | `seed: <sql>` | A seed. It has no down. It may carry `data` (see below). |
-| `ensure: <sql>` | A check statement. It has no down. |
+| `check: <sql>` | A check statement. It has no down. |
 
 Seed rules:
 
@@ -81,7 +81,7 @@ dmut classes these statements as seeds without the `seed:` prefix: `COMMENT ON .
 
 > 📜 **ADR**: The empty `down` had two meanings: "forgotten" and "intentionally nothing". A separate statement kind removes the second meaning and lets the test phase check the promise of safe repetition.
 
-A check statement is written `ensure: <sql>`. It asserts a condition.
+A check statement is written `check: <sql>`. It asserts a condition.
 
 1. The `<sql>` must start with `SELECT` or `WITH`, and must return exactly one row with exactly one column of type boolean. `true` passes. `false` fails the run. Any other result is a run error that names the shape.
 2. A check statement has no down. It is skipped when its mutation goes down, as a seed is.

@@ -99,7 +99,7 @@ and dmut makes no attempt at comparing database states: it applies, or it downs.
 tests every time to catch the most common errors, it cannot catch them all. The responsibility
 falls on the developer to make sure the revisions they write make sense.
 
-You can use [`ensure:`](../mutation-format/statements.md#checks) statements, in a default mutation
+You can use [`check:`](../mutation-format/statements.md#checks) statements, in a default mutation
 that depends on the table, to write unit tests for a revision: a failed check fails the apply. The
 [worked example](worked-example.md) uses exactly this to assert that no data was lost across a
 revision.

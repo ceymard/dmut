@@ -48,7 +48,7 @@ func (w where) warn(format string, args ...any) {
 }
 
 // parseStatement reads one entry of a sql list: a string, or a mapping with one of
-// auto, up (with down), seed or ensure, plus optional settings and, for seeds, data.
+// auto, up (with down), seed or check, plus optional settings and, for seeds, data.
 func parseStatement(w where, raw any) (Statement, error) {
 	var st Statement
 	switch v := raw.(type) {
@@ -81,9 +81,9 @@ func parseStatementMap(w where, m yaml.MapSlice) (Statement, error) {
 	for _, item := range m {
 		key, _ := item.Key.(string)
 		switch key {
-		case "auto", "up", "seed", "ensure":
+		case "auto", "up", "seed", "check":
 			if mainKey != "" {
-				return st, w.errf("a statement has one of auto, up, seed or ensure, got %s and %s", mainKey, key)
+				return st, w.errf("a statement has one of auto, up, seed or check, got %s and %s", mainKey, key)
 			}
 			s, ok := item.Value.(string)
 			if !ok {
@@ -105,7 +105,7 @@ func parseStatementMap(w where, m yaml.MapSlice) (Statement, error) {
 		}
 	}
 	if mainKey == "" {
-		return st, w.errf("a statement needs one of auto, up, seed or ensure")
+		return st, w.errf("a statement needs one of auto, up, seed or check")
 	}
 	if strings.TrimSpace(text) == "" {
 		return st, w.errf("%s is empty", mainKey)
@@ -138,13 +138,13 @@ func parseStatementMap(w where, m yaml.MapSlice) (Statement, error) {
 			}
 			st.Data = rows
 		}
-	case "ensure":
+	case "check":
 		toks, err := sqlStatements(text)
 		if err != nil {
 			return st, w.wrap(err)
 		}
 		if len(toks) != 1 || (words(toks[0], 1)[0] != "select" && words(toks[0], 1)[0] != "with") {
-			return st, w.errf("ensure must be a single SELECT or WITH statement")
+			return st, w.errf("check must be a single SELECT or WITH statement")
 		}
 		st = Statement{Kind: KindCheck, Up: text}
 	}

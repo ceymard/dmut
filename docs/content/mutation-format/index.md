@@ -31,7 +31,7 @@ sql:
   - up: the sql that brings this mutation up
     down: the sql that undoes it
   - seed: reference data, run again every time this part goes up
-  - ensure: select true -- a condition that must hold
+  - check: select true -- a condition that must hold
 ```
 
 Any other key is an error, so a typo is found when the files are loaded, before dmut connects to a

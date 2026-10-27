@@ -52,7 +52,7 @@ mutations:
           - [2, "a: b", "-1"]
           - [3, true, '{"k": [1, 2]}']
         settings: [dmut.env.A]
-      - ensure: select count(*) > 0 from items
+      - check: select count(*) > 0 from items
   other.a: {}
 `
 

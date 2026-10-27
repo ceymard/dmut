@@ -196,7 +196,7 @@ func TestApplyWithCancelledContextFails(t *testing.T) {
 	h := newHarness(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err := Apply(ctx, h.uri, writeFiles(t, f("api", apiSchema)), Options{Commit: true})
+	err := Apply(ctx, h.uri, writeFiles(t, "", f("api", apiSchema)), Options{Commit: true})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("want context.Canceled, got %v", err)
 	}
@@ -204,7 +204,7 @@ func TestApplyWithCancelledContextFails(t *testing.T) {
 
 func TestDeadlineMidRunLeavesNothingBehind(t *testing.T) {
 	h := newHarness(t)
-	paths := writeFiles(t, f("slow", "structural: true\nsql:\n  - create schema slow\n  - up: select pg_sleep(60)\n    down: select 1\n"))
+	paths := writeFiles(t, "", f("slow", "structural: true\nsql:\n  - create schema slow\n  - up: select pg_sleep(60)\n    down: select 1\n"))
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	start := time.Now()

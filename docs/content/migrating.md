@@ -51,7 +51,7 @@ Dmut 2 ran all the `core` of a namespace before any `glue`, and rebuilt all the 
   `reapply_on: [dep_reapplied, dep_appended]`. Statements appended to a table then reapply the
   functions and views that depend on it, and a grants mutation can depend on the whole schema with a
   pattern (`hotel.**`).
-- Seed data and `do $$ ... $$` checks that sat in `core` become `seed:` and `ensure:` statements. A
+- Seed data and `do $$ ... $$` checks that sat in `core` become `seed:` and `check:` statements. A
   seed must be safe to run twice: the test phase runs it twice.
 - A statement string that held several SQL statements must be split, or written as `up`/`down`.
   `ALTER TYPE ... ADD VALUE` needs `IF NOT EXISTS`, an explicit `down`, or `seed:`.

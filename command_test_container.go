@@ -54,7 +54,10 @@ func (t TestCmd) Run(ctx context.Context) error {
 		postgres.WithUsername(t.Username),
 		postgres.WithPassword(t.Password),
 		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(5*time.Second),
+			wait.ForAll(
+				wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+				wait.ForListeningPort("5432/tcp"),
+			).WithDeadline(30*time.Second),
 		),
 	)
 	if err != nil {
@@ -75,7 +78,7 @@ func (t TestCmd) Run(ctx context.Context) error {
 
 	slog.Info("container started, waiting for it to be ready")
 
-	uri, err := container.ConnectionString(ctx)
+	uri, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		return err
 	}

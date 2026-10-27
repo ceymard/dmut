@@ -12,7 +12,7 @@ dmut collect schema.yml ./mutations
 
 The output is meant to be read back by dmut, and is normalised on the way out: statements whose
 down can be inferred are written as plain strings, the rest as `up`/`down` pairs, `seed` and
-`ensure` statements keep their prefix, and the dependencies dmut derives from dotted names are left
+`check` statements keep their prefix, and the dependencies dmut derives from dotted names are left
 out since it derives them again on load. Collecting an already collected file changes nothing.
 
 Dmut's own `__dmut__` mutations are left out — they ship inside the binary.

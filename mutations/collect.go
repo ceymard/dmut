@@ -268,7 +268,7 @@ func (y *yamlWriter) statement(depth int, st model.Statement) {
 		}
 	}
 
-	key := map[model.Kind]string{model.KindReversible: "up", model.KindSeed: "seed", model.KindCheck: "ensure"}[st.Kind]
+	key := map[model.Kind]string{model.KindReversible: "up", model.KindSeed: "seed", model.KindCheck: "check"}[st.Kind]
 	if inferred, err := model.Infer(st.Up); st.Kind == model.KindReversible && err == nil && inferred.Down == st.Down {
 		key = "auto"
 	}

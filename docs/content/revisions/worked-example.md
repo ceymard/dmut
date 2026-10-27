@@ -63,7 +63,7 @@ first — nothing physically changes at all for it: dmut compares revision 3's s
 is actually recorded (the override, since that's what got saved), finds them identical, and does
 nothing to the table.
 
-`properties.revision_check` is the payoff. It is a default mutation of two `ensure:` checks, which
+`properties.revision_check` is the payoff. It is a default mutation of two `check:` checks, which
 run inside the same transaction as everything else and fail the whole apply if the two rows from
 revision 1 didn't survive, or if full-text search over the now-consolidated column doesn't work. It
 depends on `properties` through its name, and it is new at revision 3, so only that mutation runs

@@ -75,7 +75,7 @@ func TestSeedDataBadValueNamesTheStatement(t *testing.T) {
 func TestChecks(t *testing.T) {
 	h := newHarness(t)
 	table := "structural: true\nsql:\n  - create table t (a int)\n  - seed: insert into t select 1 where not exists (select 1 from t)\n"
-	ok := "deps: [t]\nsql:\n  - ensure: select count(*) = 1 from t\n"
+	ok := "deps: [t]\nsql:\n  - check: select count(*) = 1 from t\n"
 	h.mustApply(f("t", table, "c", ok))
 
 	for name, sql := range map[string]string{
@@ -85,7 +85,7 @@ func TestChecks(t *testing.T) {
 		"not bool":   "select 1",
 		"two column": "select true, true",
 	} {
-		err := h.apply(f("t", table, "c", ok, "c2", "deps: [t]\nsql:\n  - ensure: "+sql+"\n"))
+		err := h.apply(f("t", table, "c", ok, "c2", "deps: [t]\nsql:\n  - check: "+sql+"\n"))
 		if err == nil {
 			t.Errorf("%s: the check should fail", name)
 			continue
@@ -96,7 +96,7 @@ func TestChecks(t *testing.T) {
 	}
 
 	// A failing check names its mutation, position and first words.
-	err := h.apply(f("t", table, "c", ok, "c2", "deps: [t]\nsql:\n  - seed: select 1\n  - ensure: select false\n"))
+	err := h.apply(f("t", table, "c", ok, "c2", "deps: [t]\nsql:\n  - seed: select 1\n  - check: select false\n"))
 	if err == nil {
 		t.Fatal("should fail")
 	}
@@ -119,7 +119,7 @@ sql:
 	fn := func(deps string) string {
 		return deps + "sql:\n  - up: create function f() returns int language sql as 'select 1'\n    down: drop function f()\n"
 	}
-	c := "deps: [f, log]\nsql:\n  - ensure: select log_it()\n"
+	c := "deps: [f, log]\nsql:\n  - check: select log_it()\n"
 	h.mustApply(f("log", log, "z", z, "f", fn("deps: [z]\n"), "c", c))
 	h.want("select count(*) from log", "1")
 
